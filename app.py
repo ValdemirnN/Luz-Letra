@@ -726,6 +726,46 @@ else:
 
         return "📦 OUTROS ITENS GERAIS"
 
+    # ==========================================
+    # DISPONIBILIDADE ROTATIVA (calcula quanto está reservado num período,
+    # olhando SOMENTE os eventos cujas datas realmente cruzam com o período pedido)
+    # ==========================================
+    def calcular_disponibilidade_periodo(data_ini_periodo, data_fim_periodo, evento_id_excluir=None):
+        """Retorna (qtd_alugada, detalhe_alugado): quanto de cada produto já está
+        comprometido em eventos que se sobrepõem ao período [data_ini_periodo, data_fim_periodo].
+        O estoque total (produtos.quantidade_estoque) NUNCA é alterado por locações — ele é sempre
+        o total físico. A disponibilidade de um período é sempre: total físico - o que foi calculado aqui."""
+        qtd_alugada = {}
+        detalhe_alugado = {}
+
+        eventos_check = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
+        eventos_no_periodo = []
+        if eventos_check.data:
+            for ev_c in eventos_check.data:
+                if evento_id_excluir and ev_c['id'] == evento_id_excluir:
+                    continue
+                if not ev_c.get('data_inicio') or not ev_c.get('data_fim_alocacao'):
+                    continue
+                ev_inicio_c = datetime.strptime(ev_c['data_inicio'].split("T")[0], "%Y-%m-%d").date()
+                ev_fim_c = datetime.strptime(ev_c['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
+                if (ev_inicio_c <= data_fim_periodo) and (ev_fim_c >= data_ini_periodo):
+                    eventos_no_periodo.append(ev_c['id'])
+
+        if eventos_no_periodo:
+            itens_check = supabase.table("itens_evento").select("produto_id, quantidade, observacao").in_("evento_id", eventos_no_periodo).execute()
+            if itens_check.data:
+                for item_c in itens_check.data:
+                    pid_c = item_c['produto_id']
+                    qtd_alugada[pid_c] = qtd_alugada.get(pid_c, 0) + item_c['quantidade']
+                    js_item_c = safe_json_load(item_c['observacao'])
+                    if js_item_c:
+                        if pid_c not in detalhe_alugado:
+                            detalhe_alugado[pid_c] = {}
+                        for k_c, v_c in js_item_c.items():
+                            detalhe_alugado[pid_c][k_c] = detalhe_alugado[pid_c].get(k_c, 0) + v_c
+
+        return qtd_alugada, detalhe_alugado
+
 
 
     # ------------------------------------------
@@ -1311,29 +1351,7 @@ else:
             qtd_alugada_form = {}
             detalhe_alugado_form = {}
             if produtos_disp.data:
-                eventos_check_form = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
-                eventos_no_periodo_form = []
-                if eventos_check_form.data:
-                    for ev_f in eventos_check_form.data:
-                        if not ev_f.get('data_inicio') or not ev_f.get('data_fim_alocacao'):
-                            continue
-                        ev_inicio_f = datetime.strptime(ev_f['data_inicio'].split("T")[0], "%Y-%m-%d").date()
-                        ev_fim_f = datetime.strptime(ev_f['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
-                        if (ev_inicio_f <= data_fim) and (ev_fim_f >= data_inicio):
-                            eventos_no_periodo_form.append(ev_f['id'])
-
-                if eventos_no_periodo_form:
-                    itens_form_check = supabase.table("itens_evento").select("produto_id, quantidade, observacao").in_("evento_id", eventos_no_periodo_form).execute()
-                    if itens_form_check.data:
-                        for item_f in itens_form_check.data:
-                            pid_f = item_f['produto_id']
-                            qtd_alugada_form[pid_f] = qtd_alugada_form.get(pid_f, 0) + item_f['quantidade']
-                            js_item_f = safe_json_load(item_f['observacao'])
-                            if js_item_f:
-                                if pid_f not in detalhe_alugado_form:
-                                    detalhe_alugado_form[pid_f] = {}
-                                for k_f, v_f in js_item_f.items():
-                                    detalhe_alugado_form[pid_f][k_f] = detalhe_alugado_form[pid_f].get(k_f, 0) + v_f
+                qtd_alugada_form, detalhe_alugado_form = calcular_disponibilidade_periodo(data_inicio, data_fim)
 
                 # Balões de disponibilidade por categoria E por produto individual, para o período escolhido
                 df_disp_form = pd.DataFrame(produtos_disp.data)
@@ -1459,6 +1477,40 @@ else:
                     if not nome_cliente or not nome_evento:
                         st.error("Preencha o Título e Cliente.")
                     else:
+                        # Revalida a disponibilidade na hora de salvar (evita conflito se alguém
+                        # cadastrou outro evento no mesmo período enquanto este formulário estava aberto)
+                        qtd_alugada_check, detalhe_alugado_check = calcular_disponibilidade_periodo(data_inicio, data_fim)
+                        erros_disponibilidade = []
+                        alocacoes_agrupadas = {}
+                        for key, qtd in quantidades_selecionadas.items():
+                            if qtd > 0:
+                                p_id_str, sub_item = key.split("_", 1)
+                                p_id = int(p_id_str)
+                                if p_id not in alocacoes_agrupadas:
+                                    alocacoes_agrupadas[p_id] = {'total': 0, 'detalhes': {}}
+                                alocacoes_agrupadas[p_id]['total'] += qtd
+                                if sub_item != "NORMAL":
+                                    alocacoes_agrupadas[p_id]['detalhes'][sub_item] = qtd
+
+                        for p_id, info in alocacoes_agrupadas.items():
+                            prod_info_check = dict_produtos.get(p_id, {})
+                            nome_prod_check = prod_info_check.get('nome', f"Produto #{p_id}")
+                            if info['detalhes']:
+                                for k_chk, v_chk in info['detalhes'].items():
+                                    ja_alugado_k = detalhe_alugado_check.get(p_id, {}).get(k_chk, 0)
+                                    total_k = safe_json_load(prod_info_check.get('observacao')) or {}
+                                    disponivel_k = total_k.get(k_chk, 0) - ja_alugado_k
+                                    if v_chk > disponivel_k:
+                                        erros_disponibilidade.append(f"{nome_prod_check} ({k_chk}): pediu {v_chk}, só há {max(0, disponivel_k)} disponível para essas datas.")
+                            else:
+                                ja_alugado_p = qtd_alugada_check.get(p_id, 0)
+                                disponivel_p = prod_info_check.get('quantidade_estoque', 0) - ja_alugado_p
+                                if info['total'] > disponivel_p:
+                                    erros_disponibilidade.append(f"{nome_prod_check}: pediu {info['total']}, só há {max(0, disponivel_p)} disponível para essas datas.")
+
+                        if erros_disponibilidade:
+                            st.error("Não é possível salvar — quantidade solicitada maior que o estoque disponível:\n\n" + "\n".join(f"• {e}" for e in erros_disponibilidade))
+                        else:
                         try:
                             contato_cliente_formatado = formatar_telefone_br(contato_cliente)
                             try:
@@ -1483,39 +1535,19 @@ else:
                             }).execute()
                             evento_id_gerado = novo_evento.data[0]['id']
 
-                            alocacoes_agrupadas = {}
-                            for key, qtd in quantidades_selecionadas.items():
-                                if qtd > 0:
-                                    p_id_str, sub_item = key.split("_", 1)
-                                    p_id = int(p_id_str)
-                                    if p_id not in alocacoes_agrupadas:
-                                        alocacoes_agrupadas[p_id] = {'total': 0, 'detalhes': {}}
-                                    alocacoes_agrupadas[p_id]['total'] += qtd
-                                    if sub_item != "NORMAL":
-                                        alocacoes_agrupadas[p_id]['detalhes'][sub_item] = qtd
-
                             data_hora = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
-                            
+
                             for p_id, info in alocacoes_agrupadas.items():
                                 qtd_total = info['total']
                                 obs_json_evento = json.dumps(info['detalhes']) if info['detalhes'] else ""
-                                
-                                # Salva no evento
+
+                                # Registra a alocação do item para este evento.
+                                # IMPORTANTE: o estoque físico (produtos.quantidade_estoque) NÃO é alterado aqui —
+                                # ele representa o total físico e a disponibilidade por período é sempre calculada
+                                # dinamicamente a partir das datas dos eventos (disponibilidade rotativa).
                                 supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "produto_id": p_id, "quantidade": qtd_total, "observacao": obs_json_evento}).execute()
-                                
-                                # Desconta do estoque geral e do JSON
+
                                 prod_info = dict_produtos[p_id]
-                                novo_estoque = prod_info['quantidade_estoque'] - qtd_total
-                                nova_obs_json = prod_info.get('observacao', '')
-                                
-                                if info['detalhes'] and safe_json_load(prod_info['observacao']):
-                                    estoque_atual = safe_json_load(prod_info['observacao'])
-                                    for k, v in info['detalhes'].items():
-                                        estoque_atual[k] = max(0, estoque_atual.get(k, 0) - v)
-                                    nova_obs_json = json.dumps(estoque_atual)
-                                    
-                                supabase.table("produtos").update({"quantidade_estoque": novo_estoque, "observacao": nova_obs_json}).eq("id", p_id).execute()
-                                
                                 desc_detalhe = f" ({obs_json_evento})" if obs_json_evento else ""
                                 texto_hist = f"🟢 ALOCAÇÃO INICIAL: Adicionou {qtd_total}x {prod_info['nome']}{desc_detalhe}."
                                 supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "descricao": texto_hist, "data_registro": data_hora}).execute()
