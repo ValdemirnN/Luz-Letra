@@ -333,7 +333,7 @@ if not st.session_state['logado']:
 
     st.sidebar.image("logo.jpg", use_container_width=True)
 
-    st.title("🔒 Login - Luz & Letras Sistema")
+    st.title("🔒 Login - Luz & Letras")
 
     with st.form("form_login"):
 
