@@ -607,6 +607,18 @@ else:
             return f"({ddd}) {resto[:4]}-{resto[4:]}"
 
 
+    def formatar_data_br(data_iso):
+        """Converte uma data no formato AAAA-MM-DD (ou com hora ISO junto) para o padrão brasileiro DD/MM/AAAA.
+        Usada em todo o sistema (telas e PDFs) para nunca mostrar data no formato americano/ISO pro usuário."""
+        if not data_iso or data_iso == "-":
+            return "-"
+        try:
+            data_limpa = str(data_iso).split("T")[0]
+            return datetime.strptime(data_limpa, "%Y-%m-%d").strftime("%d/%m/%Y")
+        except Exception:
+            return data_iso
+
+
     def gerar_recibo_evento_pdf(evento_dict, itens_lista, dict_produtos_ref, nome_cliente_pdf, contato_cliente_pdf, nome_usuario_confirmou):
         """Gera, na hora, um PDF de confirmação do evento com os dados e produtos atuais.
         Como é gerado sempre a partir dos dados mais recentes do banco, qualquer alteração
@@ -631,15 +643,16 @@ else:
         story.append(Paragraph("RECIBO DE CONFIRMAÇÃO DO EVENTO", titulo_style))
         story.append(Spacer(1, 16))
 
-        data_ini_pdf = evento_dict['data_inicio'].split("T")[0] if evento_dict.get('data_inicio') else "-"
-        data_fim_pdf = evento_dict['data_fim_alocacao'].split("T")[0] if evento_dict.get('data_fim_alocacao') else "-"
+        data_ini_pdf = formatar_data_br(evento_dict.get('data_inicio'))
+        data_fim_pdf = formatar_data_br(evento_dict.get('data_fim_alocacao'))
         valor_pdf = evento_dict.get('valor_total') or 0
 
         dados_texto = f"""
         <b>Evento:</b> {evento_dict.get('descricao', '-')}<br/>
         <b>Cliente:</b> {nome_cliente_pdf}<br/>
         <b>Contato:</b> {contato_cliente_pdf}<br/>
-        <b>Data do Evento:</b> {data_ini_pdf} até {data_fim_pdf}<br/>
+        <b>Data do Evento:</b> {data_ini_pdf} a {data_fim_pdf}<br/>
+        <b>Retirada dos Produtos até:</b> {data_fim_pdf}<br/>
         <b>Local/Observações:</b> {evento_dict.get('observacao', '-')}<br/>
         <b>Valor Cobrado:</b> R$ {valor_pdf:.2f}<br/>
         <b>Status:</b> {evento_dict.get('status', '-')}<br/>
@@ -726,6 +739,68 @@ else:
 
         return "📦 OUTROS ITENS GERAIS"
 
+
+    # ==========================================
+    # DISPONIBILIDADE POR PERÍODO (FONTE ÚNICA DE VERDADE)
+    # ==========================================
+    def calcular_reservado_periodo(empresa_id_calc, data_ini_calc, data_fim_calc, evento_id_ignorar=None):
+        """Calcula quanto de cada produto (e de cada sub-item de kit, tipo letra/número)
+        está reservado em eventos (não cancelados) que se cruzam com o período informado.
+
+        IMPORTANTE: 'produtos.quantidade_estoque' representa sempre o ESTOQUE FÍSICO TOTAL
+        (constante, não é alterado quando um evento é criado/editado). A disponibilidade
+        para uma data é sempre = estoque físico total - reservado nesse período (calculado aqui).
+        Isso evita o bug de um produto "sumir" do estoque depois que o evento dele já passou.
+
+        Se 'evento_id_ignorar' for informado, os itens desse evento não entram na conta
+        (útil para permitir editar/aumentar a alocação do próprio evento sem se autobloquear).
+        """
+        reservado_total = {}
+        reservado_detalhe = {}
+
+        eventos_resp = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao").eq("empresa_id", empresa_id_calc).neq("status", "Cancelado").execute()
+        eventos_no_periodo_calc = []
+        if eventos_resp.data:
+            for ev_c in eventos_resp.data:
+                if evento_id_ignorar and ev_c['id'] == evento_id_ignorar:
+                    continue
+                if not ev_c.get('data_inicio') or not ev_c.get('data_fim_alocacao'):
+                    continue
+                try:
+                    ev_inicio_c = datetime.strptime(ev_c['data_inicio'].split("T")[0], "%Y-%m-%d").date()
+                    ev_fim_c = datetime.strptime(ev_c['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
+                except Exception:
+                    continue
+                if (ev_inicio_c <= data_fim_calc) and (ev_fim_c >= data_ini_calc):
+                    eventos_no_periodo_calc.append(ev_c['id'])
+
+        if eventos_no_periodo_calc:
+            itens_resp = supabase.table("itens_evento").select("produto_id, quantidade, observacao").in_("evento_id", eventos_no_periodo_calc).execute()
+            if itens_resp.data:
+                for item_c in itens_resp.data:
+                    pid_c = item_c['produto_id']
+                    reservado_total[pid_c] = reservado_total.get(pid_c, 0) + item_c['quantidade']
+                    js_item_c = safe_json_load(item_c.get('observacao'))
+                    if js_item_c:
+                        if pid_c not in reservado_detalhe:
+                            reservado_detalhe[pid_c] = {}
+                        for k_c, v_c in js_item_c.items():
+                            reservado_detalhe[pid_c][k_c] = reservado_detalhe[pid_c].get(k_c, 0) + v_c
+
+        return reservado_total, reservado_detalhe
+
+
+    def disponivel_produto_periodo(produto_dict, reservado_total, reservado_detalhe):
+        """Retorna quanto está disponível (livre) de um produto para o período já calculado."""
+        return produto_dict['quantidade_estoque'] - reservado_total.get(produto_dict['id'], 0)
+
+
+    def disponivel_subitem_periodo(produto_dict, chave_subitem, reservado_detalhe):
+        """Retorna quanto está disponível (livre) de um sub-item (ex: a letra 'A') para o período já calculado."""
+        js_estoque_total = safe_json_load(produto_dict.get('observacao')) or {}
+        total_fisico_subitem = js_estoque_total.get(chave_subitem, 0)
+        alugado_subitem = reservado_detalhe.get(produto_dict['id'], {}).get(chave_subitem, 0)
+        return total_fisico_subitem - alugado_subitem
 
 
     # ------------------------------------------
@@ -909,22 +984,11 @@ else:
                 nome_cliente_ev = cliente_info.get('nome', "Cliente não informado")
                 contato_cliente_ev = cliente_info.get('contato') or "-"
                 titulo_ev = ev.get('descricao') or "Evento sem título"
-                data_ini_fmt = ev['data_inicio'].split("T")[0] if ev.get('data_inicio') else "-"
-                data_fim_fmt = ev['data_fim_alocacao'].split("T")[0] if ev.get('data_fim_alocacao') else "-"
-
-                def _fmt_br(data_iso):
-                    if not data_iso or data_iso == "-":
-                        return "-"
-                    try:
-                        return datetime.strptime(data_iso, "%Y-%m-%d").strftime("%d/%m/%Y")
-                    except Exception:
-                        return data_iso
-
-                data_ini_br = _fmt_br(data_ini_fmt)
-                data_fim_br = _fmt_br(data_fim_fmt)
+                data_ini_br = formatar_data_br(ev.get('data_inicio'))
+                data_fim_br = formatar_data_br(ev.get('data_fim_alocacao'))
                 status_ev = ev.get('status') or "-"
 
-                with st.expander(f"🎉 {titulo_ev} — {nome_cliente_ev} | {data_ini_br} até {data_fim_br} | Status: {status_ev}"):
+                with st.expander(f"🎉 {titulo_ev} — {nome_cliente_ev} | {data_ini_br} a {data_fim_br} | Status: {status_ev}"):
                     itens_ev = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao").eq("evento_id", ev['id']).execute()
 
                     tab_detalhes, tab_add, tab_rem, tab_editar, tab_hist = st.tabs([
@@ -935,11 +999,14 @@ else:
                     # ABA: DETALHES & RECIBO
                     # ------------------------------------------
                     with tab_detalhes:
+                        st.markdown(
+                            f"#### 🎉 Data do Evento: {data_ini_br}&nbsp;&nbsp;&nbsp;&nbsp;📦 Retirada dos Produtos até: {data_fim_br}"
+                        )
                         col_a, col_b = st.columns(2)
 
                         with col_a:
                             valor_ev = ev.get('valor_total') or 0
-                            st.write(f"**Data do Evento:** {data_ini_br} até {data_fim_br}")
+                            st.write(f"**Data do Evento:** {data_ini_br} a {data_fim_br}")
                             st.write(f"**Valor:** R$ {valor_ev:.2f}")
                             st.write(f"**Contato do Cliente:** {contato_cliente_ev}")
                             st.write(f"**Observações:** {ev.get('observacao') or '-'}")
@@ -977,37 +1044,52 @@ else:
                             st.caption("⚠️ Para gerar o recibo em PDF, instale a biblioteca: `pip install reportlab`")
 
                     # ------------------------------------------
-                    # ABA: ADICIONAR MATERIAIS (COM RASTREABILIDADE)
+                    # ABA: ADICIONAR MATERIAIS (COM RASTREABILIDADE E RESPEITO À DISPONIBILIDADE DO PERÍODO)
                     # ------------------------------------------
                     with tab_add:
                         produtos_disp_edit = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao").eq("empresa_id", emp_id).execute()
                         adicoes_selecionadas = {}
 
+                        # Datas do PRÓPRIO evento que está sendo editado, para calcular disponibilidade real
+                        try:
+                            data_ini_ev_add = datetime.strptime(ev['data_inicio'].split("T")[0], "%Y-%m-%d").date()
+                            data_fim_ev_add = datetime.strptime(ev['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
+                        except Exception:
+                            data_ini_ev_add = datetime.now().date()
+                            data_fim_ev_add = datetime.now().date()
+
+                        # Reservado por OUTROS eventos que se cruzam com o período deste evento (ignorando o próprio evento)
+                        reservado_total_add, reservado_detalhe_add = calcular_reservado_periodo(
+                            emp_id, data_ini_ev_add, data_fim_ev_add, evento_id_ignorar=ev['id']
+                        )
+
                         if produtos_disp_edit.data:
                             for p in produtos_disp_edit.data:
-                                if p['quantidade_estoque'] > 0:
-                                    js_p = safe_json_load(p.get('observacao'))
+                                js_p = safe_json_load(p.get('observacao'))
 
-                                    if js_p:
-                                        st.markdown(f"🔠 *{p['nome']}:*")
-                                        cols_add = st.columns(6)
-                                        idxp = 0
-                                        for k, max_v in js_p.items():
-                                            if max_v > 0:
-                                                val_add = cols_add[idxp % 6].number_input(
-                                                    f"{k} (Disp:{max_v})", min_value=0, max_value=max_v,
-                                                    key=f"add_{ev['id']}_{p['id']}_{k}"
-                                                )
-                                                if val_add > 0:
-                                                    adicoes_selecionadas[f"{p['id']}_{k}"] = val_add
-                                                idxp += 1
-                                    else:
+                                if js_p:
+                                    st.markdown(f"🔠 *{p['nome']}:*")
+                                    cols_add = st.columns(6)
+                                    idxp = 0
+                                    for k, max_v in js_p.items():
+                                        if max_v > 0:
+                                            livre_k = max(0, disponivel_subitem_periodo(p, k, reservado_detalhe_add))
+                                            val_add = cols_add[idxp % 6].number_input(
+                                                f"{k} (Livre no período: {livre_k})", min_value=0, max_value=livre_k,
+                                                key=f"add_{ev['id']}_{p['id']}_{k}"
+                                            )
+                                            if val_add > 0:
+                                                adicoes_selecionadas[f"{p['id']}_{k}"] = val_add
+                                            idxp += 1
+                                else:
+                                    livre_normal = max(0, disponivel_produto_periodo(p, reservado_total_add, reservado_detalhe_add))
+                                    if livre_normal > 0:
                                         help_x = p.get('observacao')
                                         if not isinstance(help_x, str):
                                             help_x = None
                                         val_add = st.number_input(
-                                            f"{p['nome']} (Disp: {p['quantidade_estoque']})",
-                                            min_value=0, max_value=p['quantidade_estoque'], help=help_x,
+                                            f"{p['nome']} (Livre no período: {livre_normal})",
+                                            min_value=0, max_value=livre_normal, help=help_x,
                                             key=f"add_{ev['id']}_{p['id']}_NORMAL"
                                         )
                                         if val_add > 0:
@@ -1022,8 +1104,13 @@ else:
                                 st.warning("Informe o motivo da alteração para manter o registro.")
                             else:
                                 try:
-                                    data_hora_alt = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+                                    # Revalida a disponibilidade no exato momento do clique (evita condição de corrida
+                                    # com outra pessoa reservando o mesmo item ao mesmo tempo)
+                                    reservado_total_final, reservado_detalhe_final = calcular_reservado_periodo(
+                                        emp_id, data_ini_ev_add, data_fim_ev_add, evento_id_ignorar=ev['id']
+                                    )
                                     dict_produtos_edit = {p['id']: p for p in produtos_disp_edit.data}
+                                    erros_disponibilidade = []
 
                                     agrupado = {}
                                     for key, qtd in adicoes_selecionadas.items():
@@ -1035,48 +1122,65 @@ else:
                                         if sub != "NORMAL":
                                             agrupado[p_id]['detalhes'][sub] = qtd
 
-                                    resumo_itens = []
-
                                     for p_id, info in agrupado.items():
-                                        qtd_total = info['total']
-                                        obs_json_add = json.dumps(info['detalhes']) if info['detalhes'] else ""
-                                        prod_info = dict_produtos_edit[p_id]
-
-                                        item_existente = supabase.table("itens_evento").select("id, quantidade, observacao").eq("evento_id", ev['id']).eq("produto_id", p_id).execute()
-
-                                        if item_existente.data:
-                                            item_atual = item_existente.data[0]
-                                            nova_qtd_item = item_atual['quantidade'] + qtd_total
-                                            obs_atual_item = safe_json_load(item_atual.get('observacao'))
-                                            if obs_atual_item and info['detalhes']:
-                                                for k, v in info['detalhes'].items():
-                                                    obs_atual_item[k] = obs_atual_item.get(k, 0) + v
-                                                nova_obs_item = json.dumps(obs_atual_item)
-                                            elif info['detalhes']:
-                                                nova_obs_item = obs_json_add
-                                            else:
-                                                nova_obs_item = item_atual.get('observacao', '')
-                                            supabase.table("itens_evento").update({"quantidade": nova_qtd_item, "observacao": nova_obs_item}).eq("id", item_atual['id']).execute()
-                                        else:
-                                            supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": ev['id'], "produto_id": p_id, "quantidade": qtd_total, "observacao": obs_json_add}).execute()
-
-                                        novo_estoque_p = prod_info['quantidade_estoque'] - qtd_total
-                                        nova_obs_estoque = prod_info.get('observacao', '')
-                                        if info['detalhes'] and safe_json_load(prod_info['observacao']):
-                                            estoque_atual_p = safe_json_load(prod_info['observacao'])
+                                        prod_info_check = dict_produtos_edit[p_id]
+                                        if info['detalhes']:
                                             for k, v in info['detalhes'].items():
-                                                estoque_atual_p[k] = max(0, estoque_atual_p.get(k, 0) - v)
-                                            nova_obs_estoque = json.dumps(estoque_atual_p)
-                                        supabase.table("produtos").update({"quantidade_estoque": novo_estoque_p, "observacao": nova_obs_estoque}).eq("id", p_id).execute()
+                                                livre_real = disponivel_subitem_periodo(prod_info_check, k, reservado_detalhe_final)
+                                                if v > livre_real:
+                                                    erros_disponibilidade.append(
+                                                        f"{prod_info_check['nome']} ({k}): você pediu {v}, mas só há {max(0, livre_real)} disponível nesse período."
+                                                    )
+                                        else:
+                                            livre_real = disponivel_produto_periodo(prod_info_check, reservado_total_final, reservado_detalhe_final)
+                                            if info['total'] > livre_real:
+                                                erros_disponibilidade.append(
+                                                    f"{prod_info_check['nome']}: você pediu {info['total']}, mas só há {max(0, livre_real)} disponível nesse período."
+                                                )
 
-                                        detalhe_txt = f" ({obs_json_add})" if obs_json_add else ""
-                                        resumo_itens.append(f"{qtd_total}x {prod_info['nome']}{detalhe_txt}")
+                                    if erros_disponibilidade:
+                                        st.error("❌ Não é possível registrar: a quantidade solicitada é maior do que o disponível em estoque para esse período.")
+                                        for erro_disp in erros_disponibilidade:
+                                            st.warning(erro_disp)
+                                    else:
+                                        data_hora_alt = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+                                        resumo_itens = []
 
-                                    texto_hist_alt = f"✏️ ALTERAÇÃO: Adicionou {', '.join(resumo_itens)}. Motivo: {motivo_alteracao}"
-                                    supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": texto_hist_alt, "data_registro": data_hora_alt}).execute()
+                                        for p_id, info in agrupado.items():
+                                            qtd_total = info['total']
+                                            obs_json_add = json.dumps(info['detalhes']) if info['detalhes'] else ""
+                                            prod_info = dict_produtos_edit[p_id]
 
-                                    st.toast("Alteração registrada com sucesso!", icon="✅")
-                                    st.rerun()
+                                            item_existente = supabase.table("itens_evento").select("id, quantidade, observacao").eq("evento_id", ev['id']).eq("produto_id", p_id).execute()
+
+                                            if item_existente.data:
+                                                item_atual = item_existente.data[0]
+                                                nova_qtd_item = item_atual['quantidade'] + qtd_total
+                                                obs_atual_item = safe_json_load(item_atual.get('observacao'))
+                                                if obs_atual_item and info['detalhes']:
+                                                    for k, v in info['detalhes'].items():
+                                                        obs_atual_item[k] = obs_atual_item.get(k, 0) + v
+                                                    nova_obs_item = json.dumps(obs_atual_item)
+                                                elif info['detalhes']:
+                                                    nova_obs_item = obs_json_add
+                                                else:
+                                                    nova_obs_item = item_atual.get('observacao', '')
+                                                supabase.table("itens_evento").update({"quantidade": nova_qtd_item, "observacao": nova_obs_item}).eq("id", item_atual['id']).execute()
+                                            else:
+                                                supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": ev['id'], "produto_id": p_id, "quantidade": qtd_total, "observacao": obs_json_add}).execute()
+
+                                            # NOTA: 'produtos.quantidade_estoque' representa o estoque FÍSICO TOTAL e não é mais
+                                            # decrementado aqui. A disponibilidade por período é sempre recalculada a partir dos
+                                            # itens_evento ativos que se cruzam com a data (ver calcular_reservado_periodo).
+
+                                            detalhe_txt = f" ({obs_json_add})" if obs_json_add else ""
+                                            resumo_itens.append(f"{qtd_total}x {prod_info['nome']}{detalhe_txt}")
+
+                                        texto_hist_alt = f"✏️ ALTERAÇÃO: Adicionou {', '.join(resumo_itens)}. Motivo: {motivo_alteracao}"
+                                        supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": texto_hist_alt, "data_registro": data_hora_alt}).execute()
+
+                                        st.toast("Alteração registrada com sucesso!", icon="✅")
+                                        st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro ao registrar alteração: {e}")
 
@@ -1159,14 +1263,8 @@ else:
                                             else:
                                                 supabase.table("itens_evento").update({"quantidade": nova_qtd_item_rem, "observacao": nova_obs_item_rem}).eq("id", item_id).execute()
 
-                                            novo_estoque_rem = prod_info_rem.get('quantidade_estoque', 0) + qtd_remover
-                                            nova_obs_estoque_rem = prod_info_rem.get('observacao', '')
-                                            if info_rem['detalhes'] and safe_json_load(prod_info_rem.get('observacao')):
-                                                estoque_atual_rem = safe_json_load(prod_info_rem.get('observacao'))
-                                                for k, v in info_rem['detalhes'].items():
-                                                    estoque_atual_rem[k] = estoque_atual_rem.get(k, 0) + v
-                                                nova_obs_estoque_rem = json.dumps(estoque_atual_rem)
-                                            supabase.table("produtos").update({"quantidade_estoque": novo_estoque_rem, "observacao": nova_obs_estoque_rem}).eq("id", p_id).execute()
+                                            # NOTA: não alteramos mais 'produtos.quantidade_estoque' aqui — remover um item do
+                                            # evento apenas libera a data (o estoque físico total nunca muda por causa de uma locação).
 
                                             detalhe_txt_rem = f" ({json.dumps(info_rem['detalhes'])})" if info_rem['detalhes'] else ""
                                             resumo_remocao.append(f"{qtd_remover}x {prod_info_rem.get('nome', 'Produto')}{detalhe_txt_rem}")
@@ -1238,10 +1336,37 @@ else:
                                 mudancas_txt = []
                                 data_inicio_antiga = _parse_data_edit(ev.get('data_inicio'))
                                 data_fim_antiga = _parse_data_edit(ev.get('data_fim_alocacao'))
+
+                                # Se a data mudou, revalida se os itens já alocados neste evento cabem na nova data
                                 if nova_data_inicio_edit != data_inicio_antiga or nova_data_fim_edit != data_fim_antiga:
+                                    reservado_total_edit, reservado_detalhe_edit = calcular_reservado_periodo(
+                                        emp_id, nova_data_inicio_edit, nova_data_fim_edit, evento_id_ignorar=ev['id']
+                                    )
+                                    erros_data_edit = []
+                                    for it_check in (itens_ev.data or []):
+                                        prod_check = dict_produtos.get(it_check['produto_id'])
+                                        if not prod_check:
+                                            continue
+                                        js_it_check = safe_json_load(it_check.get('observacao'))
+                                        if js_it_check:
+                                            for k_chk, v_chk in js_it_check.items():
+                                                livre_chk = disponivel_subitem_periodo(prod_check, k_chk, reservado_detalhe_edit)
+                                                if v_chk > livre_chk:
+                                                    erros_data_edit.append(f"{prod_check['nome']} ({k_chk}): precisa de {v_chk}, mas só há {max(0, livre_chk)} livre na nova data.")
+                                        else:
+                                            livre_chk = disponivel_produto_periodo(prod_check, reservado_total_edit, reservado_detalhe_edit)
+                                            if it_check['quantidade'] > livre_chk:
+                                                erros_data_edit.append(f"{prod_check['nome']}: precisa de {it_check['quantidade']}, mas só há {max(0, livre_chk)} livre na nova data.")
+
+                                    if erros_data_edit:
+                                        st.error("❌ Não é possível mudar para essa data: os itens já alocados neste evento não cabem no estoque disponível da nova data.")
+                                        for erro_d in erros_data_edit:
+                                            st.warning(erro_d)
+                                        st.stop()
+
                                     mudancas_txt.append(
-                                        f"Data do Evento: {data_inicio_antiga.strftime('%d/%m/%Y')} até {data_fim_antiga.strftime('%d/%m/%Y')} → "
-                                        f"{nova_data_inicio_edit.strftime('%d/%m/%Y')} até {nova_data_fim_edit.strftime('%d/%m/%Y')}"
+                                        f"Data do Evento: {data_inicio_antiga.strftime('%d/%m/%Y')} a {data_fim_antiga.strftime('%d/%m/%Y')} → "
+                                        f"{nova_data_inicio_edit.strftime('%d/%m/%Y')} a {nova_data_fim_edit.strftime('%d/%m/%Y')}"
                                     )
                                 valor_antigo = ev.get('valor_total') or 0
                                 if round(novo_valor_edit, 2) != round(float(valor_antigo), 2):
@@ -1307,38 +1432,16 @@ else:
             with col_data2:
                 data_fim = st.date_input("Até quando os produtos ficam alocados? (Data Fim)", format="DD/MM/YYYY", value=data_inicio, key="novo_evento_data_fim")
 
+            st.info(f"🎉 Data do Evento: **{data_inicio.strftime('%d/%m/%Y')}**  |  📦 Retirada dos Produtos até: **{data_fim.strftime('%d/%m/%Y')}**")
+
             # Calcula, em tempo real, o quanto já está reservado no período escolhido (fora do form, atualiza a cada mudança de data)
-            qtd_alugada_form = {}
-            detalhe_alugado_form = {}
+            reservado_total_form, reservado_detalhe_form = calcular_reservado_periodo(emp_id, data_inicio, data_fim)
+
             if produtos_disp.data:
-                eventos_check_form = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
-                eventos_no_periodo_form = []
-                if eventos_check_form.data:
-                    for ev_f in eventos_check_form.data:
-                        if not ev_f.get('data_inicio') or not ev_f.get('data_fim_alocacao'):
-                            continue
-                        ev_inicio_f = datetime.strptime(ev_f['data_inicio'].split("T")[0], "%Y-%m-%d").date()
-                        ev_fim_f = datetime.strptime(ev_f['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
-                        if (ev_inicio_f <= data_fim) and (ev_fim_f >= data_inicio):
-                            eventos_no_periodo_form.append(ev_f['id'])
-
-                if eventos_no_periodo_form:
-                    itens_form_check = supabase.table("itens_evento").select("produto_id, quantidade, observacao").in_("evento_id", eventos_no_periodo_form).execute()
-                    if itens_form_check.data:
-                        for item_f in itens_form_check.data:
-                            pid_f = item_f['produto_id']
-                            qtd_alugada_form[pid_f] = qtd_alugada_form.get(pid_f, 0) + item_f['quantidade']
-                            js_item_f = safe_json_load(item_f['observacao'])
-                            if js_item_f:
-                                if pid_f not in detalhe_alugado_form:
-                                    detalhe_alugado_form[pid_f] = {}
-                                for k_f, v_f in js_item_f.items():
-                                    detalhe_alugado_form[pid_f][k_f] = detalhe_alugado_form[pid_f].get(k_f, 0) + v_f
-
                 # Balões de disponibilidade por categoria E por produto individual, para o período escolhido
                 df_disp_form = pd.DataFrame(produtos_disp.data)
                 df_disp_form['Categoria'] = df_disp_form['nome'].apply(definir_categoria)
-                df_disp_form['Disponivel'] = df_disp_form.apply(lambda r: r['quantidade_estoque'] - qtd_alugada_form.get(r['id'], 0), axis=1)
+                df_disp_form['Disponivel'] = df_disp_form.apply(lambda r: disponivel_produto_periodo(r, reservado_total_form, reservado_detalhe_form), axis=1)
                 categorias_form = sorted(df_disp_form['Categoria'].unique())
 
                 if categorias_form:
@@ -1411,46 +1514,44 @@ else:
                         colunas = [col1, col2, col3]
                         
                         for index, prod in enumerate(prods_cat):
-                            if prod['quantidade_estoque'] > 0:
-                                js_estoque = safe_json_load(prod.get('observacao'))
+                            js_estoque = safe_json_load(prod.get('observacao'))
+
+                            # Se for um KIT com JSON (Letras ou Numeros)
+                            if js_estoque:
+                                st.markdown(f"🔠 **{prod['nome']}** - *Especifique as peças abaixo:*")
+                                cols_k = st.columns(10)
+                                idx = 0
                                 
-                                # Se for um KIT com JSON (Letras ou Numeros)
-                                if js_estoque:
-                                    st.markdown(f"🔠 **{prod['nome']}** - *Especifique as peças abaixo:*")
-                                    cols_k = st.columns(10)
-                                    idx = 0
-                                    
-                                    # Lista temporária para somar o total de peças selecionadas
-                                    sub_totais = []
-                                    alugados_prod_kit = detalhe_alugado_form.get(prod['id'], {})
-                                    
-                                    for k, max_v in js_estoque.items():
-                                        disponivel_k = max_v - alugados_prod_kit.get(k, 0)
-                                        if max_v > 0:
-                                            # Renderiza o input já com a disponibilidade real do período escolhido
-                                            qtd_item = cols_k[idx%10].number_input(f"{k} (Livre:{max(0, disponivel_k)})", min_value=0, max_value=max(0, disponivel_k), key=f"aloc_{prod['id']}_{k}")
-                                            quantidades_selecionadas[f"{prod['id']}_{k}"] = qtd_item
-                                            sub_totais.append(qtd_item)
-                                            idx += 1
-                                    
-                                    # Calcula e exibe o total dinamicamente
-                                    total_selecionado = sum(sub_totais)
-                                    if total_selecionado > 0:
-                                        st.info(f"🔢 **Total de peças selecionadas neste Kit:** {total_selecionado}")
-                                    
-                                    st.markdown("---")
-                                    
-                                # Se for produto Normal
-                                else:
-                                    with colunas[index % 3]:
-                                        help_t = prod.get('observacao', '')
-                                        if not isinstance(help_t, str):
-                                            help_t = None
-                                        disponivel_normal = max(0, prod['quantidade_estoque'] - qtd_alugada_form.get(prod['id'], 0))
-                                        quantidades_selecionadas[f"{prod['id']}_NORMAL"] = st.number_input(
-                                            f"{prod['nome']} (Livre no período: {disponivel_normal})",
-                                            min_value=0, max_value=disponivel_normal, help=help_t, key=f"form_prod_{prod['id']}"
-                                        )
+                                # Lista temporária para somar o total de peças selecionadas
+                                sub_totais = []
+                                
+                                for k, max_v in js_estoque.items():
+                                    if max_v > 0:
+                                        disponivel_k = disponivel_subitem_periodo(prod, k, reservado_detalhe_form)
+                                        # Renderiza o input já com a disponibilidade real do período escolhido
+                                        qtd_item = cols_k[idx%10].number_input(f"{k} (Livre:{max(0, disponivel_k)})", min_value=0, max_value=max(0, disponivel_k), key=f"aloc_{prod['id']}_{k}")
+                                        quantidades_selecionadas[f"{prod['id']}_{k}"] = qtd_item
+                                        sub_totais.append(qtd_item)
+                                        idx += 1
+                                
+                                # Calcula e exibe o total dinamicamente
+                                total_selecionado = sum(sub_totais)
+                                if total_selecionado > 0:
+                                    st.info(f"🔢 **Total de peças selecionadas neste Kit:** {total_selecionado}")
+                                
+                                st.markdown("---")
+                                
+                            # Se for produto Normal
+                            else:
+                                with colunas[index % 3]:
+                                    help_t = prod.get('observacao', '')
+                                    if not isinstance(help_t, str):
+                                        help_t = None
+                                    disponivel_normal = max(0, disponivel_produto_periodo(prod, reservado_total_form, reservado_detalhe_form))
+                                    quantidades_selecionadas[f"{prod['id']}_NORMAL"] = st.number_input(
+                                        f"{prod['nome']} (Livre no período: {disponivel_normal})",
+                                        min_value=0, max_value=disponivel_normal, help=help_t, key=f"form_prod_{prod['id']}"
+                                    )
                         st.write("---") 
                 else:
                     st.info("Nenhum produto cadastrado com estoque.")
@@ -1460,6 +1561,44 @@ else:
                         st.error("Preencha o Título e Cliente.")
                     else:
                         try:
+                            # Revalida a disponibilidade no exato momento do clique (evita over-booking por
+                            # condição de corrida com outro cadastro feito ao mesmo tempo)
+                            reservado_total_final, reservado_detalhe_final = calcular_reservado_periodo(emp_id, data_inicio, data_fim)
+                            erros_disponibilidade_novo = []
+
+                            alocacoes_agrupadas = {}
+                            for key, qtd in quantidades_selecionadas.items():
+                                if qtd > 0:
+                                    p_id_str, sub_item = key.split("_", 1)
+                                    p_id = int(p_id_str)
+                                    if p_id not in alocacoes_agrupadas:
+                                        alocacoes_agrupadas[p_id] = {'total': 0, 'detalhes': {}}
+                                    alocacoes_agrupadas[p_id]['total'] += qtd
+                                    if sub_item != "NORMAL":
+                                        alocacoes_agrupadas[p_id]['detalhes'][sub_item] = qtd
+
+                            for p_id, info in alocacoes_agrupadas.items():
+                                prod_info_check = dict_produtos[p_id]
+                                if info['detalhes']:
+                                    for k, v in info['detalhes'].items():
+                                        livre_real = disponivel_subitem_periodo(prod_info_check, k, reservado_detalhe_final)
+                                        if v > livre_real:
+                                            erros_disponibilidade_novo.append(
+                                                f"{prod_info_check['nome']} ({k}): você pediu {v}, mas só há {max(0, livre_real)} disponível para essa data."
+                                            )
+                                else:
+                                    livre_real = disponivel_produto_periodo(prod_info_check, reservado_total_final, reservado_detalhe_final)
+                                    if info['total'] > livre_real:
+                                        erros_disponibilidade_novo.append(
+                                            f"{prod_info_check['nome']}: você pediu {info['total']}, mas só há {max(0, livre_real)} disponível para essa data."
+                                        )
+
+                            if erros_disponibilidade_novo:
+                                st.error("❌ Não é possível alugar mais do que o disponível em estoque para essa data. Reduza a quantidade dos itens abaixo:")
+                                for erro_disp_novo in erros_disponibilidade_novo:
+                                    st.warning(erro_disp_novo)
+                                st.stop()
+
                             contato_cliente_formatado = formatar_telefone_br(contato_cliente)
                             try:
                                 novo_cliente = supabase.table("clientes_eventos").insert({"empresa_id": emp_id, "nome": nome_cliente, "contato": contato_cliente_formatado}).execute()
@@ -1483,17 +1622,6 @@ else:
                             }).execute()
                             evento_id_gerado = novo_evento.data[0]['id']
 
-                            alocacoes_agrupadas = {}
-                            for key, qtd in quantidades_selecionadas.items():
-                                if qtd > 0:
-                                    p_id_str, sub_item = key.split("_", 1)
-                                    p_id = int(p_id_str)
-                                    if p_id not in alocacoes_agrupadas:
-                                        alocacoes_agrupadas[p_id] = {'total': 0, 'detalhes': {}}
-                                    alocacoes_agrupadas[p_id]['total'] += qtd
-                                    if sub_item != "NORMAL":
-                                        alocacoes_agrupadas[p_id]['detalhes'][sub_item] = qtd
-
                             data_hora = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
                             
                             for p_id, info in alocacoes_agrupadas.items():
@@ -1503,19 +1631,11 @@ else:
                                 # Salva no evento
                                 supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "produto_id": p_id, "quantidade": qtd_total, "observacao": obs_json_evento}).execute()
                                 
-                                # Desconta do estoque geral e do JSON
+                                # NOTA: 'produtos.quantidade_estoque' representa o estoque FÍSICO TOTAL e não é mais
+                                # decrementado aqui. A disponibilidade por período é sempre recalculada a partir dos
+                                # itens_evento ativos que se cruzam com a data (ver calcular_reservado_periodo).
                                 prod_info = dict_produtos[p_id]
-                                novo_estoque = prod_info['quantidade_estoque'] - qtd_total
-                                nova_obs_json = prod_info.get('observacao', '')
-                                
-                                if info['detalhes'] and safe_json_load(prod_info['observacao']):
-                                    estoque_atual = safe_json_load(prod_info['observacao'])
-                                    for k, v in info['detalhes'].items():
-                                        estoque_atual[k] = max(0, estoque_atual.get(k, 0) - v)
-                                    nova_obs_json = json.dumps(estoque_atual)
-                                    
-                                supabase.table("produtos").update({"quantidade_estoque": novo_estoque, "observacao": nova_obs_json}).eq("id", p_id).execute()
-                                
+
                                 desc_detalhe = f" ({obs_json_evento})" if obs_json_evento else ""
                                 texto_hist = f"🟢 ALOCAÇÃO INICIAL: Adicionou {qtd_total}x {prod_info['nome']}{desc_detalhe}."
                                 supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "descricao": texto_hist, "data_registro": data_hora}).execute()
@@ -1556,42 +1676,11 @@ else:
                     return val if val else ""
                 df_produtos['Detalhes/Inventário'] = df_produtos['observacao'].apply(format_obs)
                 df_produtos['Status'] = df_produtos['quantidade_estoque'].apply(status_cor)
-                # Trocando 'data_fim' por 'data_fim_alocacao'
-                eventos = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
-                eventos_no_periodo = []
 
-                if eventos.data:
-                    for ev in eventos.data:
-                        # Pula eventos antigos que não têm essas datas preenchidas no banco
-                        if not ev.get('data_inicio') or not ev.get('data_fim_alocacao'):
-                            continue
-                        ev_inicio = datetime.strptime(ev['data_inicio'].split("T")[0], "%Y-%m-%d").date()
-                        ev_fim = datetime.strptime(ev['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
-                        if (ev_inicio <= data_fim_f) and (ev_fim >= data_inicio_f):
-                            eventos_no_periodo.append(ev['id'])
-                
-
-                qtd_alugada = {}
-                detalhe_alugado = {}
-                if eventos_no_periodo:
-                    itens = supabase.table("itens_evento").select("produto_id, quantidade, observacao").in_("evento_id", eventos_no_periodo).execute()
-                    if itens.data:
-
-                        for item in itens.data:
-
-                            pid = item['produto_id']
-
-                            qtd_alugada[pid] = qtd_alugada.get(pid, 0) + item['quantidade']
-
-                            js_item = safe_json_load(item['observacao'])
-
-                            if js_item:
-
-                                if pid not in detalhe_alugado: detalhe_alugado[pid] = {}
-
-                                for k, v in js_item.items():
-
-                                    detalhe_alugado[pid][k] = detalhe_alugado[pid].get(k, 0) + v
+                # Disponibilidade sempre calculada a partir do estoque físico total (constante) menos o que
+                # está reservado em eventos que se cruzam com o período escolhido - nunca "some" do estoque
+                # depois que a data do evento já passou.
+                qtd_alugada, detalhe_alugado = calcular_reservado_periodo(emp_id, data_inicio_f, data_fim_f)
 
                 def calcular_disponivel(row): return row['quantidade_estoque'] - qtd_alugada.get(row['id'], 0)
                 def calc_livres_detalhe(row):
