@@ -137,6 +137,14 @@ MP_ACCESS_TOKEN = st.secrets.get("MP_ACCESS_TOKEN", "COLOQUE_SEU_ACCESS_TOKEN_DO
 URL_BASE_SISTEMA = st.secrets.get("URL_BASE_SISTEMA", "http://localhost:8501")
 VALOR_ASSINATURA_MENSAL = 49.90
 
+# ==========================================
+# CONFIGURAÇÕES GOOGLE (MAPS + AGENDA)
+# ==========================================
+GOOGLE_MAPS_API_KEY = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
+GOOGLE_CLIENT_ID = st.secrets.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = st.secrets.get("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email"
+
 @st.cache_resource
 def init_connection(): return create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -212,6 +220,8 @@ def confirmar_email_por_link():
     except Exception: pass
 
 confirmar_email_por_link()
+if st.query_params.get("code") and st.query_params.get("state"):
+    processar_callback_google()
 
 def criar_preferencia_pagamento_mp(usuario_id, email_cliente, descricao):
     url = "https://api.mercadopago.com/checkout/preferences"
@@ -239,6 +249,120 @@ def ativar_conta_apos_pagamento(usuario_id, metodo):
         empresa_id_pagamento = resultado_user.data[0]['empresa_id']
         supabase.table("assinaturas").update({"data_vencimento": novo_venc.strftime("%Y-%m-%d")}).eq("empresa_id", empresa_id_pagamento).execute()
     supabase.table("usuarios").update({"ativo": True, "metodo_pagamento": metodo}).eq("id", usuario_id).execute()
+
+# ==========================================
+# INTEGRAÇÃO COM GOOGLE AGENDA (OAuth2 por usuário)
+# ==========================================
+def gerar_url_autorizacao_google(usuario_id):
+    from urllib.parse import urlencode
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": URL_BASE_SISTEMA,
+        "response_type": "code",
+        "scope": GOOGLE_CALENDAR_SCOPE,
+        "access_type": "offline",
+        "include_granted_scopes": "true",
+        "prompt": "consent",
+        "state": str(usuario_id),
+    }
+    return f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+
+def processar_callback_google():
+    try:
+        code_param = st.query_params.get("code")
+        state_param = st.query_params.get("state")
+        if code_param and state_param:
+            resp = requests.post("https://oauth2.googleapis.com/token", data={
+                "code": code_param, "client_id": GOOGLE_CLIENT_ID, "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri": URL_BASE_SISTEMA, "grant_type": "authorization_code"
+            }, timeout=15)
+            dados_token = resp.json()
+            refresh_token_novo = dados_token.get("refresh_token")
+            usuario_id_google = int(state_param)
+            if refresh_token_novo and dados_token.get("access_token"):
+                try:
+                    info_resp = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {dados_token.get('access_token')}"}, timeout=15)
+                    email_google_conectado = info_resp.json().get("email", "")
+                except Exception:
+                    email_google_conectado = ""
+                supabase.table("usuarios").update({"google_refresh_token": refresh_token_novo, "google_email_conectado": email_google_conectado}).eq("id", usuario_id_google).execute()
+                st.session_state['sucesso_msg'] = "GOOGLE AGENDA CONECTADA COM SUCESSO!"
+            else:
+                st.session_state['erro_google_msg'] = "Não recebemos permissão de acesso contínuo do Google. Remova o acesso em myaccount.google.com/permissions e tente conectar novamente."
+            st.query_params.clear()
+            st.rerun()
+    except Exception as e:
+        st.session_state['erro_google_msg'] = f"Erro ao conectar Google Agenda: {e}"
+        try: st.query_params.clear()
+        except Exception: pass
+
+def obter_access_token_google(refresh_token):
+    resp = requests.post("https://oauth2.googleapis.com/token", data={
+        "refresh_token": refresh_token, "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET, "grant_type": "refresh_token"
+    }, timeout=15)
+    resp.raise_for_status()
+    return resp.json()["access_token"]
+
+def criar_ou_atualizar_evento_google_agenda(refresh_token, evento_dict, google_event_id=None):
+    access_token = obter_access_token_google(refresh_token)
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    data_inicio_ev = str(evento_dict['data_inicio']).split("T")[0]
+    data_fim_ev = str(evento_dict.get('data_fim_alocacao') or data_inicio_ev).split("T")[0]
+    data_fim_evento_dt = (datetime.strptime(data_fim_ev, "%Y-%m-%d") + relativedelta(days=1)).strftime("%Y-%m-%d")
+    body = {
+        "summary": f"🎉 Evento: {evento_dict.get('descricao', 'Evento')}",
+        "description": (evento_dict.get('observacao') or ""),
+        "start": {"date": data_inicio_ev},
+        "end": {"date": data_fim_evento_dt},
+        "reminders": {"useDefault": False, "overrides": [
+            {"method": "email", "minutes": 24 * 60},
+            {"method": "email", "minutes": 60},
+            {"method": "popup", "minutes": 60},
+        ]}
+    }
+    if google_event_id:
+        url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{google_event_id}"
+        resp = requests.put(url, headers=headers, json=body, timeout=15)
+    else:
+        url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+        resp = requests.post(url, headers=headers, json=body, timeout=15)
+    resp.raise_for_status()
+    return resp.json().get("id")
+
+def sincronizar_evento_google_agenda_silencioso(usuario_id_dono, evento_dict, google_event_id_existente=None):
+    """Tenta criar/atualizar o evento na Google Agenda do usuário; falha silenciosamente se não conectado."""
+    try:
+        u = supabase.table("usuarios").select("google_refresh_token").eq("id", usuario_id_dono).execute()
+        if not u.data or not u.data[0].get("google_refresh_token"): return None
+        refresh_token_u = u.data[0]["google_refresh_token"]
+        return criar_ou_atualizar_evento_google_agenda(refresh_token_u, evento_dict, google_event_id_existente)
+    except Exception:
+        return None
+
+# ==========================================
+# GOOGLE MAPS - DISTÂNCIA E ROTA (para Orçamento)
+# ==========================================
+def calcular_distancia_google_maps(origem, destino):
+    url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+    params = {"origins": origem, "destinations": destino, "key": GOOGLE_MAPS_API_KEY, "language": "pt-BR", "units": "metric"}
+    resp = requests.get(url, params=params, timeout=15)
+    dados = resp.json()
+    if dados.get("status") != "OK":
+        raise Exception(dados.get("error_message") or f"Erro na API do Google Maps: {dados.get('status')}")
+    elemento = dados["rows"][0]["elements"][0]
+    if elemento.get("status") != "OK":
+        raise Exception(f"Não foi possível calcular a rota entre '{origem}' e '{destino}'.")
+    km = elemento["distance"]["value"] / 1000
+    duracao_min = elemento["duration"]["value"] / 60
+    return km, duracao_min
+
+def montar_url_embed_rota_google_maps(origem, destino, waypoints=None):
+    from urllib.parse import quote
+    url = f"https://www.google.com/maps/embed/v1/directions?key={GOOGLE_MAPS_API_KEY}&origin={quote(origem)}&destination={quote(destino)}&mode=driving"
+    if waypoints:
+        url += "&waypoints=" + quote("|".join(waypoints))
+    return url
 
 if 'logado' not in st.session_state:
     st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': ''})
@@ -340,6 +464,10 @@ else:
         mostrar_popup(st.session_state['sucesso_msg'])
         del st.session_state['sucesso_msg']
 
+    if 'erro_google_msg' in st.session_state:
+        mostrar_popup(st.session_state['erro_google_msg'], tipo="erro")
+        del st.session_state['erro_google_msg']
+
     check_user = supabase.table("usuarios").select("ativo").eq("id", st.session_state['usuario_id']).execute()
     if check_user.data and not check_user.data[0]['ativo']:
         mostrar_popup("Sua sessão foi desconectada pelo Administrador.", tipo="erro")
@@ -347,15 +475,96 @@ else:
         st.rerun()
 
     st.sidebar.image("logo.jpg", use_container_width=True)
+    if 'ver_perfil' not in st.session_state: st.session_state['ver_perfil'] = False
+    if st.sidebar.button("👤 Perfil"):
+        st.session_state['ver_perfil'] = not st.session_state['ver_perfil']
+        st.rerun()
     st.sidebar.button("Sair / Desconectar", on_click=fazer_logout) 
     st.sidebar.markdown("---")
 
-    if st.session_state['perfil'] == 'admin_geral': opcoes_menu = ["👑 Gestão de Assinantes", "📊 Dashboard", "📅 Agendamento", "📦 Estoque", "🛒 Compras", "💰 Faturamento"]
-    else: opcoes_menu = ["📊 Dashboard", "📅 Agendamento", "📦 Estoque", "🛒 Compras", "💰 Faturamento"]
+    if st.session_state['perfil'] == 'admin_geral': opcoes_menu = ["👑 Gestão de Assinantes", "📊 Dashboard", "📅 Agendamento", "📦 Estoque", "🛒 Compras", "💰 Faturamento", "🧳 Orçamento"]
+    else: opcoes_menu = ["📊 Dashboard", "📅 Agendamento", "📦 Estoque", "🛒 Compras", "💰 Faturamento", "🧳 Orçamento"]
 
     menu = st.sidebar.radio("Módulos do Sistema", opcoes_menu)
     emp_id = st.session_state.get('empresa_id')
     if not emp_id: st.stop()
+
+    # ==========================================
+    # PÁGINA DE PERFIL (dados do usuário + Google Agenda)
+    # ==========================================
+    if st.session_state['ver_perfil']:
+        st.title("👤 Meu Perfil")
+        if st.button("⬅️ Voltar ao Sistema"):
+            st.session_state['ver_perfil'] = False
+            st.rerun()
+        st.markdown("---")
+
+        dados_usuario_resp = supabase.table("usuarios").select("id, nome, email, google_refresh_token, google_email_conectado").eq("id", st.session_state['usuario_id']).execute()
+        dados_usuario_atual = dados_usuario_resp.data[0] if dados_usuario_resp.data else {}
+
+        st.subheader("📇 Meus Dados Cadastrados")
+        with st.form("form_editar_perfil"):
+            novo_nome_perfil = st.text_input("Nome", value=dados_usuario_atual.get('nome') or "")
+            novo_email_perfil = st.text_input("E-mail", value=dados_usuario_atual.get('email') or "")
+            st.caption("Alterar o e-mail muda o login que você usa para entrar no sistema.")
+            senha_atual_perfil = st.text_input("Confirme sua senha atual para salvar", type="password")
+            salvar_perfil = st.form_submit_button("💾 Salvar Alterações")
+
+        if salvar_perfil:
+            if not novo_nome_perfil.strip() or not novo_email_perfil.strip():
+                mostrar_popup("Preencha nome e e-mail.", tipo="erro")
+            elif not senha_atual_perfil:
+                mostrar_popup("Confirme sua senha atual para salvar as alterações.", tipo="erro")
+            else:
+                senha_check_resp = supabase.table("usuarios").select("senha_hash").eq("id", st.session_state['usuario_id']).execute()
+                senha_hash_atual = senha_check_resp.data[0]['senha_hash'] if senha_check_resp.data else None
+                if senha_atual_perfil != senha_hash_atual:
+                    mostrar_popup("Senha incorreta.", tipo="erro")
+                else:
+                    email_ja_existe = supabase.table("usuarios").select("id").eq("email", novo_email_perfil).neq("id", st.session_state['usuario_id']).execute()
+                    if email_ja_existe.data:
+                        mostrar_popup("Já existe outra conta usando esse e-mail.", tipo="erro")
+                    else:
+                        supabase.table("usuarios").update({"nome": novo_nome_perfil, "email": novo_email_perfil}).eq("id", st.session_state['usuario_id']).execute()
+                        st.session_state['nome_usuario'] = novo_nome_perfil
+                        mostrar_popup("PERFIL ATUALIZADO COM SUCESSO!")
+                        st.rerun()
+
+        st.markdown("---")
+        st.subheader("🔑 Alterar Senha")
+        with st.form("form_trocar_senha_perfil"):
+            senha_atual_troca = st.text_input("Senha Atual", type="password", key="senha_atual_troca_perfil")
+            senha_nova_troca = st.text_input("Nova Senha", type="password", key="senha_nova_troca_perfil")
+            senha_nova_troca_confirma = st.text_input("Confirme a Nova Senha", type="password", key="senha_nova_confirma_perfil")
+            trocar_senha_btn = st.form_submit_button("🔒 Alterar Senha")
+        if trocar_senha_btn:
+            senha_check_resp2 = supabase.table("usuarios").select("senha_hash").eq("id", st.session_state['usuario_id']).execute()
+            senha_hash_atual2 = senha_check_resp2.data[0]['senha_hash'] if senha_check_resp2.data else None
+            if senha_atual_troca != senha_hash_atual2:
+                mostrar_popup("Senha atual incorreta.", tipo="erro")
+            elif len(senha_nova_troca) < 7:
+                mostrar_popup("A nova senha precisa ter no mínimo 7 caracteres.", tipo="erro")
+            elif senha_nova_troca != senha_nova_troca_confirma:
+                mostrar_popup("As senhas não coincidem.", tipo="erro")
+            else:
+                supabase.table("usuarios").update({"senha_hash": senha_nova_troca}).eq("id", st.session_state['usuario_id']).execute()
+                mostrar_popup("SENHA ALTERADA COM SUCESSO!")
+
+        st.markdown("---")
+        st.subheader("📅 Google Agenda")
+        if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+            st.warning("⚠️ Integração com Google Agenda ainda não configurada pelo administrador do sistema (faltam GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET nos secrets).")
+        elif dados_usuario_atual.get('google_refresh_token'):
+            st.success(f"✅ Conectado como **{dados_usuario_atual.get('google_email_conectado') or 'conta Google'}**. Seus eventos serão adicionados automaticamente à sua Google Agenda, com lembrete 1 dia antes e no dia.")
+            if st.button("🔌 Desconectar Google Agenda"):
+                supabase.table("usuarios").update({"google_refresh_token": None, "google_email_conectado": None}).eq("id", st.session_state['usuario_id']).execute()
+                mostrar_popup("GOOGLE AGENDA DESCONECTADA.")
+                st.rerun()
+        else:
+            st.info("Conecte sua Google Agenda para receber lembretes automáticos (e-mail e pop-up) dos eventos cadastrados.")
+            url_auth_google = gerar_url_autorizacao_google(st.session_state['usuario_id'])
+            st.link_button("🔗 Conectar Google Agenda", url_auth_google)
+        st.stop()
 
     def safe_json_load(val):
         if val and isinstance(val, str) and val.startswith('{'):
@@ -663,6 +872,18 @@ else:
                             nome_usuario_pdf = st.session_state.get('nome_usuario') or "Usuário do Sistema"
                             buffer_pdf = gerar_recibo_evento_pdf(ev, itens_ev.data or [], dict_produtos, nome_cliente_ev, contato_cliente_ev, nome_usuario_pdf)
                             st.download_button("📄 Baixar Recibo de Confirmação (PDF)", data=buffer_pdf, file_name=f"recibo_evento_{ev['id']}.pdf", mime="application/pdf", key=f"recibo_pdf_{ev['id']}")
+
+                        if ev.get('google_event_id'):
+                            st.caption("📅 Este evento já está sincronizado com a sua Google Agenda.")
+                        if st.button("📅 Sincronizar com Google Agenda", key=f"sync_google_{ev['id']}"):
+                            novo_id_google = sincronizar_evento_google_agenda_silencioso(st.session_state['usuario_id'], ev, ev.get('google_event_id'))
+                            if novo_id_google:
+                                try: supabase.table("eventos").update({"google_event_id": novo_id_google}).eq("id", ev['id']).execute()
+                                except Exception: pass
+                                mostrar_popup("EVENTO SINCRONIZADO COM A GOOGLE AGENDA!")
+                                st.rerun()
+                            else:
+                                mostrar_popup("Conecte sua Google Agenda em 'Perfil' primeiro.", tipo="erro")
                     
                     with tab_add:
                         produtos_disp_edit = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao").eq("empresa_id", emp_id).execute()
@@ -813,6 +1034,12 @@ else:
                             else:
                                 supabase.table("eventos").update({"data_inicio": str(nova_data_inicio_edit), "data_fim": str(nova_data_fim_edit), "data_fim_alocacao": str(nova_data_fim_edit), "valor_total": novo_valor_edit, "observacao": novo_local_edit}).eq("id", ev['id']).execute()
                                 if ev.get('cliente_id'): supabase.table("clientes_eventos").update({"nome": novo_nome_cliente_edit, "contato": novo_contato_cliente_edit}).eq("id", ev['cliente_id']).execute()
+                                evento_atualizado_google = dict(ev)
+                                evento_atualizado_google.update({"data_inicio": str(nova_data_inicio_edit), "data_fim_alocacao": str(nova_data_fim_edit), "observacao": novo_local_edit})
+                                novo_id_google_edit = sincronizar_evento_google_agenda_silencioso(st.session_state['usuario_id'], evento_atualizado_google, ev.get('google_event_id'))
+                                if novo_id_google_edit and not ev.get('google_event_id'):
+                                    try: supabase.table("eventos").update({"google_event_id": novo_id_google_edit}).eq("id", ev['id']).execute()
+                                    except Exception: pass
                                 data_hora_edit = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
                                 supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": f"✏️ EDIÇÃO DE DADOS. Justificativa: {justificativa_edit}", "data_registro": data_hora_edit}).execute()
                                 mostrar_popup("EDIÇÃO CONCLUÍDA COM SUCESSO!")
@@ -911,6 +1138,11 @@ else:
                                 "valor_total": valor_evento
                             }).execute()
                             evento_id_gerado = novo_evento.data[0]['id']
+
+                            google_event_id_novo = sincronizar_evento_google_agenda_silencioso(st.session_state['usuario_id'], novo_evento.data[0])
+                            if google_event_id_novo:
+                                try: supabase.table("eventos").update({"google_event_id": google_event_id_novo}).eq("id", evento_id_gerado).execute()
+                                except Exception: pass
 
                             data_hora = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
                             for p_id, info in alocacoes_agrupadas.items():
@@ -1560,3 +1792,160 @@ else:
                 buffer_pdf_fat.seek(0)
                 st.download_button("📄 Baixar PDF do Período", data=buffer_pdf_fat, file_name=f"faturamento_{ano_selecionado}.pdf", mime="application/pdf")
             else: st.caption("⚠️ Para gerar o PDF, instale a biblioteca: `pip install reportlab`")
+
+    elif menu == "🧳 Orçamento":
+        st.title("🧳 Orçamento de Viagem / Evento")
+        st.caption("Monte o orçamento de uma viagem para um evento: distância, combustível, alimentação, ajudantes e outras despesas, e veja o lucro estimado.")
+
+        if not GOOGLE_MAPS_API_KEY:
+            st.warning("⚠️ O cálculo automático de KM precisa de uma chave do Google Maps (GOOGLE_MAPS_API_KEY nos secrets). Sem ela, você ainda pode digitar o KM manualmente abaixo.")
+
+        st.markdown("### 📍 Trechos da Viagem")
+        qtd_trechos = st.number_input("Quantas paradas/trechos essa viagem terá?", min_value=1, max_value=10, value=st.session_state.get('orc_qtd_trechos', 1), step=1, key="orc_qtd_trechos")
+
+        trechos_info = []
+        km_total_calculado = 0.0
+        duracao_total_calculada = 0.0
+
+        for i in range(int(qtd_trechos)):
+            st.markdown(f"**Trecho {i+1}**")
+            col_o, col_d, col_km = st.columns([2, 2, 1.3])
+            with col_o: origem_i = st.text_input(f"Saída (Trecho {i+1})", key=f"orc_origem_{i}", placeholder="Ex: Recife, PE")
+            with col_d: destino_i = st.text_input(f"Destino (Trecho {i+1})", key=f"orc_destino_{i}", placeholder="Ex: Caruaru, PE")
+            with col_km:
+                km_manual_i = st.number_input("KM (manual, opcional)", min_value=0.0, value=0.0, step=1.0, key=f"orc_km_manual_{i}")
+            trechos_info.append({"origem": origem_i, "destino": destino_i, "km_manual": km_manual_i})
+
+        if st.button("📏 Calcular Distâncias Automaticamente"):
+            if not GOOGLE_MAPS_API_KEY:
+                mostrar_popup("Configure a GOOGLE_MAPS_API_KEY para calcular automaticamente, ou preencha o KM manual de cada trecho.", tipo="erro")
+            else:
+                resultados_km = {}
+                erro_algum = False
+                for i, trecho in enumerate(trechos_info):
+                    if trecho["origem"].strip() and trecho["destino"].strip():
+                        try:
+                            km_i, duracao_i = calcular_distancia_google_maps(trecho["origem"], trecho["destino"])
+                            resultados_km[i] = {"km": km_i, "duracao_min": duracao_i}
+                        except Exception as e:
+                            erro_algum = True
+                            mostrar_popup(f"Trecho {i+1}: {e}", tipo="erro")
+                st.session_state['orc_resultados_km'] = resultados_km
+                if not erro_algum and resultados_km:
+                    mostrar_popup("DISTÂNCIAS CALCULADAS COM SUCESSO!")
+                st.rerun()
+
+        resultados_km_salvos = st.session_state.get('orc_resultados_km', {})
+        st.markdown("---")
+        st.markdown("### 📊 Resumo das Distâncias")
+        for i, trecho in enumerate(trechos_info):
+            km_usado_i = trecho["km_manual"] if trecho["km_manual"] > 0 else resultados_km_salvos.get(i, {}).get("km", 0)
+            duracao_usada_i = resultados_km_salvos.get(i, {}).get("duracao_min", 0)
+            km_total_calculado += km_usado_i
+            duracao_total_calculada += duracao_usada_i
+            if km_usado_i > 0:
+                texto_duracao = f" (~{duracao_usada_i/60:.1f}h de viagem)" if duracao_usada_i > 0 else ""
+                st.write(f"🚗 Trecho {i+1}: **{trecho['origem'] or '-'} → {trecho['destino'] or '-'}** — {km_usado_i:.1f} km{texto_duracao}")
+
+        col_res1, col_res2 = st.columns(2)
+        col_res1.metric("📏 Distância Total (ida)", f"{km_total_calculado:.1f} km")
+        col_res2.metric("⏱️ Tempo Estimado de Viagem", f"{duracao_total_calculada/60:.1f} h" if duracao_total_calculada > 0 else "—")
+
+        primeira_origem = trechos_info[0]["origem"] if trechos_info else ""
+        ultimo_destino = trechos_info[-1]["destino"] if trechos_info else ""
+        waypoints_meio = [t["destino"] for t in trechos_info[:-1] if t["destino"].strip()]
+        if GOOGLE_MAPS_API_KEY and primeira_origem.strip() and ultimo_destino.strip():
+            st.markdown("#### 🗺️ Rota no Mapa")
+            url_mapa_embed = montar_url_embed_rota_google_maps(primeira_origem, ultimo_destino, waypoints_meio)
+            st.components.v1.iframe(url_mapa_embed, height=400)
+
+        st.markdown("---")
+        st.markdown("### ⛽ Combustível")
+        col_c1, col_c2 = st.columns(2)
+        with col_c1: preco_combustivel_litro = st.number_input("Valor do Combustível (R$/litro)", min_value=0.0, step=0.10, value=6.00, format="%.2f", key="orc_preco_comb")
+        with col_c2: consumo_veiculo_kml = st.number_input("Consumo do Veículo (km por litro)", min_value=0.1, step=0.5, value=10.0, format="%.1f", key="orc_consumo")
+
+        ida_e_volta = st.checkbox("Considerar ida E volta (dobra o KM total)", value=True, key="orc_ida_volta")
+        km_para_calculo = km_total_calculado * 2 if ida_e_volta else km_total_calculado
+        gasto_combustivel_total = (km_para_calculo / consumo_veiculo_kml) * preco_combustivel_litro if consumo_veiculo_kml > 0 else 0.0
+        st.info(f"⛽ Gasto estimado com combustível ({km_para_calculo:.1f} km): **R$ {formatar_moeda(gasto_combustivel_total)}**")
+
+        st.markdown("---")
+        st.markdown("### 🍽️ Alimentação e Outras Despesas")
+        col_g1, col_g2 = st.columns(2)
+        with col_g1: gasto_alimentacao = st.number_input("Alimentação (R$)", min_value=0.0, step=10.0, value=0.0, format="%.2f", key="orc_alimentacao")
+        with col_g2: gasto_pedagio_hospedagem = st.number_input("Pedágio / Hospedagem (R$)", min_value=0.0, step=10.0, value=0.0, format="%.2f", key="orc_pedagio")
+
+        col_g3, col_g4 = st.columns(2)
+        with col_g3: qtd_ajudantes = st.number_input("Quantidade de Ajudantes", min_value=0, step=1, value=0, key="orc_qtd_ajudantes")
+        with col_g4: valor_diaria_ajudante = st.number_input("Valor por Ajudante (R$)", min_value=0.0, step=10.0, value=0.0, format="%.2f", key="orc_valor_ajudante")
+        gasto_ajudantes_total = qtd_ajudantes * valor_diaria_ajudante
+
+        gasto_outras_despesas = st.number_input("Outras Despesas (R$)", min_value=0.0, step=10.0, value=0.0, format="%.2f", key="orc_outras_despesas")
+        obs_orcamento = st.text_area("Observações do Orçamento", key="orc_observacoes")
+
+        total_despesas_orcamento = gasto_combustivel_total + gasto_alimentacao + gasto_pedagio_hospedagem + gasto_ajudantes_total + gasto_outras_despesas
+
+        st.markdown("---")
+        st.markdown("### 💰 Quanto Cobrar / Lucro Estimado")
+        valor_a_cobrar_evento = st.number_input("Valor que pretende cobrar pelo Evento (R$)", min_value=0.0, step=50.0, value=0.0, format="%.2f", key="orc_valor_cobrar")
+        lucro_estimado_orcamento = valor_a_cobrar_evento - total_despesas_orcamento
+        margem_lucro_pct = (lucro_estimado_orcamento / valor_a_cobrar_evento * 100) if valor_a_cobrar_evento > 0 else 0.0
+
+        col_fin1, col_fin2, col_fin3 = st.columns(3)
+        col_fin1.metric("💸 Total de Despesas", formatar_moeda(total_despesas_orcamento))
+        col_fin2.metric("💰 Lucro Estimado", formatar_moeda(lucro_estimado_orcamento))
+        col_fin3.metric("📈 Margem de Lucro", f"{margem_lucro_pct:.1f}%")
+
+        if lucro_estimado_orcamento < 0:
+            st.error("⚠️ Com esse valor cobrado, o evento daria prejuízo considerando as despesas estimadas.")
+        elif valor_a_cobrar_evento > 0 and margem_lucro_pct < 20:
+            st.warning("💡 A margem de lucro está baixa. Considere revisar o valor cobrado ou reduzir despesas.")
+
+        st.markdown("---")
+        nome_orcamento_salvar = st.text_input("Nome/Título deste Orçamento (Ex: Casamento em Caruaru)", key="orc_nome_salvar")
+        if st.button("💾 Salvar Orçamento"):
+            if not nome_orcamento_salvar.strip():
+                mostrar_popup("Dê um nome para este orçamento antes de salvar.", tipo="erro")
+            else:
+                try:
+                    supabase.table("orcamentos").insert({
+                        "empresa_id": emp_id,
+                        "nome": nome_orcamento_salvar,
+                        "trechos": json.dumps(trechos_info),
+                        "km_total": km_total_calculado,
+                        "preco_combustivel_litro": preco_combustivel_litro,
+                        "consumo_veiculo_kml": consumo_veiculo_kml,
+                        "gasto_combustivel": gasto_combustivel_total,
+                        "gasto_alimentacao": gasto_alimentacao,
+                        "gasto_pedagio_hospedagem": gasto_pedagio_hospedagem,
+                        "gasto_ajudantes": gasto_ajudantes_total,
+                        "gasto_outras_despesas": gasto_outras_despesas,
+                        "total_despesas": total_despesas_orcamento,
+                        "valor_a_cobrar": valor_a_cobrar_evento,
+                        "lucro_estimado": lucro_estimado_orcamento,
+                        "observacao": obs_orcamento,
+                        "data_criacao": datetime.now().strftime("%Y-%m-%d")
+                    }).execute()
+                    mostrar_popup("ORÇAMENTO SALVO COM SUCESSO!")
+                except Exception as e:
+                    mostrar_popup(f"Erro ao salvar (crie a tabela 'orcamentos' no banco): {e}", tipo="erro")
+
+        st.markdown("---")
+        st.markdown("### 📋 Orçamentos Salvos")
+        try:
+            orcamentos_salvos = supabase.table("orcamentos").select("*").eq("empresa_id", emp_id).order("data_criacao", desc=True).execute()
+            if orcamentos_salvos.data:
+                for orc in orcamentos_salvos.data:
+                    with st.expander(f"🧳 {orc.get('nome','-')} — {orc.get('km_total',0):.1f} km — Lucro: R$ {formatar_moeda(orc.get('lucro_estimado'))}"):
+                        st.write(f"**Combustível:** R$ {formatar_moeda(orc.get('gasto_combustivel'))} | **Alimentação:** R$ {formatar_moeda(orc.get('gasto_alimentacao'))} | **Ajudantes:** R$ {formatar_moeda(orc.get('gasto_ajudantes'))} | **Outras:** R$ {formatar_moeda(orc.get('gasto_outras_despesas'))}")
+                        st.write(f"**Total de Despesas:** R$ {formatar_moeda(orc.get('total_despesas'))}  |  **Valor a Cobrar:** R$ {formatar_moeda(orc.get('valor_a_cobrar'))}")
+                        if orc.get('observacao'): st.write(f"**Obs:** {orc.get('observacao')}")
+                        if st.button("🗑️ Excluir Orçamento", key=f"del_orc_{orc['id']}"):
+                            supabase.table("orcamentos").delete().eq("id", orc['id']).execute()
+                            mostrar_popup("ORÇAMENTO EXCLUÍDO!")
+                            st.rerun()
+            else:
+                st.caption("Nenhum orçamento salvo ainda.")
+        except Exception:
+            st.caption("⚠️ A tabela 'orcamentos' ainda não existe no banco. Veja o SQL de criação nas instruções fornecidas.")
