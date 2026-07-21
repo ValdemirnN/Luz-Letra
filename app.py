@@ -2123,6 +2123,45 @@ else:
                 df_despesas_viagem = pd.DataFrame(despesas_viagem_periodo)
                 colunas_desp = [c for c in ["data_despesa", "categoria", "valor", "observacao"] if c in df_despesas_viagem.columns]
                 st.dataframe(df_despesas_viagem[colunas_desp].sort_values("data_despesa", ascending=False), use_container_width=True, hide_index=True)
+
+                st.markdown("##### ✏️ Editar ou excluir um gasto")
+                opcoes_desp = {
+                    f"{d.get('data_despesa','-')} — {d.get('categoria','-')} — R$ {d.get('valor',0):.2f}" + (f" ({d.get('observacao')})" if d.get('observacao') else ""): d['id']
+                    for d in sorted(despesas_viagem_periodo, key=lambda x: x.get('data_despesa') or '', reverse=True)
+                }
+                escolha_desp_txt = st.selectbox("Selecione o lançamento", list(opcoes_desp.keys()), key="select_editar_despesa")
+                desp_selecionada = next(d for d in despesas_viagem_periodo if d['id'] == opcoes_desp[escolha_desp_txt])
+
+                col_ed_d1, col_ed_d2 = st.columns(2)
+                with col_ed_d1:
+                    categoria_edit_desp = st.selectbox(
+                        "Categoria", ["Combustível", "Alimentação", "Outros"],
+                        index=["Combustível", "Alimentação", "Outros"].index(desp_selecionada.get('categoria')) if desp_selecionada.get('categoria') in ["Combustível", "Alimentação", "Outros"] else 0,
+                        key="edit_categoria_despesa"
+                    )
+                with col_ed_d2:
+                    valor_edit_desp = st.number_input("Valor (R$)", min_value=0.0, step=5.0, value=float(desp_selecionada.get('valor') or 0), key="edit_valor_despesa")
+                obs_edit_desp = st.text_input("Observação", value=desp_selecionada.get('observacao') or "", key="edit_obs_despesa")
+                data_edit_desp = st.date_input(
+                    "Data do Gasto",
+                    value=datetime.strptime(str(desp_selecionada.get('data_despesa')).split("T")[0], "%Y-%m-%d").date(),
+                    format="DD/MM/YYYY", key="edit_data_despesa"
+                )
+
+                col_btn_d1, col_btn_d2 = st.columns(2)
+                with col_btn_d1:
+                    if st.button("💾 Salvar Alteração", key="btn_salvar_despesa"):
+                        supabase.table("despesas_viagem").update({
+                            "categoria": categoria_edit_desp, "valor": valor_edit_desp,
+                            "observacao": obs_edit_desp, "data_despesa": str(data_edit_desp)
+                        }).eq("id", desp_selecionada['id']).execute()
+                        st.toast("Gasto atualizado com sucesso!", icon="💾")
+                        st.rerun()
+                with col_btn_d2:
+                    if st.button("🗑️ Excluir Lançamento", key="btn_excluir_despesa"):
+                        supabase.table("despesas_viagem").delete().eq("id", desp_selecionada['id']).execute()
+                        st.toast("Gasto excluído!", icon="🗑️")
+                        st.rerun()
             else:
                 st.caption("Nenhum gasto de viagem registrado neste período.")
 
@@ -2145,9 +2184,48 @@ else:
                     st.rerun()
 
         st.markdown("### 📜 Extrato Financeiro Completo (Lançamentos Avulsos)")
-        fat_lista = supabase.table("faturamento").select("data_pagamento, tipo, descricao, valor").eq("empresa_id", emp_id).order("data_pagamento", desc=True).execute()
+        fat_lista = supabase.table("faturamento").select("id, data_pagamento, tipo, descricao, valor").eq("empresa_id", emp_id).order("data_pagamento", desc=True).execute()
         if fat_lista.data:
-            st.dataframe(pd.DataFrame(fat_lista.data), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(fat_lista.data)[["data_pagamento", "tipo", "descricao", "valor"]], use_container_width=True, hide_index=True)
+
+            with st.expander("✏️ Editar ou excluir um lançamento avulso", expanded=False):
+                opcoes_fat = {
+                    f"{f.get('data_pagamento','-')} — {f.get('tipo','-')} — {f.get('descricao','-')} — R$ {f.get('valor',0):.2f}": f['id']
+                    for f in fat_lista.data
+                }
+                escolha_fat_txt = st.selectbox("Selecione o lançamento", list(opcoes_fat.keys()), key="select_editar_fat")
+                fat_selecionado = next(f for f in fat_lista.data if f['id'] == opcoes_fat[escolha_fat_txt])
+
+                desc_edit_fat = st.text_input("Descrição", value=fat_selecionado.get('descricao') or "", key="edit_desc_fat")
+                col_ef1, col_ef2 = st.columns(2)
+                with col_ef1:
+                    tipo_edit_fat = st.radio(
+                        "Tipo", ["receita", "despesa"], horizontal=True,
+                        index=["receita", "despesa"].index(fat_selecionado.get('tipo')) if fat_selecionado.get('tipo') in ["receita", "despesa"] else 0,
+                        key="edit_tipo_fat"
+                    )
+                with col_ef2:
+                    valor_edit_fat = st.number_input("Valor (R$)", min_value=0.0, value=float(fat_selecionado.get('valor') or 0), key="edit_valor_fat")
+                data_edit_fat = st.date_input(
+                    "Data",
+                    value=datetime.strptime(str(fat_selecionado.get('data_pagamento')).split("T")[0], "%Y-%m-%d").date(),
+                    format="DD/MM/YYYY", key="edit_data_fat"
+                )
+
+                col_btn_f1, col_btn_f2 = st.columns(2)
+                with col_btn_f1:
+                    if st.button("💾 Salvar Alteração", key="btn_salvar_fat"):
+                        supabase.table("faturamento").update({
+                            "descricao": desc_edit_fat, "tipo": tipo_edit_fat,
+                            "valor": valor_edit_fat, "data_pagamento": str(data_edit_fat)
+                        }).eq("id", fat_selecionado['id']).execute()
+                        st.toast("Lançamento atualizado com sucesso!", icon="💾")
+                        st.rerun()
+                with col_btn_f2:
+                    if st.button("🗑️ Excluir Lançamento", key="btn_excluir_fat"):
+                        supabase.table("faturamento").delete().eq("id", fat_selecionado['id']).execute()
+                        st.toast("Lançamento excluído!", icon="🗑️")
+                        st.rerun()
 
         # ------------------------------------------
         # EXPORTAR RELATÓRIO (PDF / EXCEL)
