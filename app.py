@@ -28,7 +28,7 @@ import secrets
 
 try:
     from reportlab.lib.pagesizes import A4
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
+    from reportlab.platypus import SimpleDocTemplate, BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer, Table, TableStyle, Image as RLImage
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
     from reportlab.lib.units import cm
@@ -2208,24 +2208,98 @@ else:
         with col_exp2:
             if REPORTLAB_DISPONIVEL:
                 buffer_pdf_fat = io.BytesIO()
-                doc_fat = SimpleDocTemplate(buffer_pdf_fat, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm, leftMargin=2 * cm, rightMargin=2 * cm)
                 styles_fat = getSampleStyleSheet()
                 story_fat = []
 
                 import os as _os
-                try:
-                    caminho_logo_fat = "logo_sem_fundo.png" if _os.path.exists("logo_sem_fundo.png") else "logo.jpg"
-                    logo_fat = RLImage(caminho_logo_fat, width=6 * cm, height=3 * cm, preserveAspectRatio=True)
-                    logo_fat.hAlign = 'CENTER'
-                    story_fat.append(logo_fat)
-                    story_fat.append(Spacer(1, 12))
-                except Exception:
-                    pass
+                caminho_logo_fat = "logo_sem_fundo.png" if _os.path.exists("logo_sem_fundo.png") else ("logo.jpg" if _os.path.exists("logo.jpg") else None)
 
-                titulo_fat_style = ParagraphStyle('TituloFat', parent=styles_fat['Title'], fontSize=16, alignment=TA_CENTER, spaceAfter=6)
+                COR_DOURADO = colors.HexColor("#FFC107")
+                COR_PRETO = colors.HexColor("#0E0E0E")
+                COR_CINZA_CLARO = colors.HexColor("#F2F2F2")
+                COR_VERDE = colors.HexColor("#1B7F3A")
+                COR_VERMELHO = colors.HexColor("#B3261E")
+                COR_AZUL = colors.HexColor("#1A5FB4")
+
                 periodo_txt = f"{', '.join(meses_selecionados_nomes) if meses_selecionados_nomes else 'Ano inteiro'} de {ano_selecionado}"
-                story_fat.append(Paragraph(f"EXTRATO FINANCEIRO — {periodo_txt}", titulo_fat_style))
-                story_fat.append(Spacer(1, 16))
+
+                # ------------------------------------------
+                # FAIXA DE CABEÇALHO (logo + título, fundo preto) E RODAPÉ, desenhados no canvas de cada página
+                # ------------------------------------------
+                def _desenhar_moldura(canvas_obj, doc_obj):
+                    canvas_obj.saveState()
+                    largura_pagina, altura_pagina = A4
+
+                    # Faixa preta no topo
+                    altura_faixa = 3.2 * cm
+                    canvas_obj.setFillColor(COR_PRETO)
+                    canvas_obj.rect(0, altura_pagina - altura_faixa, largura_pagina, altura_faixa, fill=1, stroke=0)
+
+                    if caminho_logo_fat:
+                        try:
+                            canvas_obj.drawImage(
+                                caminho_logo_fat, 2 * cm, altura_pagina - altura_faixa + 0.35 * cm,
+                                width=3.6 * cm, height=2.5 * cm, preserveAspectRatio=True, mask='auto'
+                            )
+                        except Exception:
+                            pass
+
+                    canvas_obj.setFillColor(COR_DOURADO)
+                    canvas_obj.setFont("Helvetica-Bold", 16)
+                    canvas_obj.drawString(6.2 * cm, altura_pagina - 1.5 * cm, "EXTRATO FINANCEIRO")
+                    canvas_obj.setFillColor(colors.white)
+                    canvas_obj.setFont("Helvetica", 10)
+                    canvas_obj.drawString(6.2 * cm, altura_pagina - 2.15 * cm, f"Período: {periodo_txt}")
+
+                    # Rodapé
+                    canvas_obj.setFillColor(colors.grey)
+                    canvas_obj.setFont("Helvetica", 8)
+                    canvas_obj.drawString(2 * cm, 1.2 * cm, f"Luz & Letra — Emitido em {datetime.now().strftime('%d/%m/%Y às %H:%M')}")
+                    canvas_obj.drawRightString(largura_pagina - 2 * cm, 1.2 * cm, f"Página {doc_obj.page}")
+
+                    canvas_obj.restoreState()
+
+                frame_fat = Frame(2 * cm, 1.8 * cm, A4[0] - 4 * cm, A4[1] - 5.4 * cm, id='corpo')
+                doc_fat = BaseDocTemplate(buffer_pdf_fat, pagesize=A4)
+                doc_fat.addPageTemplates([PageTemplate(id='ComMoldura', frames=[frame_fat], onPage=_desenhar_moldura)])
+
+                story_fat.append(Spacer(1, 10))
+
+                # ------------------------------------------
+                # CARTÕES DE RESUMO (KPIs)
+                # ------------------------------------------
+                estilo_kpi_label = ParagraphStyle('KpiLabel', fontSize=8.5, textColor=colors.white, alignment=TA_CENTER, fontName="Helvetica-Bold")
+                estilo_kpi_valor = ParagraphStyle('KpiValor', fontSize=14, textColor=colors.white, alignment=TA_CENTER, fontName="Helvetica-Bold", spaceBefore=4)
+
+                cartoes = [
+                    ("🎉 RECEITA DE EVENTOS", f"R$ {receita_eventos:.2f}", COR_DOURADO),
+                    ("⛽ GASTOS DE VIAGEM", f"R$ {total_despesas_viagem:.2f}", COR_VERMELHO),
+                    ("🛒 INVESTIMENTO EM COMPRAS", f"R$ {total_investimento_compras:.2f}", COR_AZUL),
+                    ("💰 LUCRO LÍQUIDO", f"R$ {lucro_liquido:.2f}", COR_VERDE if lucro_liquido >= 0 else COR_VERMELHO),
+                ]
+                linha_kpi = [[
+                    Table([[Paragraph(label, estilo_kpi_label)], [Paragraph(valor, estilo_kpi_valor)]],
+                          colWidths=[4.0 * cm],
+                          style=TableStyle([
+                              ('BACKGROUND', (0, 0), (-1, -1), cor),
+                              ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                              ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                              ('TOPPADDING', (0, 0), (-1, -1), 10),
+                              ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                          ]))
+                    for label, valor, cor in cartoes
+                ]]
+                tabela_kpi = Table(linha_kpi, colWidths=[4.1 * cm] * 4, spaceAfter=18)
+                tabela_kpi.setStyle(TableStyle([
+                    ('LEFTPADDING', (0, 0), (-1, -1), 3), ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                ]))
+                story_fat.append(tabela_kpi)
+                story_fat.append(Spacer(1, 20))
+
+                # ------------------------------------------
+                # TABELA MENSAL DETALHADA
+                # ------------------------------------------
+                story_fat.append(Paragraph("Detalhamento por Mês", ParagraphStyle('SubTit', fontSize=12, fontName="Helvetica-Bold", textColor=COR_PRETO, spaceAfter=8)))
 
                 tabela_fat_dados = [["Mês", "Nº Eventos", "Receita Eventos", "Gastos Viagem", "Compras", "Lucro Líquido"]]
                 for _, row in df_mensal_export.iterrows():
@@ -2234,19 +2308,27 @@ else:
                         f"R$ {row['Receita de Eventos (R$)']:.2f}", f"R$ {row['Gastos de Viagem (R$)']:.2f}",
                         f"R$ {row['Investimento em Compras (R$)']:.2f}", f"R$ {row['Lucro Líquido (R$)']:.2f}"
                     ])
-                tabela_fat_pdf = Table(tabela_fat_dados, colWidths=[2.3*cm, 2*cm, 3*cm, 2.8*cm, 2.5*cm, 3*cm])
-                tabela_fat_pdf.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#FFC107")),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                tabela_fat_pdf = Table(tabela_fat_dados, colWidths=[2.6*cm, 2.2*cm, 3.2*cm, 3*cm, 2.8*cm, 3.2*cm])
+                estilo_tabela_fat = [
+                    ('BACKGROUND', (0, 0), (-1, 0), COR_PRETO),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), COR_DOURADO),
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                     ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                    ('FONTSIZE', (0, 0), (-1, -1), 8),
-                ]))
+                    ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 8.5),
+                    ('TOPPADDING', (0, 0), (-1, -1), 6), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ]
+                for i in range(1, len(tabela_fat_dados)):
+                    if i % 2 == 0:
+                        estilo_tabela_fat.append(('BACKGROUND', (0, i), (-1, i), COR_CINZA_CLARO))
+                tabela_fat_pdf.setStyle(TableStyle(estilo_tabela_fat))
                 story_fat.append(tabela_fat_pdf)
-                story_fat.append(Spacer(1, 20))
-                story_fat.append(Paragraph(f"<b>Lucro Líquido Total do Período:</b> R$ {lucro_liquido:.2f}", styles_fat['Normal']))
-                story_fat.append(Paragraph(f"Data de emissão: {datetime.now().strftime('%d/%m/%Y às %H:%M')}", styles_fat['Normal']))
+                story_fat.append(Spacer(1, 14))
+                story_fat.append(Paragraph(
+                    f"<b>Lucro Líquido Total do Período:</b> R$ {lucro_liquido:.2f}",
+                    ParagraphStyle('Resumo', fontSize=11, textColor=COR_PRETO)
+                ))
 
                 doc_fat.build(story_fat)
                 buffer_pdf_fat.seek(0)
