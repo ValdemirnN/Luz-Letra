@@ -885,7 +885,7 @@ else:
                                         qtd_item_normal = st.number_input(f"{prod['nome']} (Livre: {disponivel_normal})", min_value=0, max_value=disponivel_normal, value=None, key=f"form_prod_{prod['id']}")
                                         quantidades_selecionadas[f"{prod['id']}_NORMAL"] = qtd_item_normal or 0
 
-                if st.form_submit_button("Salvar Evento e Alocar Itens"):
+               if st.form_submit_button("Salvar Evento e Alocar Itens"):
                     if not nome_evento or not nome_cliente or not contato_cliente or not local_evento or not rua_evento or not bairro_evento or not numero_evento or valor_evento is None:
                         mostrar_popup("Por favor, preencha todos os campos obrigatórios!", tipo="erro")
                     else:
@@ -902,6 +902,7 @@ else:
                             novo_cliente = supabase.table("clientes_eventos").insert({"empresa_id": emp_id, "nome": nome_cliente, "contato": contato_cliente_formatado}).execute()
                             cliente_id_gerado = novo_cliente.data[0]['id']
                             
+                            # Aqui salvamos o evento (com a data_fim corrigida)
                             novo_evento = supabase.table("eventos").insert({
                                 "empresa_id": emp_id, "cliente_id": cliente_id_gerado, "titulo": nome_evento,
                                 "descricao": nome_evento, "data_inicio": str(data_inicio), 
@@ -917,9 +918,11 @@ else:
                                 supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "produto_id": p_id, "quantidade": info['total'], "observacao": obs_json_evento}).execute()
                                 supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "descricao": f"🟢 ALOCAÇÃO INICIAL: Adicionou {info['total']}x Produto {p_id}.", "data_registro": data_hora}).execute()
 
-                            mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
+                            # POP-UP DE SUCESSO AQUI!
+                            mostrar_popup("CADASTRO DE EVENTO CONCLUÍDO COM SUCESSO!")
                             st.rerun()
-                        except Exception as e: mostrar_popup(f"Erro: {e}", tipo="erro")
+                        except Exception as e: 
+                            mostrar_popup(f"Erro: {e}", tipo="erro")
 
     elif menu == "📦 Estoque":
         st.title("Controle de Estoque Inteligente")
