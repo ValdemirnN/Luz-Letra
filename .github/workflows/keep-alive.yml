@@ -1,0 +1,15 @@
+name: Keep Streamlit App Awake
+
+on:
+  schedule:
+    # Roda a cada 6 horas (bem abaixo do limite de 12h de sleep)
+    - cron: '0 */6 * * *'
+  workflow_dispatch:  # permite rodar manualmente pelo GitHub também
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping app to keep it awake
+        run: |
+          curl -sL -o /dev/null -w "Status: %{http_code}\n" https://luzeletras.streamlit.app
