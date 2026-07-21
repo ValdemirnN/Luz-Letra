@@ -52,15 +52,44 @@ input[type="number"] {
 </style>
 """, unsafe_allow_html=True)
 
-# Função auxiliar para formatar moeda com ponto no milhar e vírgula nos centavos
+# Função auxiliar para formatar moeda
 def formatar_moeda(valor):
     if valor is None:
         return "0,00"
     return f"{float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
+# ==========================================
+# SISTEMA DE POP-UP CENTRALIZADO
+# ==========================================
+def mostrar_popup(mensagem, tipo="sucesso", tempo=2.0):
+    cor_fundo = "#1B5E20" if tipo == "sucesso" else "#D32F2F"
+    icone = "🎉" if tipo == "sucesso" else "⚠️"
+    alerta = st.empty()
+    alerta.markdown(f"""
+    <style>
+    .popup-overlay {{
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+        background-color: rgba(0, 0, 0, 0.7); z-index: 999999;
+        display: flex; align-items: center; justify-content: center;
+    }}
+    .popup-box {{
+        background-color: {cor_fundo}; color: white; padding: 40px 60px;
+        border-radius: 12px; font-size: 24px; font-weight: bold; text-align: center;
+        box-shadow: 0px 8px 30px rgba(0,0,0,0.8);
+        animation: fadeInScale 0.3s ease-out forwards;
+    }}
+    @keyframes fadeInScale {{
+        0% {{ opacity: 0; transform: scale(0.7); }}
+        100% {{ opacity: 1; transform: scale(1); }}
+    }}
+    </style>
+    <div class="popup-overlay"><div class="popup-box"><span style="font-size: 40px;">{icone}</span><br><br>{mensagem}</div></div>
+    """, unsafe_allow_html=True)
+    time.sleep(tempo)
+    alerta.empty()
 
 # ==========================================
-# LOGO DE FUNDO ANIMADA (MARCA D'ÁGUA COM BRILHO)
+# LOGO DE FUNDO ANIMADA (MARCA D'ÁGUA)
 # ==========================================
 def aplicar_fundo_com_logo(caminho_logo="logo.jpg"):
     try:
@@ -69,35 +98,21 @@ def aplicar_fundo_com_logo(caminho_logo="logo.jpg"):
 
         st.markdown(f"""
         <style>
-        .stApp {{
-            position: relative;
-        }}
+        .stApp {{ position: relative; }}
         .stApp::before {{
-            content: "";
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
+            content: ""; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
             background-image: url("data:image/jpg;base64,{logo_base64}");
-            background-repeat: no-repeat;
-            background-position: center;
-            background-size: min(45vw, 480px);
-            opacity: 0.07;
-            z-index: 0;
-            pointer-events: none;
-            animation: brilhoPulsante 4s ease-in-out infinite;
+            background-repeat: no-repeat; background-position: center;
+            background-size: min(45vw, 480px); opacity: 0.07; z-index: 0;
+            pointer-events: none; animation: brilhoPulsante 4s ease-in-out infinite;
         }}
         @keyframes brilhoPulsante {{
             0%   {{ opacity: 0.05; filter: drop-shadow(0 0 10px #FFD700); }}
             50%  {{ opacity: 0.11; filter: drop-shadow(0 0 35px #FFD700); }}
             100% {{ opacity: 0.05; filter: drop-shadow(0 0 10px #FFD700); }}
         }}
-        .stApp > * {{
-            position: relative;
-            z-index: 1;
-        }}
-        [data-testid="stSidebar"] img {{
-            animation: brilhoSidebar 3s ease-in-out infinite;
-            border-radius: 12px;
-        }}
+        .stApp > * {{ position: relative; z-index: 1; }}
+        [data-testid="stSidebar"] img {{ animation: brilhoSidebar 3s ease-in-out infinite; border-radius: 12px; }}
         @keyframes brilhoSidebar {{
             0%   {{ filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.35)); }}
             50%  {{ filter: drop-shadow(0 0 18px rgba(255, 215, 0, 0.75)); }}
@@ -105,8 +120,7 @@ def aplicar_fundo_com_logo(caminho_logo="logo.jpg"):
         }}
         </style>
         """, unsafe_allow_html=True)
-    except Exception:
-        pass
+    except Exception: pass
 
 aplicar_fundo_com_logo()
 
@@ -123,11 +137,9 @@ URL_BASE_SISTEMA = st.secrets.get("URL_BASE_SISTEMA", "http://localhost:8501")
 VALOR_ASSINATURA_MENSAL = 49.90
 
 @st.cache_resource
-def init_connection():
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+def init_connection(): return create_client(SUPABASE_URL, SUPABASE_KEY)
 
-try:
-    supabase: Client = init_connection()
+try: supabase: Client = init_connection()
 except Exception as e:
     st.error("Erro ao conectar com o banco. Verifique suas chaves.")
     st.stop()
@@ -149,10 +161,8 @@ def restaurar_sessao_por_token():
         tk_param = params.get("tk")
         if uid_param and tk_param:
             usuario_id_restaurar = int(uid_param)
-            try:
-                resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome").eq("id", usuario_id_restaurar).execute()
-            except Exception:
-                resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo").eq("id", usuario_id_restaurar).execute()
+            try: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome").eq("id", usuario_id_restaurar).execute()
+            except: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo").eq("id", usuario_id_restaurar).execute()
 
             if resultado.data:
                 usuario = resultado.data[0]
@@ -163,23 +173,16 @@ def restaurar_sessao_por_token():
                         assinatura_check = supabase.table("assinaturas").select("data_vencimento").eq("empresa_id", usuario['empresa_id']).order("data_vencimento", desc=True).limit(1).execute()
                         if assinatura_check.data:
                             venc_check = assinatura_check.data[0]['data_vencimento'].split("T")[0]
-                            if datetime.strptime(venc_check, "%Y-%m-%d").date() < datetime.now().date():
-                                plano_valido = False
+                            if datetime.strptime(venc_check, "%Y-%m-%d").date() < datetime.now().date(): plano_valido = False
                     if plano_valido:
                         nome_usuario_restaurar = usuario.get('nome') or usuario.get('email', 'Usuário')
-                        st.session_state.update({
-                            'logado': True, 'perfil': usuario['perfil'],
-                            'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'],
-                            'nome_usuario': nome_usuario_restaurar
-                        })
-                    else:
-                        st.query_params.clear()
-    except Exception:
-        pass
+                        st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_restaurar})
+                    else: st.query_params.clear()
+    except Exception: pass
 
 def enviar_email_confirmacao(destinatario, nome_destinatario, token):
     link_confirmacao = f"{URL_BASE_SISTEMA}/?confirmar_email={token}"
-    corpo = f"""Olá {nome_destinatario},\n\nObrigado por criar sua conta no Luz & Letras Sistema!\n\nPara confirmar seu e-mail, clique no link abaixo:\n{link_confirmacao}\n\nSe você não solicitou este cadastro, apenas ignore este e-mail.\n"""
+    corpo = f"Olá {nome_destinatario},\n\nObrigado por criar sua conta!\nPara confirmar seu e-mail, clique no link abaixo:\n{link_confirmacao}\n"
     msg = MIMEText(corpo)
     msg['Subject'] = "Confirme seu e-mail - Luz & Letras Sistema"
     msg['From'] = GMAIL_REMETENTE
@@ -190,7 +193,7 @@ def enviar_email_confirmacao(destinatario, nome_destinatario, token):
             servidor.sendmail(GMAIL_REMETENTE, destinatario, msg.as_string())
         return True
     except Exception as e:
-        st.warning(f"Conta criada, mas erro ao enviar e-mail ({e}).")
+        mostrar_popup(f"Conta criada, mas erro ao enviar e-mail ({e}).", tipo="erro")
         return False
 
 def confirmar_email_por_link():
@@ -201,29 +204,18 @@ def confirmar_email_por_link():
             if resultado.data:
                 usuario_confirmado = resultado.data[0]
                 supabase.table("usuarios").update({"email_confirmado": True, "token_confirmacao": None}).eq("id", usuario_confirmado['id']).execute()
-                st.session_state.update({
-                    'conta_criada_id': usuario_confirmado['id'],
-                    'conta_criada_email': usuario_confirmado['email'],
-                    'conta_criada_nome': usuario_confirmado.get('nome') or usuario_confirmado['email']
-                })
-                st.success("✅ E-mail confirmado com sucesso! Agora escolha e conclua a forma de pagamento abaixo.")
-            else:
-                st.warning("Link de confirmação inválido ou já utilizado.")
+                st.session_state.update({'conta_criada_id': usuario_confirmado['id'], 'conta_criada_email': usuario_confirmado['email'], 'conta_criada_nome': usuario_confirmado.get('nome') or usuario_confirmado['email']})
+                mostrar_popup("E-mail confirmado com sucesso! Conclua o pagamento.")
+            else: mostrar_popup("Link de confirmação inválido ou já utilizado.", tipo="erro")
             st.query_params.clear()
-    except Exception:
-        pass
+    except Exception: pass
 
 confirmar_email_por_link()
 
 def criar_preferencia_pagamento_mp(usuario_id, email_cliente, descricao):
     url = "https://api.mercadopago.com/checkout/preferences"
     headers = {"Authorization": f"Bearer {MP_ACCESS_TOKEN}", "Content-Type": "application/json"}
-    payload = {
-        "items": [{"title": descricao, "quantity": 1, "unit_price": float(VALOR_ASSINATURA_MENSAL), "currency_id": "BRL"}],
-        "payer": {"email": email_cliente},
-        "external_reference": str(usuario_id),
-        "back_urls": {"success": URL_BASE_SISTEMA, "failure": URL_BASE_SISTEMA, "pending": URL_BASE_SISTEMA}
-    }
+    payload = {"items": [{"title": descricao, "quantity": 1, "unit_price": float(VALOR_ASSINATURA_MENSAL), "currency_id": "BRL"}], "payer": {"email": email_cliente}, "external_reference": str(usuario_id), "back_urls": {"success": URL_BASE_SISTEMA, "failure": URL_BASE_SISTEMA, "pending": URL_BASE_SISTEMA}}
     resposta = requests.post(url, json=payload, headers=headers, timeout=15)
     resposta.raise_for_status()
     return resposta.json()
@@ -234,10 +226,8 @@ def verificar_pagamento_mp(usuario_id):
     params = {"external_reference": str(usuario_id)}
     resposta = requests.get(url, headers=headers, params=params, timeout=15)
     resposta.raise_for_status()
-    dados = resposta.json()
-    for pagamento in dados.get("results", []):
-        if pagamento.get("status") == "approved":
-            return True
+    for pagamento in resposta.json().get("results", []):
+        if pagamento.get("status") == "approved": return True
     return False
 
 def ativar_conta_apos_pagamento(usuario_id, metodo):
@@ -268,145 +258,93 @@ if not st.session_state['logado']:
 
     if entrar:
         try:
-            try:
-                resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome").eq("email", email_login).execute()
-            except Exception:
-                resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo").eq("email", email_login).execute()
+            try: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome").eq("email", email_login).execute()
+            except: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo").eq("email", email_login).execute()
 
             if resultado.data:
                 usuario = resultado.data[0]
-                if not usuario['ativo']:
-                    st.error("Usuário bloqueado. Fale com o administrador.")
+                if not usuario['ativo']: mostrar_popup("Usuário bloqueado. Fale com o administrador.", tipo="erro")
                 elif usuario['senha_hash'] == senha_login:
                     nome_usuario_login = usuario.get('nome') or usuario.get('email', 'Usuário')
                     st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login})
-                    token_gerado = gerar_token_sessao(usuario['id'], usuario['senha_hash'])
-                    st.query_params.update({"uid": str(usuario['id']), "tk": token_gerado})
+                    st.query_params.update({"uid": str(usuario['id']), "tk": gerar_token_sessao(usuario['id'], usuario['senha_hash'])})
                     st.rerun()
-                else:
-                    st.error("Senha incorreta.")
-            else:
-                st.error("E-mail não encontrado.")
-        except Exception as e:
-            st.error(f"Erro ao tentar logar: {e}")
+                else: mostrar_popup("Senha incorreta.", tipo="erro")
+            else: mostrar_popup("E-mail não encontrado.", tipo="erro")
+        except Exception as e: mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
 
     st.markdown("---")
     with st.expander("🆕 Ainda não tem conta? Criar conta"):
-        st.caption("Sua conta será criada como **pendente**. Você vai precisar confirmar o e-mail e concluir o pagamento pra liberar o acesso.")
         with st.form("form_criar_conta"):
-            nome_empresa_cadastro = st.text_input("Nome da sua Empresa/Negócio")
+            nome_empresa_cadastro = st.text_input("Nome da Empresa")
             nome_usuario_cadastro = st.text_input("Seu Nome")
             email_cadastro = st.text_input("E-mail")
-            senha_cadastro = st.text_input("Senha", type="password", help="Mínimo 7 caracteres, com pelo menos 1 letra maiúscula e 1 número")
+            senha_cadastro = st.text_input("Senha", type="password")
             senha_cadastro_confirma = st.text_input("Confirme a Senha", type="password")
-            criar_conta_btn = st.form_submit_button("Criar Conta")
-
-        if criar_conta_btn:
-            erros_cadastro = []
-            if not nome_empresa_cadastro.strip() or not nome_usuario_cadastro.strip() or not email_cadastro.strip():
-                erros_cadastro.append("Preencha todos os campos.")
-            if senha_cadastro != senha_cadastro_confirma:
-                erros_cadastro.append("As senhas não coincidem.")
-            if len(senha_cadastro) < 7:
-                erros_cadastro.append("A senha precisa ter no mínimo 7 caracteres.")
-            if not any(c.isupper() for c in senha_cadastro):
-                erros_cadastro.append("A senha precisa ter pelo menos 1 letra maiúscula.")
-            if not any(c.isdigit() for c in senha_cadastro):
-                erros_cadastro.append("A senha precisa ter pelo menos 1 número.")
-
-            if erros_cadastro:
-                for erro_msg in erros_cadastro:
-                    st.error(erro_msg)
-            else:
-                try:
+            if st.form_submit_button("Criar Conta"):
+                if not nome_empresa_cadastro.strip() or not nome_usuario_cadastro.strip() or not email_cadastro.strip(): mostrar_popup("Preencha todos os campos.", tipo="erro")
+                elif senha_cadastro != senha_cadastro_confirma: mostrar_popup("As senhas não coincidem.", tipo="erro")
+                elif len(senha_cadastro) < 7: mostrar_popup("Mínimo 7 caracteres.", tipo="erro")
+                else:
                     email_existente = supabase.table("usuarios").select("id").eq("email", email_cadastro).execute()
-                    if email_existente.data:
-                        st.error("Já existe uma conta com esse e-mail.")
+                    if email_existente.data: mostrar_popup("Já existe uma conta com esse e-mail.", tipo="erro")
                     else:
                         plano_padrao = supabase.table("planos").select("id").order("id").limit(1).execute()
-                        if not plano_padrao.data:
-                            st.error("Nenhum plano cadastrado no sistema ainda. Cadastre pelo menos 1 plano na tabela 'planos' do Supabase.")
+                        if not plano_padrao.data: mostrar_popup("Nenhum plano cadastrado no banco de dados.", tipo="erro")
                         else:
-                            plano_id_padrao = plano_padrao.data[0]['id']
                             nova_empresa = supabase.table("empresas").insert({"nome_fantasia": nome_empresa_cadastro}).execute()
                             empresa_id_criada = nova_empresa.data[0]['id']
                             hoje_cadastro = datetime.now().strftime("%Y-%m-%d")
-                            supabase.table("assinaturas").insert({"empresa_id": empresa_id_criada, "plano_id": plano_id_padrao, "data_inicio": hoje_cadastro, "data_vencimento": hoje_cadastro}).execute()
-
+                            supabase.table("assinaturas").insert({"empresa_id": empresa_id_criada, "plano_id": plano_padrao.data[0]['id'], "data_inicio": hoje_cadastro, "data_vencimento": hoje_cadastro}).execute()
                             token_confirmacao_novo = secrets.token_urlsafe(24)
-                            dados_novo_usuario = {
-                                "email": email_cadastro, "senha_hash": senha_cadastro, "perfil": "dono",
-                                "empresa_id": empresa_id_criada, "ativo": False,
-                                "nome": nome_usuario_cadastro, "email_confirmado": False,
-                                "token_confirmacao": token_confirmacao_novo
-                            }
-                            try:
-                                novo_usuario_criado = supabase.table("usuarios").insert(dados_novo_usuario).execute()
-                            except Exception:
-                                novo_usuario_criado = supabase.table("usuarios").insert({
-                                    "email": email_cadastro, "senha_hash": senha_cadastro, "perfil": "dono",
-                                    "empresa_id": empresa_id_criada, "ativo": False
-                                }).execute()
+                            try: supabase.table("usuarios").insert({"email": email_cadastro, "senha_hash": senha_cadastro, "perfil": "dono", "empresa_id": empresa_id_criada, "ativo": False, "nome": nome_usuario_cadastro, "email_confirmado": False, "token_confirmacao": token_confirmacao_novo}).execute()
+                            except: supabase.table("usuarios").insert({"email": email_cadastro, "senha_hash": senha_cadastro, "perfil": "dono", "empresa_id": empresa_id_criada, "ativo": False}).execute()
                             enviar_email_confirmacao(email_cadastro, nome_usuario_cadastro, token_confirmacao_novo)
-                            st.success("📧 Conta criada! Enviamos um e-mail de confirmação para você.")
-                except Exception as e:
-                    st.error(f"Erro ao criar conta: {e}")
+                            mostrar_popup("Conta criada! Enviamos um e-mail de confirmação.")
 
     if st.session_state.get('conta_criada_id'):
         st.markdown("---")
-        st.subheader("💳 Finalizar Pagamento da Assinatura")
-        st.caption(f"Conta: **{st.session_state['conta_criada_email']}** — Valor: **R$ {VALOR_ASSINATURA_MENSAL:.2f}/mês**")
-
-        metodo_escolhido = st.radio("Como você quer pagar?", ["📱 Pix (Mercado Pago)", "💳 Cartão de Crédito (Mercado Pago)", "🤝 Vou pagar em mãos"], key="metodo_pagamento_radio")
-
+        st.subheader("💳 Finalizar Pagamento")
+        metodo_escolhido = st.radio("Como quer pagar?", ["📱 Pix", "💳 Cartão de Crédito", "🤝 Pagar em mãos"])
         if metodo_escolhido.startswith("🤝"):
-            comprovante_pagamento = st.text_area("Descreva o comprovante do pagamento")
-            if st.button("📤 Enviar Comprovante e Aguardar Confirmação"):
-                if not comprovante_pagamento.strip():
-                    st.warning("Descreva o comprovante antes de enviar.")
+            comprovante_pagamento = st.text_area("Descreva o comprovante")
+            if st.button("📤 Enviar"):
+                if not comprovante_pagamento.strip(): mostrar_popup("Descreva o comprovante.", tipo="erro")
                 else:
-                    try:
-                        try:
-                            supabase.table("usuarios").update({"metodo_pagamento": "manual", "comprovante_pagamento": comprovante_pagamento}).eq("id", st.session_state['conta_criada_id']).execute()
-                        except Exception:
-                            supabase.table("usuarios").update({"metodo_pagamento": "manual"}).eq("id", st.session_state['conta_criada_id']).execute()
-                        st.success("✅ Comprovante enviado! Assim que o administrador confirmar, sua conta será liberada.")
-                        del st.session_state['conta_criada_id']
-                        del st.session_state['conta_criada_email']
-                        del st.session_state['conta_criada_nome']
-                    except Exception as e:
-                        st.error(f"Erro ao registrar: {e}")
+                    try: supabase.table("usuarios").update({"metodo_pagamento": "manual", "comprovante_pagamento": comprovante_pagamento}).eq("id", st.session_state['conta_criada_id']).execute()
+                    except: supabase.table("usuarios").update({"metodo_pagamento": "manual"}).eq("id", st.session_state['conta_criada_id']).execute()
+                    mostrar_popup("Comprovante enviado! Aguarde aprovação.")
+                    del st.session_state['conta_criada_id']
         else:
-            metodo_codigo = "pix" if metodo_escolhido.startswith("📱") else "cartao"
-            if st.button("Gerar Link de Pagamento"):
+            if st.button("Gerar Link"):
                 try:
-                    preferencia = criar_preferencia_pagamento_mp(st.session_state['conta_criada_id'], st.session_state['conta_criada_email'], "Assinatura Mensal - Luz & Letras Sistema")
+                    preferencia = criar_preferencia_pagamento_mp(st.session_state['conta_criada_id'], st.session_state['conta_criada_email'], "Assinatura Mensal")
                     st.session_state['link_pagamento_mp'] = preferencia.get('init_point')
-                    supabase.table("usuarios").update({"metodo_pagamento": metodo_codigo}).eq("id", st.session_state['conta_criada_id']).execute()
-                except Exception as e:
-                    st.error(f"Erro ao gerar o link: {e}")
-
+                    supabase.table("usuarios").update({"metodo_pagamento": "pix" if "Pix" in metodo_escolhido else "cartao"}).eq("id", st.session_state['conta_criada_id']).execute()
+                except Exception as e: mostrar_popup(f"Erro ao gerar link: {e}", tipo="erro")
             if st.session_state.get('link_pagamento_mp'):
-                st.link_button("🔗 Ir para o Pagamento", st.session_state['link_pagamento_mp'])
-                if st.button("🔄 Já paguei, verificar agora"):
+                st.link_button("🔗 Ir para Pagamento", st.session_state['link_pagamento_mp'])
+                if st.button("🔄 Já paguei, verificar"):
                     if verificar_pagamento_mp(st.session_state['conta_criada_id']):
-                        ativar_conta_apos_pagamento(st.session_state['conta_criada_id'], metodo_codigo)
-                        st.success("✅ Pagamento confirmado! Sua conta já está ativa.")
+                        ativar_conta_apos_pagamento(st.session_state['conta_criada_id'], "pix")
+                        mostrar_popup("Pagamento confirmado!")
                         del st.session_state['conta_criada_id']
-                        del st.session_state['conta_criada_email']
-                        del st.session_state['conta_criada_nome']
-                        if 'link_pagamento_mp' in st.session_state:
-                            del st.session_state['link_pagamento_mp']
-                    else:
-                        st.warning("Ainda não identificamos o pagamento. Aguarde alguns segundos e tente novamente.")
+                    else: mostrar_popup("Pagamento não identificado.", tipo="erro")
 
 # ==========================================
 # 4. ÁREA LOGADA (SISTEMA COMPLETO)
 # ==========================================
 else:
+    # ---------------------------------------------
+    # Verifica se há alguma mensagem de sucesso salva em sessão (vindo do Modal de Exclusão)
+    if 'sucesso_msg' in st.session_state:
+        mostrar_popup(st.session_state['sucesso_msg'])
+        del st.session_state['sucesso_msg']
+    # ---------------------------------------------
+
     check_user = supabase.table("usuarios").select("ativo").eq("id", st.session_state['usuario_id']).execute()
     if check_user.data and not check_user.data[0]['ativo']:
-        st.error("Sua sessão foi desconectada pelo Administrador.")
+        mostrar_popup("Sua sessão foi desconectada pelo Administrador.", tipo="erro")
         fazer_logout()
         st.rerun()
 
@@ -414,16 +352,12 @@ else:
     st.sidebar.button("Sair / Desconectar", on_click=fazer_logout) 
     st.sidebar.markdown("---")
 
-    if st.session_state['perfil'] == 'admin_geral':
-        opcoes_menu = ["👑 Gestão de Assinantes", "📊 Dashboard", "📅 Agendamento", "📦 Estoque", "🛒 Compras", "💰 Faturamento"]
-    else:
-        opcoes_menu = ["📊 Dashboard", "📅 Agendamento", "📦 Estoque", "🛒 Compras", "💰 Faturamento"]
+    if st.session_state['perfil'] == 'admin_geral': opcoes_menu = ["👑 Gestão de Assinantes", "📊 Dashboard", "📅 Agendamento", "📦 Estoque", "🛒 Compras", "💰 Faturamento"]
+    else: opcoes_menu = ["📊 Dashboard", "📅 Agendamento", "📦 Estoque", "🛒 Compras", "💰 Faturamento"]
 
     menu = st.sidebar.radio("Módulos do Sistema", opcoes_menu)
     emp_id = st.session_state.get('empresa_id')
-
-    if not emp_id:
-        st.stop()
+    if not emp_id: st.stop()
 
     def safe_json_load(val):
         if val and isinstance(val, str) and val.startswith('{'):
@@ -467,7 +401,7 @@ else:
         data_fim_pdf = _fmt_data_pdf(evento_dict.get('data_fim_alocacao'))
         valor_pdf = float(evento_dict.get('valor_total') or 0)
 
-        dados_texto = f"""<b>Evento:</b> {evento_dict.get('descricao', '-')}<br/><b>Cliente:</b> {nome_cliente_pdf}<br/><b>Contato:</b> {contato_cliente_pdf}<br/><b>Data do Evento:</b> {data_ini_pdf} a {data_fim_pdf}<br/><b>Local/Observações:</b> {evento_dict.get('observacao', '-')}<br/><b>Valor Cobrado:</b> {formatar_moeda(valor_pdf)}<br/><b>Status:</b> {evento_dict.get('status', '-')}<br/>"""
+        dados_texto = f"""<b>Evento:</b> {evento_dict.get('descricao', '-')}<br/><b>Cliente:</b> {nome_cliente_pdf}<br/><b>Contato:</b> {contato_cliente_pdf}<br/><b>Data do Evento:</b> {data_ini_pdf} a {data_fim_pdf}<br/><b>Local/Observações:</b> {evento_dict.get('observacao', '-')}<br/><b>Valor Cobrado:</b> R$ {formatar_moeda(valor_pdf)}<br/><b>Status:</b> {evento_dict.get('status', '-')}<br/>"""
         story.append(Paragraph(dados_texto, styles['Normal']))
         story.append(Spacer(1, 18))
         story.append(Paragraph("<b>Produtos Alocados para este Evento:</b>", styles['Heading3']))
@@ -541,13 +475,61 @@ else:
                             detalhe_alugado[pid_c][k_c] = detalhe_alugado[pid_c].get(k_c, 0) + v_c
         return qtd_alugada, detalhe_alugado
 
+    # ==========================================
+    # LÓGICA DO MODAL POP-UP DE ESTOQUE
+    # (Construído garantindo a compatibilidade de versão do Streamlit)
+    # ==========================================
+    def _criar_modal_exclusao():
+        def modal(produto_info, tipo, total_remover=0, qtds_json=None, motivo=""):
+            if tipo == "parcial":
+                st.warning(f"Tem certeza que deseja remover **{total_remover} peças** de **{produto_info['nome']}** parcialmente?")
+                col1, col2 = st.columns(2)
+                if col1.button("✅ Sim, Confirmar Remoção", use_container_width=True):
+                    js_prod = safe_json_load(produto_info.get('observacao'))
+                    if js_prod and qtds_json:
+                        novo_json = dict(js_prod)
+                        for k, v in qtds_json.items():
+                            novo_json[k] = max(0, novo_json.get(k, 0) - v)
+                        supabase.table("produtos").update({"quantidade_estoque": max(0, produto_info['quantidade_estoque'] - total_remover), "observacao": json.dumps(novo_json)}).eq("id", produto_info['id']).execute()
+                    else:
+                        supabase.table("produtos").update({"quantidade_estoque": max(0, produto_info['quantidade_estoque'] - total_remover)}).eq("id", produto_info['id']).execute()
+                    
+                    st.session_state['sucesso_msg'] = "REMOÇÃO PARCIAL CONCLUÍDA COM SUCESSO!"
+                    st.rerun()
+                if col2.button("❌ Cancelar", use_container_width=True):
+                    st.rerun()
 
+            elif tipo == "total":
+                st.warning(f"Tem certeza que deseja excluir **{produto_info['nome']} COMPLETAMENTE** do estoque?")
+                col1, col2 = st.columns(2)
+                if col1.button("🗑️ Sim, Excluir Produto", use_container_width=True):
+                    try:
+                        itens_usando = supabase.table("itens_evento").select("id").eq("produto_id", produto_info['id']).execute()
+                        if itens_usando.data:
+                            st.error("Não é possível excluir: este produto está alocado em um evento.")
+                        else:
+                            supabase.table("produtos").delete().eq("id", produto_info['id']).execute()
+                            st.session_state['sucesso_msg'] = "EXCLUSÃO CONCLUÍDA COM SUCESSO!"
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao excluir: {e}")
+                if col2.button("❌ Cancelar", use_container_width=True):
+                    st.rerun()
+                    
+        # Injeta o st.dialog se o Streamlit for versão moderna
+        if hasattr(st, "dialog"): return st.dialog("⚠️ Confirmação Necessária")(modal)
+        elif hasattr(st, "experimental_dialog"): return st.experimental_dialog("⚠️ Confirmação Necessária")(modal)
+        else: return modal
+
+    popup_confirmacao_estoque = _criar_modal_exclusao()
+
+    # =======================================================
+    # CONTINUAÇÃO DOS MENUS
+    # =======================================================
     if menu == "👑 Gestão de Assinantes":
         st.title("Painel Master")
-        try:
-            users = supabase.table("usuarios").select("id, email, ativo, senha_hash, nome, email_confirmado, metodo_pagamento, comprovante_pagamento, empresas(nome_fantasia), empresa_id").neq("perfil", "admin_geral").execute()
-        except:
-            users = supabase.table("usuarios").select("id, email, ativo, senha_hash, empresas(nome_fantasia), empresa_id").neq("perfil", "admin_geral").execute()
+        try: users = supabase.table("usuarios").select("id, email, ativo, senha_hash, nome, email_confirmado, metodo_pagamento, comprovante_pagamento, empresas(nome_fantasia), empresa_id").neq("perfil", "admin_geral").execute()
+        except: users = supabase.table("usuarios").select("id, email, ativo, senha_hash, empresas(nome_fantasia), empresa_id").neq("perfil", "admin_geral").execute()
 
         if users.data:
             for u in users.data:
@@ -570,8 +552,7 @@ else:
                         if comprovante_u: st.info(f"📎 Comprovante: {comprovante_u}")
                         if st.button("✅ Confirmar Pagamento Recebido", key=f"conf_manual_{u['id']}"):
                             ativar_conta_apos_pagamento(u['id'], "manual")
-                            st.success("Conta ativada com sucesso!")
-                            time.sleep(1.5)
+                            mostrar_popup("Conta ativada com sucesso!")
                             st.rerun()
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -583,7 +564,7 @@ else:
                         nova_senha = st.text_input("Nova Senha", key=f"pwd_{u['id']}")
                         if st.button("Mudar Senha", key=f"btn_pwd_{u['id']}") and nova_senha:
                             supabase.table("usuarios").update({"senha_hash": nova_senha}).eq("id", u['id']).execute()
-                            st.success("Senha alterada!")
+                            mostrar_popup("Senha alterada!")
                     with col3:
                         meses_add = st.number_input("Estender plano (meses)", min_value=1, key=f"mes_{u['id']}", value=1)
                         if st.button("Renovar", key=f"ren_{u['id']}"):
@@ -654,7 +635,7 @@ else:
                         with col_a:
                             valor_ev = float(ev.get('valor_total') or 0)
                             st.write(f"**Data do Evento:** {data_ini_br} até {data_fim_br}")
-                            st.write(f"**Valor:** {formatar_moeda(valor_ev)}")
+                            st.write(f"**Valor:** R$ {formatar_moeda(valor_ev)}")
                             st.write(f"**Contato do Cliente:** {contato_cliente_ev}")
                             st.write(f"**Observações:** {ev.get('observacao') or '-'}")
                         with col_b:
@@ -663,8 +644,7 @@ else:
                             novo_status = st.selectbox("Alterar Status", opcoes_status, index=idx_status, key=f"status_ev_{ev['id']}")
                             if st.button("Atualizar Status", key=f"btn_status_ev_{ev['id']}"):
                                 supabase.table("eventos").update({"status": novo_status}).eq("id", ev['id']).execute()
-                                st.success("🎉 STATUS ATUALIZADO COM SUCESSO!")
-                                time.sleep(1.5)
+                                mostrar_popup("STATUS ATUALIZADO COM SUCESSO!")
                                 st.rerun()
                         if itens_ev.data:
                             st.markdown("**Itens Alocados:**")
@@ -708,8 +688,8 @@ else:
 
                         motivo_alteracao = st.text_input("Motivo da Alteração", key=f"motivo_{ev['id']}")
                         if st.button("💾 Registrar Alteração", key=f"btn_add_{ev['id']}"):
-                            if not adicoes_selecionadas: st.warning("Selecione ao menos 1 item.")
-                            elif not motivo_alteracao.strip(): st.warning("Informe o motivo.")
+                            if not adicoes_selecionadas: mostrar_popup("Selecione ao menos 1 item.", tipo="erro")
+                            elif not motivo_alteracao.strip(): mostrar_popup("Informe o motivo da alteração.", tipo="erro")
                             else:
                                 try:
                                     agrupado = {}
@@ -746,10 +726,9 @@ else:
                                     texto_hist_alt = f"✏️ ALTERAÇÃO: Adicionou {', '.join(resumo_itens)}. Motivo: {motivo_alteracao}"
                                     supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": texto_hist_alt, "data_registro": data_hora_alt}).execute()
 
-                                    st.success("🎉 ADIÇÃO CONCLUÍDA COM SUCESSO!")
-                                    time.sleep(1.5)
+                                    mostrar_popup("ADIÇÃO CONCLUÍDA COM SUCESSO!")
                                     st.rerun()
-                                except Exception as e: st.error(f"Erro: {e}")
+                                except Exception as e: mostrar_popup(f"Erro: {e}", tipo="erro")
 
                     with tab_rem:
                         if itens_ev.data:
@@ -773,8 +752,8 @@ else:
 
                             motivo_remocao = st.text_input("Motivo da Remoção", key=f"motivo_rem_{ev['id']}")
                             if st.button("🗑️ Registrar Remoção", key=f"btn_rem_{ev['id']}"):
-                                if not remocoes_selecionadas: st.warning("Selecione algo.")
-                                elif not motivo_remocao.strip(): st.warning("Informe o motivo.")
+                                if not remocoes_selecionadas: mostrar_popup("Selecione algum item.", tipo="erro")
+                                elif not motivo_remocao.strip(): mostrar_popup("Informe o motivo da remoção.", tipo="erro")
                                 else:
                                     data_hora_rem = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
                                     dict_itens_ev = {it['id']: it for it in itens_ev.data}
@@ -803,8 +782,7 @@ else:
 
                                     texto_hist_rem = f"🔻 REMOÇÃO: Retirou {', '.join(resumo_remocao)}. Motivo: {motivo_remocao}"
                                     supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": texto_hist_rem, "data_registro": data_hora_rem}).execute()
-                                    st.success("🎉 REMOÇÃO CONCLUÍDA COM SUCESSO!")
-                                    time.sleep(1.5)
+                                    mostrar_popup("REMOÇÃO CONCLUÍDA COM SUCESSO!")
                                     st.rerun()
                         else: st.caption("Nenhum item alocado.")
 
@@ -825,14 +803,13 @@ else:
                         justificativa_edit = st.text_input("Justificativa (obrigatório)", key=f"edit_just_{ev['id']}")
 
                         if st.button("💾 Salvar Alterações", key=f"btn_edit_evento_{ev['id']}"):
-                            if not justificativa_edit.strip(): st.warning("Informe a justificativa.")
+                            if not justificativa_edit.strip(): mostrar_popup("Informe a justificativa da alteração.", tipo="erro")
                             else:
                                 supabase.table("eventos").update({"data_inicio": str(nova_data_inicio_edit), "data_fim_alocacao": str(nova_data_fim_edit), "valor_total": novo_valor_edit, "observacao": novo_local_edit}).eq("id", ev['id']).execute()
                                 if ev.get('cliente_id'): supabase.table("clientes_eventos").update({"nome": novo_nome_cliente_edit, "contato": novo_contato_cliente_edit}).eq("id", ev['cliente_id']).execute()
                                 data_hora_edit = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
                                 supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": f"✏️ EDIÇÃO DE DADOS. Justificativa: {justificativa_edit}", "data_registro": data_hora_edit}).execute()
-                                st.success("🎉 EDIÇÃO CONCLUÍDA COM SUCESSO!")
-                                time.sleep(1.5)
+                                mostrar_popup("EDIÇÃO CONCLUÍDA COM SUCESSO!")
                                 st.rerun()
 
                     with tab_hist:
@@ -905,7 +882,7 @@ else:
 
                 if st.form_submit_button("Salvar Evento e Alocar Itens"):
                     if not nome_evento or not nome_cliente or not contato_cliente or not local_evento or not rua_evento or not bairro_evento or not numero_evento or valor_evento is None:
-                        st.error("⚠️ Por favor, preencha todos os campos obrigatórios. Apenas 'Observações Gerais' é opcional.")
+                        mostrar_popup("Por favor, preencha todos os campos obrigatórios!", tipo="erro")
                     else:
                         alocacoes_agrupadas = {}
                         for key, qtd in quantidades_selecionadas.items():
@@ -934,10 +911,9 @@ else:
                                 supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "produto_id": p_id, "quantidade": info['total'], "observacao": obs_json_evento}).execute()
                                 supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "descricao": f"🟢 ALOCAÇÃO INICIAL: Adicionou {info['total']}x Produto {p_id}.", "data_registro": data_hora}).execute()
 
-                            st.success("🎉 CADASTRO CONCLUÍDO COM SUCESSO!")
-                            time.sleep(1.5)
+                            mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
                             st.rerun()
-                        except Exception as e: st.error(f"Erro: {e}")
+                        except Exception as e: mostrar_popup(f"Erro: {e}", tipo="erro")
 
     elif menu == "📦 Estoque":
         st.title("Controle de Estoque Inteligente")
@@ -1039,8 +1015,7 @@ else:
                     if st.form_submit_button("Salvar Produto Normal"):
                         if nome_prod.strip():
                             supabase.table("produtos").insert({"empresa_id": emp_id, "nome": nome_prod.upper(), "quantidade_estoque": (qtd_prod or 0), "observacao": obs_prod}).execute()
-                            st.success("🎉 CADASTRO CONCLUÍDO COM SUCESSO!")
-                            time.sleep(1.5)
+                            mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
                             st.rerun()    
                 elif tipo_cadastro == "🔠 Kit Letras (A-Z)":
                     nome_prod = st.text_input("Nome do Kit", value="LETRAS ILUMINADAS")
@@ -1051,12 +1026,11 @@ else:
                         qtd_letras[l] = cols_l[i%6].number_input(f"Letra {l}", min_value=0, value=None)
                     if st.form_submit_button("Salvar Kit Letras"):
                         total_letras = sum((v or 0) for v in qtd_letras.values())
-                        if total_letras == 0: st.error("Coloque pelo menos 1 letra!")
+                        if total_letras == 0: mostrar_popup("Coloque pelo menos 1 letra!", tipo="erro")
                         else:
                             obs_json = json.dumps({k: (v or 0) for k, v in qtd_letras.items() if (v or 0) > 0})
                             supabase.table("produtos").insert({"empresa_id": emp_id, "nome": nome_prod.upper(), "quantidade_estoque": total_letras, "observacao": obs_json}).execute()
-                            st.success("🎉 CADASTRO CONCLUÍDO COM SUCESSO!")
-                            time.sleep(1.5)
+                            mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
                             st.rerun()
                 elif tipo_cadastro == "🔢 Kit Números (1 a 100)":
                     nome_prod = st.text_input("Nome do Kit", value="NÚMEROS ILUMINADOS")
@@ -1067,12 +1041,11 @@ else:
                         qtd_numeros[num] = cols_n[i%10].number_input(num, min_value=0, value=None)
                     if st.form_submit_button("Salvar Kit Números"):
                         total_numeros = sum((v or 0) for v in qtd_numeros.values())
-                        if total_numeros == 0: st.error("Coloque pelo menos 1 número!")
+                        if total_numeros == 0: mostrar_popup("Coloque pelo menos 1 número!", tipo="erro")
                         else:
                             obs_json = json.dumps({k: (v or 0) for k, v in qtd_numeros.items() if (v or 0) > 0})
                             supabase.table("produtos").insert({"empresa_id": emp_id, "nome": nome_prod.upper(), "quantidade_estoque": total_numeros, "observacao": obs_json}).execute()
-                            st.success("🎉 CADASTRO CONCLUÍDO COM SUCESSO!")
-                            time.sleep(1.5)
+                            mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
                             st.rerun()
 
         with st.expander("🗑️ Excluir ou Reduzir Produto do Estoque", expanded=False):
@@ -1099,40 +1072,25 @@ else:
                         motivo_pex = st.text_input("Motivo da remoção", key=f"motivo_pex_{produto_id_excluir}")
                         
                         total_remover_pex = sum(qtds_remover_parcial.values())
-                        if total_remover_pex > 0 and motivo_pex.strip():
-                            st.warning(f"⚠️ Tem certeza que deseja remover **{total_remover_pex} peças** de **{produto_selecionado_info['nome']}** parcialmente?")
-                            if st.button("✅ Sim, Confirmar Remoção", key=f"btn_pex_{produto_id_excluir}"):
-                                novo_json_pex = dict(js_prod_excluir)
-                                for k, v in qtds_remover_parcial.items(): novo_json_pex[k] = max(0, novo_json_pex.get(k, 0) - v)
-                                supabase.table("produtos").update({"quantidade_estoque": max(0, produto_selecionado_info['quantidade_estoque'] - total_remover_pex), "observacao": json.dumps(novo_json_pex)}).eq("id", produto_id_excluir).execute()
-                                st.success("🎉 REMOÇÃO PARCIAL CONCLUÍDA COM SUCESSO!")
-                                time.sleep(1.5)
-                                st.rerun()
+                        if st.button("➖ Solicitar Remoção", key=f"btn_solicita_pex_{produto_id_excluir}"):
+                            if total_remover_pex > 0 and motivo_pex.strip():
+                                popup_confirmacao_estoque(produto_selecionado_info, "parcial", total_remover=total_remover_pex, qtds_json=qtds_remover_parcial, motivo=motivo_pex)
+                            else:
+                                mostrar_popup("Preencha a quantidade e o motivo da remoção.", tipo="erro")
                     else:
                         qtd_disponivel_pex = produto_selecionado_info['quantidade_estoque']
                         qtd_remover_normal = st.number_input(f"Quanto deseja remover de {produto_selecionado_info['nome']}? (Tem: {qtd_disponivel_pex})", min_value=0, max_value=qtd_disponivel_pex, value=None, key=f"pex_normal_{produto_id_excluir}")
                         motivo_pex_normal = st.text_input("Motivo da remoção", key=f"motivo_pex_normal_{produto_id_excluir}")
                         
-                        if (qtd_remover_normal or 0) > 0 and motivo_pex_normal.strip():
-                            st.warning(f"⚠️ Tem certeza que deseja remover **{qtd_remover_normal} peças** de **{produto_selecionado_info['nome']}** parcialmente?")
-                            if st.button("✅ Sim, Confirmar Remoção", key=f"btn_pex_normal_{produto_id_excluir}"):
-                                supabase.table("produtos").update({"quantidade_estoque": max(0, qtd_disponivel_pex - qtd_remover_normal)}).eq("id", produto_id_excluir).execute()
-                                st.success("🎉 REMOÇÃO PARCIAL CONCLUÍDA COM SUCESSO!")
-                                time.sleep(1.5)
-                                st.rerun()
+                        if st.button("➖ Solicitar Remoção", key=f"btn_solicita_pex_normal_{produto_id_excluir}"):
+                            if (qtd_remover_normal or 0) > 0 and motivo_pex_normal.strip():
+                                popup_confirmacao_estoque(produto_selecionado_info, "parcial", total_remover=qtd_remover_normal, motivo=motivo_pex_normal)
+                            else:
+                                mostrar_popup("Preencha a quantidade e o motivo da remoção.", tipo="erro")
 
                 else:
-                    st.warning(f"⚠️ Tem certeza que deseja excluir **{produto_selecionado_info['nome']} COMPLETAMENTE** do estoque?")
-                    if st.button("🗑️ Sim, Excluir Produto Inteiro", key="btn_excluir_produto"):
-                        try:
-                            itens_usando = supabase.table("itens_evento").select("id").eq("produto_id", produto_id_excluir).execute()
-                            if itens_usando.data: st.error("Não é possível excluir: este produto está alocado em um evento. Remova a alocação primeiro.")
-                            else:
-                                supabase.table("produtos").delete().eq("id", produto_id_excluir).execute()
-                                st.success("🎉 EXCLUSÃO CONCLUÍDA COM SUCESSO!")
-                                time.sleep(1.5)
-                                st.rerun()
-                        except Exception as e: st.error(f"Erro ao excluir: {e}")
+                    if st.button("🗑️ Solicitar Exclusão", key="btn_solicita_excluir_produto"):
+                        popup_confirmacao_estoque(produto_selecionado_info, "total")
             else: st.info("Nenhum produto cadastrado para excluir.")
 
     elif menu == "🛒 Compras":
@@ -1161,7 +1119,8 @@ else:
             observacao_compra = st.text_area("Observação (opcional)")
 
             if st.form_submit_button("Registrar Compra"):
-                if not nome_produto_compra.strip() or not fornecedor.strip(): st.warning("Informe o nome e a loja.")
+                if not nome_produto_compra.strip() or not fornecedor.strip():
+                    mostrar_popup("Informe o nome do produto e a loja.", tipo="erro")
                 else:
                     qtd_calc = quantidade_compra or 0
                     vlr_calc = valor_unit_compra or 0.0
@@ -1172,8 +1131,7 @@ else:
                         "quantidade": qtd_calc, "valor_total": valor_total_calc, "data_compra": str(data_compra_input), "data_prevista_chegada": str(data_chegada_input),
                         "status_chegada": "Aguardando", "forma_pagamento": forma_pagamento_compra, "numero_pedido": numero_pedido_compra, "observacao": observacao_compra
                     }).execute()
-                    st.success("🎉 COMPRA CADASTRADA COM SUCESSO!")
-                    time.sleep(1.5)
+                    mostrar_popup("COMPRA CADASTRADA COM SUCESSO!")
                     st.rerun()
 
         st.markdown("---")
@@ -1201,15 +1159,11 @@ else:
                     escolha_pend = st.selectbox("Selecione o item que chegou", list(opcoes_pend.keys()), key="select_compra_chegou")
                     if st.button("✅ Marcar como Chegou", key="btn_marcar_chegou"):
                         supabase.table("compras").update({"status_chegada": "Chegou"}).eq("id", opcoes_pend[escolha_pend]).execute()
-                        st.success("📦 ITEM MARCADO COMO CHEGOU!")
-                        time.sleep(1.5)
+                        mostrar_popup("ITEM MARCADO COMO CHEGOU!")
                         st.rerun()
                 else:
                     st.caption("Nenhuma compra pendente de chegada.")
 
-            # ========================================================
-            # NOVA ÁREA: EDITAR OU EXCLUIR COMPRAS
-            # ========================================================
             with st.expander("✏️ Editar ou Excluir uma Compra", expanded=False):
                 opcoes_edit_compra = {
                     f"{r.get('data_compra', '')} — {r.get('nome_produto', 'Produto')} (R$ {float(r.get('valor_total', 0)):.2f})": r['id']
@@ -1257,7 +1211,7 @@ else:
                 col_b1, col_b2 = st.columns(2)
                 with col_b1:
                     if st.button("💾 Salvar Alterações", key="btn_salvar_edit_compra"):
-                        if not edit_nome_c.strip() or not edit_loja_c.strip(): st.warning("Informe o nome e loja.")
+                        if not edit_nome_c.strip() or not edit_loja_c.strip(): mostrar_popup("Informe o nome e loja.", tipo="erro")
                         else:
                             novo_tot_c = edit_qtd_c * edit_vunit_c
                             supabase.table("compras").update({
@@ -1267,14 +1221,12 @@ else:
                                 "forma_pagamento": edit_forma_pg, "numero_pedido": edit_num_ped,
                                 "observacao": edit_obs_c
                             }).eq("id", compra_id_sel).execute()
-                            st.success("🎉 COMPRA ATUALIZADA COM SUCESSO!")
-                            time.sleep(1.5)
+                            mostrar_popup("COMPRA ATUALIZADA COM SUCESSO!")
                             st.rerun()
                 with col_b2:
                     if st.button("🗑️ Excluir Compra", key="btn_excluir_edit_compra"):
                         supabase.table("compras").delete().eq("id", compra_id_sel).execute()
-                        st.success("🗑️ COMPRA EXCLUÍDA!")
-                        time.sleep(1.5)
+                        mostrar_popup("COMPRA EXCLUÍDA!")
                         st.rerun()
         else:
             st.info("Nenhuma compra registrada ainda.")
@@ -1346,14 +1298,13 @@ else:
                 data_despesa_input = st.date_input("Data do Gasto", value=datetime.now().date(), format="DD/MM/YYYY")
 
                 if st.form_submit_button("Registrar Gasto"):
-                    if (valor_despesa or 0.0) <= 0: st.warning("Informe um valor maior que zero.")
+                    if (valor_despesa or 0.0) <= 0: mostrar_popup("Informe um valor maior que zero.", tipo="erro")
                     else:
                         supabase.table("despesas_viagem").insert({
                             "empresa_id": emp_id, "categoria": categoria_despesa, "valor": (valor_despesa or 0.0),
                             "observacao": obs_despesa, "data_despesa": str(data_despesa_input)
                         }).execute()
-                        st.success("🎉 CADASTRO CONCLUÍDO COM SUCESSO!")
-                        time.sleep(1.5)
+                        mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
                         st.rerun()
 
         with st.expander("📄 Extrato de Gastos de Viagem do Período", expanded=False):
@@ -1399,7 +1350,7 @@ else:
                 col_btn_d1, col_btn_d2 = st.columns(2)
                 with col_btn_d1:
                     if st.button("💾 Salvar Alteração", key="btn_salvar_despesa"):
-                        if not motivo_edit_desp.strip(): st.warning("Informe o motivo da edição.")
+                        if not motivo_edit_desp.strip(): mostrar_popup("Informe o motivo da edição.", tipo="erro")
                         else:
                             data_hora_edit_desp = datetime.now().strftime("%d/%m/%Y às %H:%M")
                             nova_obs_desp = f"{obs_edit_desp} [Editado em {data_hora_edit_desp} — Motivo: {motivo_edit_desp}]".strip()
@@ -1407,14 +1358,12 @@ else:
                                 "categoria": categoria_edit_desp, "valor": valor_edit_desp,
                                 "observacao": nova_obs_desp, "data_despesa": str(data_edit_desp)
                             }).eq("id", desp_selecionada['id']).execute()
-                            st.success("🎉 ALTERAÇÃO CONCLUÍDA COM SUCESSO!")
-                            time.sleep(1.5)
+                            mostrar_popup("ALTERAÇÃO CONCLUÍDA COM SUCESSO!")
                             st.rerun()
                 with col_btn_d2:
                     if st.button("🗑️ Excluir Lançamento", key="btn_excluir_despesa"):
                         supabase.table("despesas_viagem").delete().eq("id", desp_selecionada['id']).execute()
-                        st.success("🗑️ LANÇAMENTO EXCLUÍDO!")
-                        time.sleep(1.5)
+                        mostrar_popup("LANÇAMENTO EXCLUÍDO!")
                         st.rerun()
 
         with st.expander("➕ Outro Lançamento no Caixa (Receita ou Despesa Avulsa)", expanded=False):
@@ -1429,8 +1378,7 @@ else:
                         "empresa_id": emp_id, "descricao": desc_fat, "tipo": tipo_fat,
                         "valor": (valor_fat or 0.0), "data_pagamento": str(data_fat_input), "pago": True
                     }).execute()
-                    st.success("🎉 LANÇAMENTO CONCLUÍDO COM SUCESSO!")
-                    time.sleep(1.5)
+                    mostrar_popup("LANÇAMENTO CONCLUÍDO COM SUCESSO!")
                     st.rerun()
 
         st.markdown("### 📜 Extrato Financeiro Completo (Lançamentos Avulsos)")
@@ -1469,7 +1417,7 @@ else:
                 col_btn_f1, col_btn_f2 = st.columns(2)
                 with col_btn_f1:
                     if st.button("💾 Salvar Alteração", key="btn_salvar_fat"):
-                        if not motivo_edit_fat.strip(): st.warning("Informe o motivo da edição.")
+                        if not motivo_edit_fat.strip(): mostrar_popup("Informe o motivo da edição.", tipo="erro")
                         else:
                             data_hora_edit_fat = datetime.now().strftime("%d/%m/%Y às %H:%M")
                             nova_desc_fat = f"{desc_edit_fat} [Editado em {data_hora_edit_fat} — Motivo: {motivo_edit_fat}]"
@@ -1477,14 +1425,12 @@ else:
                                 "descricao": nova_desc_fat, "tipo": tipo_edit_fat,
                                 "valor": valor_edit_fat, "data_pagamento": str(data_edit_fat)
                             }).eq("id", fat_selecionado['id']).execute()
-                            st.success("🎉 ALTERAÇÃO CONCLUÍDA COM SUCESSO!")
-                            time.sleep(1.5)
+                            mostrar_popup("ALTERAÇÃO CONCLUÍDA COM SUCESSO!")
                             st.rerun()
                 with col_btn_f2:
                     if st.button("🗑️ Excluir Lançamento", key="btn_excluir_fat"):
                         supabase.table("faturamento").delete().eq("id", fat_selecionado['id']).execute()
-                        st.success("🗑️ LANÇAMENTO EXCLUÍDO!")
-                        time.sleep(1.5)
+                        mostrar_popup("LANÇAMENTO EXCLUÍDO!")
                         st.rerun()
 
         st.markdown("---")
