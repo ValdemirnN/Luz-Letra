@@ -2122,11 +2122,27 @@ else:
             if despesas_viagem_periodo:
                 df_despesas_viagem = pd.DataFrame(despesas_viagem_periodo)
                 colunas_desp = [c for c in ["data_despesa", "categoria", "valor", "observacao"] if c in df_despesas_viagem.columns]
-                st.dataframe(df_despesas_viagem[colunas_desp].sort_values("data_despesa", ascending=False), use_container_width=True, hide_index=True)
+                df_despesas_viagem_show = df_despesas_viagem[colunas_desp].sort_values("data_despesa", ascending=False).copy()
+                df_despesas_viagem_show["data_despesa"] = df_despesas_viagem_show["data_despesa"].apply(
+                    lambda d: datetime.strptime(str(d).split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
+                )
+                st.dataframe(df_despesas_viagem_show, use_container_width=True, hide_index=True)
+            else:
+                st.caption("Nenhum gasto de viagem registrado neste período.")
 
-                st.markdown("##### ✏️ Editar ou excluir um gasto")
+        # ------------------------------------------
+        # EDITAR/EXCLUIR GASTOS DE VIAGEM (aba própria, recolhível)
+        # ------------------------------------------
+        def _fmt_data_br_simples(d):
+            try:
+                return datetime.strptime(str(d).split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
+            except Exception:
+                return str(d)
+
+        if despesas_viagem_periodo:
+            with st.expander("✏️ Editar ou Excluir um Gasto de Viagem", expanded=False):
                 opcoes_desp = {
-                    f"{d.get('data_despesa','-')} — {d.get('categoria','-')} — R$ {d.get('valor',0):.2f}" + (f" ({d.get('observacao')})" if d.get('observacao') else ""): d['id']
+                    f"{_fmt_data_br_simples(d.get('data_despesa'))} — {d.get('categoria','-')} — R$ {d.get('valor',0):.2f}" + (f" ({d.get('observacao')})" if d.get('observacao') else ""): d['id']
                     for d in sorted(despesas_viagem_periodo, key=lambda x: x.get('data_despesa') or '', reverse=True)
                 }
                 escolha_desp_txt = st.selectbox("Selecione o lançamento", list(opcoes_desp.keys()), key="select_editar_despesa")
@@ -2147,23 +2163,27 @@ else:
                     value=datetime.strptime(str(desp_selecionada.get('data_despesa')).split("T")[0], "%Y-%m-%d").date(),
                     format="DD/MM/YYYY", key="edit_data_despesa"
                 )
+                motivo_edit_desp = st.text_input("Motivo da Edição (obrigatório para salvar alteração)", key="motivo_edit_despesa")
 
                 col_btn_d1, col_btn_d2 = st.columns(2)
                 with col_btn_d1:
                     if st.button("💾 Salvar Alteração", key="btn_salvar_despesa"):
-                        supabase.table("despesas_viagem").update({
-                            "categoria": categoria_edit_desp, "valor": valor_edit_desp,
-                            "observacao": obs_edit_desp, "data_despesa": str(data_edit_desp)
-                        }).eq("id", desp_selecionada['id']).execute()
-                        st.toast("Gasto atualizado com sucesso!", icon="💾")
-                        st.rerun()
+                        if not motivo_edit_desp.strip():
+                            st.warning("Informe o motivo da edição para salvar.")
+                        else:
+                            data_hora_edit_desp = datetime.now().strftime("%d/%m/%Y às %H:%M")
+                            nova_obs_desp = f"{obs_edit_desp} [Editado em {data_hora_edit_desp} — Motivo: {motivo_edit_desp}]".strip()
+                            supabase.table("despesas_viagem").update({
+                                "categoria": categoria_edit_desp, "valor": valor_edit_desp,
+                                "observacao": nova_obs_desp, "data_despesa": str(data_edit_desp)
+                            }).eq("id", desp_selecionada['id']).execute()
+                            st.toast("Gasto atualizado com sucesso!", icon="💾")
+                            st.rerun()
                 with col_btn_d2:
                     if st.button("🗑️ Excluir Lançamento", key="btn_excluir_despesa"):
                         supabase.table("despesas_viagem").delete().eq("id", desp_selecionada['id']).execute()
                         st.toast("Gasto excluído!", icon="🗑️")
                         st.rerun()
-            else:
-                st.caption("Nenhum gasto de viagem registrado neste período.")
 
         # ------------------------------------------
         # OUTROS LANÇAMENTOS MANUAIS NO CAIXA
@@ -2186,11 +2206,15 @@ else:
         st.markdown("### 📜 Extrato Financeiro Completo (Lançamentos Avulsos)")
         fat_lista = supabase.table("faturamento").select("id, data_pagamento, tipo, descricao, valor").eq("empresa_id", emp_id).order("data_pagamento", desc=True).execute()
         if fat_lista.data:
-            st.dataframe(pd.DataFrame(fat_lista.data)[["data_pagamento", "tipo", "descricao", "valor"]], use_container_width=True, hide_index=True)
+            df_fat_show = pd.DataFrame(fat_lista.data)[["data_pagamento", "tipo", "descricao", "valor"]].copy()
+            df_fat_show["data_pagamento"] = df_fat_show["data_pagamento"].apply(
+                lambda d: datetime.strptime(str(d).split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
+            )
+            st.dataframe(df_fat_show, use_container_width=True, hide_index=True)
 
-            with st.expander("✏️ Editar ou excluir um lançamento avulso", expanded=False):
+            with st.expander("✏️ Editar ou Excluir um Lançamento Avulso", expanded=False):
                 opcoes_fat = {
-                    f"{f.get('data_pagamento','-')} — {f.get('tipo','-')} — {f.get('descricao','-')} — R$ {f.get('valor',0):.2f}": f['id']
+                    f"{_fmt_data_br_simples(f.get('data_pagamento'))} — {f.get('tipo','-')} — {f.get('descricao','-')} — R$ {f.get('valor',0):.2f}": f['id']
                     for f in fat_lista.data
                 }
                 escolha_fat_txt = st.selectbox("Selecione o lançamento", list(opcoes_fat.keys()), key="select_editar_fat")
@@ -2211,16 +2235,22 @@ else:
                     value=datetime.strptime(str(fat_selecionado.get('data_pagamento')).split("T")[0], "%Y-%m-%d").date(),
                     format="DD/MM/YYYY", key="edit_data_fat"
                 )
+                motivo_edit_fat = st.text_input("Motivo da Edição (obrigatório para salvar alteração)", key="motivo_edit_fat")
 
                 col_btn_f1, col_btn_f2 = st.columns(2)
                 with col_btn_f1:
                     if st.button("💾 Salvar Alteração", key="btn_salvar_fat"):
-                        supabase.table("faturamento").update({
-                            "descricao": desc_edit_fat, "tipo": tipo_edit_fat,
-                            "valor": valor_edit_fat, "data_pagamento": str(data_edit_fat)
-                        }).eq("id", fat_selecionado['id']).execute()
-                        st.toast("Lançamento atualizado com sucesso!", icon="💾")
-                        st.rerun()
+                        if not motivo_edit_fat.strip():
+                            st.warning("Informe o motivo da edição para salvar.")
+                        else:
+                            data_hora_edit_fat = datetime.now().strftime("%d/%m/%Y às %H:%M")
+                            nova_desc_fat = f"{desc_edit_fat} [Editado em {data_hora_edit_fat} — Motivo: {motivo_edit_fat}]"
+                            supabase.table("faturamento").update({
+                                "descricao": nova_desc_fat, "tipo": tipo_edit_fat,
+                                "valor": valor_edit_fat, "data_pagamento": str(data_edit_fat)
+                            }).eq("id", fat_selecionado['id']).execute()
+                            st.toast("Lançamento atualizado com sucesso!", icon="💾")
+                            st.rerun()
                 with col_btn_f2:
                     if st.button("🗑️ Excluir Lançamento", key="btn_excluir_fat"):
                         supabase.table("faturamento").delete().eq("id", fat_selecionado['id']).execute()
