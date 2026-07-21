@@ -31,6 +31,49 @@ except ImportError:
 st.set_page_config(page_title="Luz & Letras - Sistema", page_icon="logo.jpg", layout="wide")
 
 # ==========================================
+# PÁGINA PÚBLICA: POLÍTICA DE PRIVACIDADE (sem precisar de login)
+# Acesse em: https://SEU_APP.streamlit.app/?privacidade=1
+# ==========================================
+if st.query_params.get("privacidade") == "1":
+    st.title("Política de Privacidade - Luz & Letras Sistema")
+    st.markdown("""
+    **Última atualização:** 21 de julho de 2026
+
+    O Luz & Letras Sistema ("o Sistema") é uma plataforma de gestão para
+    empresas de locação de itens para eventos. Esta política explica como
+    tratamos os dados dos usuários.
+
+    ### 1. Dados que coletamos
+    - Nome, e-mail e senha (para login no sistema).
+    - Dados de eventos, clientes, estoque e faturamento cadastrados pelo próprio usuário.
+    - Ao conectar sua Google Agenda, com sua autorização explícita, acessamos: seu e-mail
+      do Google (para identificar a conta conectada) e permissão para criar e atualizar
+      eventos na sua agenda.
+
+    ### 2. Como usamos os dados do Google Agenda
+    Usamos a permissão apenas para criar ou atualizar eventos na sua própria Google Agenda,
+    correspondentes aos eventos que você cadastra no Sistema, com lembretes automáticos.
+    Não lemos, coletamos nem compartilhamos outros dados da sua agenda além dos eventos
+    que o próprio Sistema cria.
+
+    ### 3. Compartilhamento de dados
+    Não vendemos nem compartilhamos seus dados com terceiros, exceto quando exigido por lei.
+
+    ### 4. Armazenamento
+    Os dados ficam armazenados em banco de dados protegido (Supabase), com acesso
+    restrito à equipe responsável pelo Sistema.
+
+    ### 5. Seus direitos
+    Você pode, a qualquer momento, desconectar sua Google Agenda pela tela de Perfil do
+    Sistema, ou solicitar a exclusão da sua conta e dados entrando em contato pelo
+    e-mail nvaldemir76@gmail.com.
+
+    ### 6. Contato
+    Dúvidas sobre esta política: nvaldemir76@gmail.com
+    """)
+    st.stop()
+
+# ==========================================
 # CUSTOMIZAÇÃO DE INTERFACE (CSS)
 # ==========================================
 st.markdown("""
@@ -126,7 +169,7 @@ def aplicar_fundo_com_logo(caminho_logo="logo.jpg"):
 aplicar_fundo_com_logo()
 
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "https://eootqeatgqcnenngnexp.supabase.co")
-SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "sb_secret_oxjLrfF5a0AcTNcs7Bimpg_a5TWQTJB")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 
 # ==========================================
 # CONFIGURAÇÕES DE E-MAIL E PAGAMENTO
