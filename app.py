@@ -52,6 +52,12 @@ input[type="number"] {
 </style>
 """, unsafe_allow_html=True)
 
+# Função auxiliar para formatar moeda com ponto no milhar e vírgula nos centavos
+def formatar_moeda(valor):
+    if valor is None:
+        return "0,00"
+    return f"{float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
 
 # ==========================================
 # LOGO DE FUNDO ANIMADA (MARCA D'ÁGUA COM BRILHO)
@@ -459,9 +465,9 @@ else:
 
         data_ini_pdf = _fmt_data_pdf(evento_dict.get('data_inicio'))
         data_fim_pdf = _fmt_data_pdf(evento_dict.get('data_fim_alocacao'))
-        valor_pdf = evento_dict.get('valor_total') or 0
+        valor_pdf = float(evento_dict.get('valor_total') or 0)
 
-        dados_texto = f"""<b>Evento:</b> {evento_dict.get('descricao', '-')}<br/><b>Cliente:</b> {nome_cliente_pdf}<br/><b>Contato:</b> {contato_cliente_pdf}<br/><b>Data do Evento:</b> {data_ini_pdf} a {data_fim_pdf}<br/><b>Local/Observações:</b> {evento_dict.get('observacao', '-')}<br/><b>Valor Cobrado:</b> R$ {valor_pdf:.2f}<br/><b>Status:</b> {evento_dict.get('status', '-')}<br/>"""
+        dados_texto = f"""<b>Evento:</b> {evento_dict.get('descricao', '-')}<br/><b>Cliente:</b> {nome_cliente_pdf}<br/><b>Contato:</b> {contato_cliente_pdf}<br/><b>Data do Evento:</b> {data_ini_pdf} a {data_fim_pdf}<br/><b>Local/Observações:</b> {evento_dict.get('observacao', '-')}<br/><b>Valor Cobrado:</b> {formatar_moeda(valor_pdf)}<br/><b>Status:</b> {evento_dict.get('status', '-')}<br/>"""
         story.append(Paragraph(dados_texto, styles['Normal']))
         story.append(Spacer(1, 18))
         story.append(Paragraph("<b>Produtos Alocados para este Evento:</b>", styles['Heading3']))
@@ -646,9 +652,9 @@ else:
                     with tab_detalhes:
                         col_a, col_b = st.columns(2)
                         with col_a:
-                            valor_ev = ev.get('valor_total') or 0
+                            valor_ev = float(ev.get('valor_total') or 0)
                             st.write(f"**Data do Evento:** {data_ini_br} até {data_fim_br}")
-                            st.write(f"**Valor:** R$ {valor_ev:.2f}")
+                            st.write(f"**Valor:** {formatar_moeda(valor_ev)}")
                             st.write(f"**Contato do Cliente:** {contato_cliente_ev}")
                             st.write(f"**Observações:** {ev.get('observacao') or '-'}")
                         with col_b:
@@ -811,7 +817,7 @@ else:
                         with col_ed1: nova_data_inicio_edit = st.date_input("Data de Início", value=_parse_data_edit(ev.get('data_inicio')), format="DD/MM/YYYY", key=f"edit_data_ini_{ev['id']}")
                         with col_ed2: nova_data_fim_edit = st.date_input("Data Fim", value=_parse_data_edit(ev.get('data_fim_alocacao')), format="DD/MM/YYYY", key=f"edit_data_fim_{ev['id']}")
                         
-                        novo_valor_edit = st.number_input("Valor Cobrado (R$)", min_value=0.0, step=50.0, value=float(ev.get('valor_total') or 0), key=f"edit_valor_{ev['id']}")
+                        novo_valor_edit = st.number_input("Valor Cobrado (R$)", min_value=0.0, step=50.0, value=float(ev.get('valor_total') or 0), format="%.2f", key=f"edit_valor_{ev['id']}")
                         novo_local_edit = st.text_area("Local/Observações", value=ev.get('observacao') or "", key=f"edit_local_{ev['id']}")
                         col_ec1, col_ec2 = st.columns(2)
                         with col_ec1: novo_nome_cliente_edit = st.text_input("Nome do Cliente", value=nome_cliente_ev, key=f"edit_nome_cli_{ev['id']}")
@@ -1185,22 +1191,91 @@ else:
             ] if c in df_compras.columns or c == "valor_unitario"]
             st.dataframe(df_compras[colunas_exibir_compras], use_container_width=True, hide_index=True)
 
-            if "status_chegada" in df_compras.columns:
-                with st.expander("🔄 Atualizar Status de Chegada", expanded=False):
-                    pendentes = df_compras[df_compras['status_chegada'] != 'Chegou'] if 'status_chegada' in df_compras.columns else df_compras
-                    if len(pendentes) > 0:
-                        opcoes_pend = {
-                            f"{r['nome_produto']} — {r.get('fornecedor','')} (Previsão: {r.get('data_prevista_chegada','-')})": r['id']
-                            for _, r in pendentes.iterrows()
-                        }
-                        escolha_pend = st.selectbox("Selecione o item que chegou", list(opcoes_pend.keys()), key="select_compra_chegou")
-                        if st.button("✅ Marcar como Chegou", key="btn_marcar_chegou"):
-                            supabase.table("compras").update({"status_chegada": "Chegou"}).eq("id", opcoes_pend[escolha_pend]).execute()
-                            st.success("📦 ITEM MARCADO COMO CHEGOU!")
+            with st.expander("🔄 Atualizar Status de Chegada", expanded=False):
+                pendentes = df_compras[df_compras['status_chegada'] != 'Chegou'] if 'status_chegada' in df_compras.columns else df_compras
+                if len(pendentes) > 0:
+                    opcoes_pend = {
+                        f"{r['nome_produto']} — {r.get('fornecedor','')} (Previsão: {r.get('data_prevista_chegada','-')})": r['id']
+                        for _, r in pendentes.iterrows()
+                    }
+                    escolha_pend = st.selectbox("Selecione o item que chegou", list(opcoes_pend.keys()), key="select_compra_chegou")
+                    if st.button("✅ Marcar como Chegou", key="btn_marcar_chegou"):
+                        supabase.table("compras").update({"status_chegada": "Chegou"}).eq("id", opcoes_pend[escolha_pend]).execute()
+                        st.success("📦 ITEM MARCADO COMO CHEGOU!")
+                        time.sleep(1.5)
+                        st.rerun()
+                else:
+                    st.caption("Nenhuma compra pendente de chegada.")
+
+            # ========================================================
+            # NOVA ÁREA: EDITAR OU EXCLUIR COMPRAS
+            # ========================================================
+            with st.expander("✏️ Editar ou Excluir uma Compra", expanded=False):
+                opcoes_edit_compra = {
+                    f"{r.get('data_compra', '')} — {r.get('nome_produto', 'Produto')} (R$ {float(r.get('valor_total', 0)):.2f})": r['id']
+                    for _, r in df_compras.iterrows()
+                }
+                escolha_compra_txt = st.selectbox("Selecione a compra para editar", list(opcoes_edit_compra.keys()), key="select_editar_compra")
+                compra_id_sel = opcoes_edit_compra[escolha_compra_txt]
+                comp_sel = next(c for c in compras_lista.data if c['id'] == compra_id_sel)
+
+                col_ec1, col_ec2 = st.columns(2)
+                with col_ec1: edit_nome_c = st.text_input("Nome do Produto", value=comp_sel.get('nome_produto', ''), key="ed_nome_c")
+                with col_ec2: edit_loja_c = st.text_input("Loja/Site", value=comp_sel.get('fornecedor', ''), key="ed_loja_c")
+
+                col_ec3, col_ec4, col_ec5 = st.columns(3)
+                with col_ec3: edit_qtd_c = st.number_input("Quantidade", min_value=1, value=int(comp_sel.get('quantidade') or 1), key="ed_qtd_c")
+                with col_ec4:
+                    q_atual = int(comp_sel.get('quantidade') or 1)
+                    v_tot_atual = float(comp_sel.get('valor_total') or 0)
+                    v_unit_atual = v_tot_atual / q_atual if q_atual > 0 else 0.0
+                    edit_vunit_c = st.number_input("Valor Unitário (R$)", min_value=0.0, value=v_unit_atual, format="%.2f", key="ed_vunit_c")
+                with col_ec5: 
+                    tipos_aq = ["Presencial", "Site"]
+                    idx_aq = tipos_aq.index(comp_sel.get('tipo_aquisicao')) if comp_sel.get('tipo_aquisicao') in tipos_aq else 0
+                    edit_tipo_c = st.selectbox("Comprado onde?", tipos_aq, index=idx_aq, key="ed_tipo_c")
+
+                col_ec6, col_ec7 = st.columns(2)
+                with col_ec6:
+                    try: dt_c = datetime.strptime(str(comp_sel.get('data_compra')).split("T")[0], "%Y-%m-%d").date()
+                    except: dt_c = datetime.now().date()
+                    edit_dt_c = st.date_input("Data da Compra", value=dt_c, format="DD/MM/YYYY", key="ed_dt_c")
+                with col_ec7:
+                    try: dt_prev = datetime.strptime(str(comp_sel.get('data_prevista_chegada')).split("T")[0], "%Y-%m-%d").date()
+                    except: dt_prev = datetime.now().date()
+                    edit_dt_prev = st.date_input("Previsão de Chegada", value=dt_prev, format="DD/MM/YYYY", key="ed_dt_prev")
+
+                col_ec8, col_ec9 = st.columns(2)
+                with col_ec8:
+                    formas_pg = ["Não informado", "Pix", "Cartão", "Dinheiro", "Boleto", "Outro"]
+                    idx_pg = formas_pg.index(comp_sel.get('forma_pagamento')) if comp_sel.get('forma_pagamento') in formas_pg else 0
+                    edit_forma_pg = st.selectbox("Forma de Pagamento", formas_pg, index=idx_pg, key="ed_forma_pg")
+                with col_ec9: edit_num_ped = st.text_input("Nº Pedido", value=comp_sel.get('numero_pedido') or "", key="ed_num_ped")
+
+                edit_obs_c = st.text_area("Observação", value=comp_sel.get('observacao') or "", key="ed_obs_c")
+
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
+                    if st.button("💾 Salvar Alterações", key="btn_salvar_edit_compra"):
+                        if not edit_nome_c.strip() or not edit_loja_c.strip(): st.warning("Informe o nome e loja.")
+                        else:
+                            novo_tot_c = edit_qtd_c * edit_vunit_c
+                            supabase.table("compras").update({
+                                "nome_produto": edit_nome_c, "fornecedor": edit_loja_c, "local_detalhe": edit_loja_c,
+                                "quantidade": edit_qtd_c, "valor_total": novo_tot_c, "tipo_aquisicao": edit_tipo_c,
+                                "data_compra": str(edit_dt_c), "data_prevista_chegada": str(edit_dt_prev),
+                                "forma_pagamento": edit_forma_pg, "numero_pedido": edit_num_ped,
+                                "observacao": edit_obs_c
+                            }).eq("id", compra_id_sel).execute()
+                            st.success("🎉 COMPRA ATUALIZADA COM SUCESSO!")
                             time.sleep(1.5)
                             st.rerun()
-                    else:
-                        st.caption("Nenhuma compra pendente de chegada.")
+                with col_b2:
+                    if st.button("🗑️ Excluir Compra", key="btn_excluir_edit_compra"):
+                        supabase.table("compras").delete().eq("id", compra_id_sel).execute()
+                        st.success("🗑️ COMPRA EXCLUÍDA!")
+                        time.sleep(1.5)
+                        st.rerun()
         else:
             st.info("Nenhuma compra registrada ainda.")
 
@@ -1231,25 +1306,25 @@ else:
 
         eventos_fat = supabase.table("eventos").select("id, data_inicio, valor_total, status, descricao").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
         eventos_periodo = [e for e in (eventos_fat.data or []) if _dentro_do_periodo(e.get('data_inicio'))]
-        receita_eventos = sum(e.get('valor_total') or 0 for e in eventos_periodo)
+        receita_eventos = sum(float(e.get('valor_total') or 0) for e in eventos_periodo)
         qtd_eventos_periodo = len(eventos_periodo)
 
         try:
             despesas_viagem_resp = supabase.table("despesas_viagem").select("*").eq("empresa_id", emp_id).execute()
             despesas_viagem_periodo = [d for d in (despesas_viagem_resp.data or []) if _dentro_do_periodo(d.get('data_despesa'))]
         except Exception: despesas_viagem_periodo = []
-        total_despesas_viagem = sum(d.get('valor') or 0 for d in despesas_viagem_periodo)
+        total_despesas_viagem = sum(float(d.get('valor') or 0) for d in despesas_viagem_periodo)
 
         try:
             compras_resp = supabase.table("compras").select("*").eq("empresa_id", emp_id).execute()
             compras_periodo = [c for c in (compras_resp.data or []) if _dentro_do_periodo(c.get('data_compra'))]
         except Exception: compras_periodo = []
-        total_investimento_compras = sum(c.get('valor_total') or 0 for c in compras_periodo)
+        total_investimento_compras = sum(float(c.get('valor_total') or 0) for c in compras_periodo)
 
         fat_manual_resp = supabase.table("faturamento").select("*").eq("empresa_id", emp_id).execute()
         fat_manual_periodo = [f for f in (fat_manual_resp.data or []) if _dentro_do_periodo(f.get('data_pagamento'))]
-        receita_manual = sum(f.get('valor') or 0 for f in fat_manual_periodo if f.get('tipo') == 'receita')
-        despesa_manual = sum(f.get('valor') or 0 for f in fat_manual_periodo if f.get('tipo') == 'despesa')
+        receita_manual = sum(float(f.get('valor') or 0) for f in fat_manual_periodo if f.get('tipo') == 'receita')
+        despesa_manual = sum(float(f.get('valor') or 0) for f in fat_manual_periodo if f.get('tipo') == 'despesa')
 
         lucro_liquido = (receita_eventos + receita_manual) - (total_despesas_viagem + total_investimento_compras + despesa_manual)
 
@@ -1257,16 +1332,16 @@ else:
         st.markdown(f"#### 📊 Resumo — {', '.join(meses_selecionados_nomes) if meses_selecionados_nomes else 'Ano inteiro'} de {ano_selecionado}")
 
         col_r1, col_r2, col_r3, col_r4 = st.columns(4)
-        col_r1.metric("🎉 Receita de Eventos", f"R$ {receita_eventos:.2f}", help=f"{qtd_eventos_periodo} evento(s) no período")
-        col_r2.metric("⛽ Gastos de Viagem", f"R$ {total_despesas_viagem:.2f}")
-        col_r3.metric("🛒 Investimento em Compras", f"R$ {total_investimento_compras:.2f}")
-        col_r4.metric("💰 Lucro Líquido", f"R$ {lucro_liquido:.2f}")
+        col_r1.metric("🎉 Receita de Eventos", formatar_moeda(receita_eventos), help=f"{qtd_eventos_periodo} evento(s) no período")
+        col_r2.metric("⛽ Gastos de Viagem", formatar_moeda(total_despesas_viagem))
+        col_r3.metric("🛒 Investimento em Compras", formatar_moeda(total_investimento_compras))
+        col_r4.metric("💰 Lucro Líquido", formatar_moeda(lucro_liquido))
 
         st.markdown("---")
         with st.expander("⛽ Registrar Gasto de Viagem", expanded=False):
             with st.form("form_despesa_viagem"):
                 categoria_despesa = st.selectbox("Categoria", ["Combustível", "Alimentação", "Outros"])
-                valor_despesa = st.number_input("Valor (R$)", min_value=0.0, step=5.0, value=None)
+                valor_despesa = st.number_input("Valor (R$)", min_value=0.0, step=5.0, value=None, format="%.2f")
                 obs_despesa = st.text_input("Observação (opcional)")
                 data_despesa_input = st.date_input("Data do Gasto", value=datetime.now().date(), format="DD/MM/YYYY")
 
@@ -1299,7 +1374,7 @@ else:
         if despesas_viagem_periodo:
             with st.expander("✏️ Editar ou Excluir um Gasto de Viagem", expanded=False):
                 opcoes_desp = {
-                    f"{_fmt_data_br_simples(d.get('data_despesa'))} — {d.get('categoria','-')} — R$ {d.get('valor',0):.2f}" + (f" ({d.get('observacao')})" if d.get('observacao') else ""): d['id']
+                    f"{_fmt_data_br_simples(d.get('data_despesa'))} — {d.get('categoria','-')} — R$ {float(d.get('valor',0)):.2f}" + (f" ({d.get('observacao')})" if d.get('observacao') else ""): d['id']
                     for d in sorted(despesas_viagem_periodo, key=lambda x: x.get('data_despesa') or '', reverse=True)
                 }
                 escolha_desp_txt = st.selectbox("Selecione o lançamento", list(opcoes_desp.keys()), key="select_editar_despesa")
@@ -1312,7 +1387,7 @@ else:
                         index=["Combustível", "Alimentação", "Outros"].index(desp_selecionada.get('categoria')) if desp_selecionada.get('categoria') in ["Combustível", "Alimentação", "Outros"] else 0,
                         key="edit_categoria_despesa"
                     )
-                with col_ed_d2: valor_edit_desp = st.number_input("Valor (R$)", min_value=0.0, step=5.0, value=float(desp_selecionada.get('valor') or 0), key="edit_valor_despesa")
+                with col_ed_d2: valor_edit_desp = st.number_input("Valor (R$)", min_value=0.0, step=5.0, value=float(desp_selecionada.get('valor') or 0), format="%.2f", key="edit_valor_despesa")
                 obs_edit_desp = st.text_input("Observação", value=desp_selecionada.get('observacao') or "", key="edit_obs_despesa")
                 data_edit_desp = st.date_input(
                     "Data do Gasto",
@@ -1346,7 +1421,7 @@ else:
             with st.form("form_fat"):
                 desc_fat = st.text_input("Descrição (Ex: Pagamento de Luz, Recebimento Extra)")
                 tipo_fat = st.radio("Tipo de Movimentação", ["receita", "despesa"], horizontal=True)
-                valor_fat = st.number_input("Valor (R$)", min_value=0.0, value=None)
+                valor_fat = st.number_input("Valor (R$)", min_value=0.0, value=None, format="%.2f")
                 data_fat_input = st.date_input("Data", value=datetime.now().date(), format="DD/MM/YYYY", key="data_fat_manual")
 
                 if st.form_submit_button("Lançar no Caixa"):
@@ -1369,7 +1444,7 @@ else:
 
             with st.expander("✏️ Editar ou Excluir um Lançamento Avulso", expanded=False):
                 opcoes_fat = {
-                    f"{_fmt_data_br_simples(f.get('data_pagamento'))} — {f.get('tipo','-')} — {f.get('descricao','-')} — R$ {f.get('valor',0):.2f}": f['id']
+                    f"{_fmt_data_br_simples(f.get('data_pagamento'))} — {f.get('tipo','-')} — {f.get('descricao','-')} — R$ {float(f.get('valor',0)):.2f}": f['id']
                     for f in fat_lista.data
                 }
                 escolha_fat_txt = st.selectbox("Selecione o lançamento", list(opcoes_fat.keys()), key="select_editar_fat")
@@ -1383,7 +1458,7 @@ else:
                         index=["receita", "despesa"].index(fat_selecionado.get('tipo')) if fat_selecionado.get('tipo') in ["receita", "despesa"] else 0,
                         key="edit_tipo_fat"
                     )
-                with col_ef2: valor_edit_fat = st.number_input("Valor (R$)", min_value=0.0, value=float(fat_selecionado.get('valor') or 0), key="edit_valor_fat")
+                with col_ef2: valor_edit_fat = st.number_input("Valor (R$)", min_value=0.0, value=float(fat_selecionado.get('valor') or 0), format="%.2f", key="edit_valor_fat")
                 data_edit_fat = st.date_input(
                     "Data",
                     value=datetime.strptime(str(fat_selecionado.get('data_pagamento')).split("T")[0], "%Y-%m-%d").date(),
@@ -1418,10 +1493,10 @@ else:
         def montar_dataframe_mensal():
             linhas = []
             for mes_num in meses_selecionados:
-                receita_mes = sum(e.get('valor_total') or 0 for e in eventos_periodo if datetime.strptime(e['data_inicio'].split("T")[0], "%Y-%m-%d").month == mes_num)
+                receita_mes = sum(float(e.get('valor_total') or 0) for e in eventos_periodo if datetime.strptime(e['data_inicio'].split("T")[0], "%Y-%m-%d").month == mes_num)
                 qtd_mes = sum(1 for e in eventos_periodo if datetime.strptime(e['data_inicio'].split("T")[0], "%Y-%m-%d").month == mes_num)
-                viagem_mes = sum(d.get('valor') or 0 for d in despesas_viagem_periodo if datetime.strptime(str(d['data_despesa']).split("T")[0], "%Y-%m-%d").month == mes_num)
-                compras_mes = sum(c.get('valor_total') or 0 for c in compras_periodo if datetime.strptime(str(c['data_compra']).split("T")[0], "%Y-%m-%d").month == mes_num)
+                viagem_mes = sum(float(d.get('valor') or 0) for d in despesas_viagem_periodo if datetime.strptime(str(d['data_despesa']).split("T")[0], "%Y-%m-%d").month == mes_num)
+                compras_mes = sum(float(c.get('valor_total') or 0) for c in compras_periodo if datetime.strptime(str(c['data_compra']).split("T")[0], "%Y-%m-%d").month == mes_num)
                 linhas.append({
                     "Mês": nomes_meses[mes_num - 1],
                     "Nº Eventos": qtd_mes,
@@ -1489,10 +1564,10 @@ else:
                 estilo_kpi_label = ParagraphStyle('KpiLabel', fontSize=8.5, textColor=colors.white, alignment=TA_CENTER, fontName="Helvetica-Bold")
                 estilo_kpi_valor = ParagraphStyle('KpiValor', fontSize=14, textColor=colors.white, alignment=TA_CENTER, fontName="Helvetica-Bold", spaceBefore=4)
                 cartoes = [
-                    ("🎉 RECEITA DE EVENTOS", f"R$ {receita_eventos:.2f}", COR_DOURADO),
-                    ("⛽ GASTOS DE VIAGEM", f"R$ {total_despesas_viagem:.2f}", COR_VERMELHO),
-                    ("🛒 INVESTIMENTO EM COMPRAS", f"R$ {total_investimento_compras:.2f}", COR_AZUL),
-                    ("💰 LUCRO LÍQUIDO", f"R$ {lucro_liquido:.2f}", COR_VERDE if lucro_liquido >= 0 else COR_VERMELHO),
+                    ("🎉 RECEITA DE EVENTOS", formatar_moeda(receita_eventos), COR_DOURADO),
+                    ("⛽ GASTOS DE VIAGEM", formatar_moeda(total_despesas_viagem), COR_VERMELHO),
+                    ("🛒 INVESTIMENTO EM COMPRAS", formatar_moeda(total_investimento_compras), COR_AZUL),
+                    ("💰 LUCRO LÍQUIDO", formatar_moeda(lucro_liquido), COR_VERDE if lucro_liquido >= 0 else COR_VERMELHO),
                 ]
                 linha_kpi = [[
                     Table([[Paragraph(label, estilo_kpi_label)], [Paragraph(valor, estilo_kpi_valor)]],
@@ -1508,7 +1583,13 @@ else:
 
                 tabela_fat_dados = [["Mês", "Nº Eventos", "Receita Eventos", "Gastos Viagem", "Compras", "Lucro Líquido"]]
                 for _, row in df_mensal_export.iterrows():
-                    tabela_fat_dados.append([row["Mês"], str(row["Nº Eventos"]), f"R$ {row['Receita de Eventos (R$)']:.2f}", f"R$ {row['Gastos de Viagem (R$)']:.2f}", f"R$ {row['Investimento em Compras (R$)']:.2f}", f"R$ {row['Lucro Líquido (R$)']:.2f}"])
+                    tabela_fat_dados.append([
+                        row["Mês"], str(row["Nº Eventos"]),
+                        formatar_moeda(row['Receita de Eventos (R$)']), 
+                        formatar_moeda(row['Gastos de Viagem (R$)']), 
+                        formatar_moeda(row['Investimento em Compras (R$)']), 
+                        formatar_moeda(row['Lucro Líquido (R$)'])
+                    ])
                 tabela_fat_pdf = Table(tabela_fat_dados, colWidths=[2.6*cm, 2.2*cm, 3.2*cm, 3*cm, 2.8*cm, 3.2*cm])
                 estilo_tabela_fat = [
                     ('BACKGROUND', (0, 0), (-1, 0), COR_PRETO), ('TEXTCOLOR', (0, 0), (-1, 0), COR_DOURADO), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -1519,7 +1600,7 @@ else:
                 tabela_fat_pdf.setStyle(TableStyle(estilo_tabela_fat))
                 story_fat.append(tabela_fat_pdf)
                 story_fat.append(Spacer(1, 14))
-                story_fat.append(Paragraph(f"<b>Lucro Líquido Total do Período:</b> R$ {lucro_liquido:.2f}", ParagraphStyle('Resumo', fontSize=11, textColor=COR_PRETO)))
+                story_fat.append(Paragraph(f"<b>Lucro Líquido Total do Período:</b> {formatar_moeda(lucro_liquido)}", ParagraphStyle('Resumo', fontSize=11, textColor=COR_PRETO)))
 
                 doc_fat.build(story_fat)
                 buffer_pdf_fat.seek(0)
