@@ -12,4 +12,4 @@ jobs:
     steps:
       - name: Ping app to keep it awake
         run: |
-          curl -sL -o /dev/null -w "Status: %{http_code}\n" https://luzeletras.streamlit.app
+          curl -s -o /dev/null -w "Status: %{http_code}\n" --max-time 30 --max-redirs 10 https://luzeletras.streamlit.app
