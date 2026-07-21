@@ -63,10 +63,8 @@ def formatar_moeda(valor):
 # ==========================================
 def mostrar_popup(mensagem, tipo="sucesso", tempo=1.5):
     if tipo == "erro":
-        # Se for erro, mostra o aviso discreto padrão do Streamlit (não bloqueia a tela)
         st.error(f"⚠️ {mensagem}")
     else:
-        # Se for sucesso, mostra o Pop-up gigante verde com animação
         alerta = st.empty()
         alerta.markdown(f"""
         <style>
@@ -90,6 +88,7 @@ def mostrar_popup(mensagem, tipo="sucesso", tempo=1.5):
         """, unsafe_allow_html=True)
         time.sleep(tempo)
         alerta.empty()
+
 # ==========================================
 # LOGO DE FUNDO ANIMADA (MARCA D'ÁGUA)
 # ==========================================
@@ -337,12 +336,9 @@ if not st.session_state['logado']:
 # 4. ÁREA LOGADA (SISTEMA COMPLETO)
 # ==========================================
 else:
-    # ---------------------------------------------
-    # Verifica se há alguma mensagem de sucesso salva em sessão (vindo do Modal de Exclusão)
     if 'sucesso_msg' in st.session_state:
         mostrar_popup(st.session_state['sucesso_msg'])
         del st.session_state['sucesso_msg']
-    # ---------------------------------------------
 
     check_user = supabase.table("usuarios").select("ativo").eq("id", st.session_state['usuario_id']).execute()
     if check_user.data and not check_user.data[0]['ativo']:
@@ -477,10 +473,6 @@ else:
                             detalhe_alugado[pid_c][k_c] = detalhe_alugado[pid_c].get(k_c, 0) + v_c
         return qtd_alugada, detalhe_alugado
 
-    # ==========================================
-    # LÓGICA DO MODAL POP-UP DE ESTOQUE
-    # (Construído garantindo a compatibilidade de versão do Streamlit)
-    # ==========================================
     def _criar_modal_exclusao():
         def modal(produto_info, tipo, total_remover=0, qtds_json=None, motivo=""):
             if tipo == "parcial":
@@ -498,36 +490,26 @@ else:
                     
                     st.session_state['sucesso_msg'] = "REMOÇÃO PARCIAL CONCLUÍDA COM SUCESSO!"
                     st.rerun()
-                if col2.button("❌ Cancelar", use_container_width=True):
-                    st.rerun()
-
+                if col2.button("❌ Cancelar", use_container_width=True): st.rerun()
             elif tipo == "total":
                 st.warning(f"Tem certeza que deseja excluir **{produto_info['nome']} COMPLETAMENTE** do estoque?")
                 col1, col2 = st.columns(2)
                 if col1.button("🗑️ Sim, Excluir Produto", use_container_width=True):
                     try:
                         itens_usando = supabase.table("itens_evento").select("id").eq("produto_id", produto_info['id']).execute()
-                        if itens_usando.data:
-                            st.error("Não é possível excluir: este produto está alocado em um evento.")
+                        if itens_usando.data: st.error("Não é possível excluir: este produto está alocado em um evento.")
                         else:
                             supabase.table("produtos").delete().eq("id", produto_info['id']).execute()
                             st.session_state['sucesso_msg'] = "EXCLUSÃO CONCLUÍDA COM SUCESSO!"
                             st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao excluir: {e}")
-                if col2.button("❌ Cancelar", use_container_width=True):
-                    st.rerun()
-                    
-        # Injeta o st.dialog se o Streamlit for versão moderna
+                    except Exception as e: st.error(f"Erro ao excluir: {e}")
+                if col2.button("❌ Cancelar", use_container_width=True): st.rerun()
         if hasattr(st, "dialog"): return st.dialog("⚠️ Confirmação Necessária")(modal)
         elif hasattr(st, "experimental_dialog"): return st.experimental_dialog("⚠️ Confirmação Necessária")(modal)
         else: return modal
 
     popup_confirmacao_estoque = _criar_modal_exclusao()
 
-    # =======================================================
-    # CONTINUAÇÃO DOS MENUS
-    # =======================================================
     if menu == "👑 Gestão de Assinantes":
         st.title("Painel Master")
         try: users = supabase.table("usuarios").select("id, email, ativo, senha_hash, nome, email_confirmado, metodo_pagamento, comprovante_pagamento, empresas(nome_fantasia), empresa_id").neq("perfil", "admin_geral").execute()
@@ -580,11 +562,33 @@ else:
         nome_exibicao = st.session_state.get('nome_usuario') or "Usuário"
         st.markdown(f"### 👋 Bem-vindo, {nome_exibicao}!")
         col_grafico1, col_grafico2 = st.columns(2)
+        
         with col_grafico1:
             st.subheader("Receitas vs Despesas")
-            faturamento = supabase.table("faturamento").select("tipo, valor").eq("empresa_id", emp_id).execute()
-            if faturamento.data: st.bar_chart(pd.DataFrame(faturamento.data).groupby("tipo")["valor"].sum(), color="#FFC107")
-            else: st.write("Sem dados.")
+            eventos_dash = supabase.table("eventos").select("valor_total").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
+            receita_ev = sum(float(e.get('valor_total') or 0) for e in (eventos_dash.data or []))
+            try:
+                compras_dash = supabase.table("compras").select("valor_total").eq("empresa_id", emp_id).execute()
+                despesa_comp = sum(float(c.get('valor_total') or 0) for c in (compras_dash.data or []))
+            except: despesa_comp = 0.0
+            try:
+                viagens_dash = supabase.table("despesas_viagem").select("valor").eq("empresa_id", emp_id).execute()
+                despesa_viagem = sum(float(v.get('valor') or 0) for v in (viagens_dash.data or []))
+            except: despesa_viagem = 0.0
+            fat_dash = supabase.table("faturamento").select("tipo, valor").eq("empresa_id", emp_id).execute()
+            receita_manual = sum(float(f.get('valor') or 0) for f in (fat_dash.data or []) if f.get('tipo') == 'receita')
+            despesa_manual = sum(float(f.get('valor') or 0) for f in (fat_dash.data or []) if f.get('tipo') == 'despesa')
+            total_receitas = receita_ev + receita_manual
+            total_despesas = despesa_comp + despesa_viagem + despesa_manual
+            
+            if total_receitas > 0 or total_despesas > 0:
+                df_financeiro = pd.DataFrame({"Categoria": ["Receitas", "Despesas"], "Valor (R$)": [total_receitas, total_despesas]})
+                fig_fin = px.bar(df_financeiro, x="Categoria", y="Valor (R$)", color="Categoria", color_discrete_map={"Receitas": "#1B5E20", "Despesas": "#D32F2F"}, text="Valor (R$)")
+                fig_fin.update_traces(texttemplate='R$ %{text:,.2f}', textposition='outside')
+                fig_fin.update_layout(showlegend=False, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", yaxis=dict(showticklabels=False))
+                st.plotly_chart(fig_fin, use_container_width=True)
+            else: st.write("Sem dados financeiros registrados ainda.")
+
         with col_grafico2:
             st.subheader("Status dos Eventos")
             eventos = supabase.table("eventos").select("status").eq("empresa_id", emp_id).execute()
@@ -823,11 +827,8 @@ else:
         with st.expander("📝 Cadastrar Novo Evento", expanded=False):
             st.markdown("**🗓️ Primeiro, escolha as datas do evento:**")
             col_data1, col_data2 = st.columns(2)
-            with col_data1: 
-                data_inicio = st.date_input("Data de Início do Evento", format="DD/MM/YYYY", key="novo_evento_data_inicio")
-            with col_data2: 
-                # Adicionado o min_value=data_inicio aqui:
-                data_fim = st.date_input("Até quando os produtos ficam alocados? (Data Fim)", format="DD/MM/YYYY", value=data_inicio, min_value=data_inicio, key="novo_evento_data_fim")
+            with col_data1: data_inicio = st.date_input("Data de Início do Evento", format="DD/MM/YYYY", key="novo_evento_data_inicio")
+            with col_data2: data_fim = st.date_input("Até quando os produtos ficam alocados? (Data Fim)", format="DD/MM/YYYY", value=data_inicio, min_value=data_inicio, key="novo_evento_data_fim")
 
             qtd_alugada_form, detalhe_alugado_form = calcular_disponibilidade_periodo(data_inicio, data_fim)
 
@@ -885,7 +886,7 @@ else:
                                         qtd_item_normal = st.number_input(f"{prod['nome']} (Livre: {disponivel_normal})", min_value=0, max_value=disponivel_normal, value=None, key=f"form_prod_{prod['id']}")
                                         quantidades_selecionadas[f"{prod['id']}_NORMAL"] = qtd_item_normal or 0
 
-               if st.form_submit_button("Salvar Evento e Alocar Itens"):
+                if st.form_submit_button("Salvar Evento e Alocar Itens"):
                     if not nome_evento or not nome_cliente or not contato_cliente or not local_evento or not rua_evento or not bairro_evento or not numero_evento or valor_evento is None:
                         mostrar_popup("Por favor, preencha todos os campos obrigatórios!", tipo="erro")
                     else:
@@ -902,7 +903,6 @@ else:
                             novo_cliente = supabase.table("clientes_eventos").insert({"empresa_id": emp_id, "nome": nome_cliente, "contato": contato_cliente_formatado}).execute()
                             cliente_id_gerado = novo_cliente.data[0]['id']
                             
-                            # Aqui salvamos o evento (com a data_fim corrigida)
                             novo_evento = supabase.table("eventos").insert({
                                 "empresa_id": emp_id, "cliente_id": cliente_id_gerado, "titulo": nome_evento,
                                 "descricao": nome_evento, "data_inicio": str(data_inicio), 
@@ -918,7 +918,6 @@ else:
                                 supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "produto_id": p_id, "quantidade": info['total'], "observacao": obs_json_evento}).execute()
                                 supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "descricao": f"🟢 ALOCAÇÃO INICIAL: Adicionou {info['total']}x Produto {p_id}.", "data_registro": data_hora}).execute()
 
-                            # POP-UP DE SUCESSO AQUI!
                             mostrar_popup("CADASTRO DE EVENTO CONCLUÍDO COM SUCESSO!")
                             st.rerun()
                         except Exception as e: 
