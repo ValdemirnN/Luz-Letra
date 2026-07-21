@@ -61,33 +61,35 @@ def formatar_moeda(valor):
 # ==========================================
 # SISTEMA DE POP-UP CENTRALIZADO
 # ==========================================
-def mostrar_popup(mensagem, tipo="sucesso", tempo=2.0):
-    cor_fundo = "#1B5E20" if tipo == "sucesso" else "#D32F2F"
-    icone = "🎉" if tipo == "sucesso" else "⚠️"
-    alerta = st.empty()
-    alerta.markdown(f"""
-    <style>
-    .popup-overlay {{
-        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-        background-color: rgba(0, 0, 0, 0.7); z-index: 999999;
-        display: flex; align-items: center; justify-content: center;
-    }}
-    .popup-box {{
-        background-color: {cor_fundo}; color: white; padding: 40px 60px;
-        border-radius: 12px; font-size: 24px; font-weight: bold; text-align: center;
-        box-shadow: 0px 8px 30px rgba(0,0,0,0.8);
-        animation: fadeInScale 0.3s ease-out forwards;
-    }}
-    @keyframes fadeInScale {{
-        0% {{ opacity: 0; transform: scale(0.7); }}
-        100% {{ opacity: 1; transform: scale(1); }}
-    }}
-    </style>
-    <div class="popup-overlay"><div class="popup-box"><span style="font-size: 40px;">{icone}</span><br><br>{mensagem}</div></div>
-    """, unsafe_allow_html=True)
-    time.sleep(tempo)
-    alerta.empty()
-
+def mostrar_popup(mensagem, tipo="sucesso", tempo=1.5):
+    if tipo == "erro":
+        # Se for erro, mostra o aviso discreto padrão do Streamlit (não bloqueia a tela)
+        st.error(f"⚠️ {mensagem}")
+    else:
+        # Se for sucesso, mostra o Pop-up gigante verde com animação
+        alerta = st.empty()
+        alerta.markdown(f"""
+        <style>
+        .popup-overlay {{
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background-color: rgba(0, 0, 0, 0.7); z-index: 999999;
+            display: flex; align-items: center; justify-content: center;
+        }}
+        .popup-box {{
+            background-color: #1B5E20; color: white; padding: 40px 60px;
+            border-radius: 12px; font-size: 24px; font-weight: bold; text-align: center;
+            box-shadow: 0px 8px 30px rgba(0,0,0,0.8);
+            animation: fadeInScale 0.3s ease-out forwards;
+        }}
+        @keyframes fadeInScale {{
+            0% {{ opacity: 0; transform: scale(0.7); }}
+            100% {{ opacity: 1; transform: scale(1); }}
+        }}
+        </style>
+        <div class="popup-overlay"><div class="popup-box"><span style="font-size: 40px;">🎉</span><br><br>{mensagem}</div></div>
+        """, unsafe_allow_html=True)
+        time.sleep(tempo)
+        alerta.empty()
 # ==========================================
 # LOGO DE FUNDO ANIMADA (MARCA D'ÁGUA)
 # ==========================================
@@ -805,7 +807,7 @@ else:
                         if st.button("💾 Salvar Alterações", key=f"btn_edit_evento_{ev['id']}"):
                             if not justificativa_edit.strip(): mostrar_popup("Informe a justificativa da alteração.", tipo="erro")
                             else:
-                                supabase.table("eventos").update({"data_inicio": str(nova_data_inicio_edit), "data_fim_alocacao": str(nova_data_fim_edit), "valor_total": novo_valor_edit, "observacao": novo_local_edit}).eq("id", ev['id']).execute()
+                                supabase.table("eventos").update({"data_inicio": str(nova_data_inicio_edit), "data_fim": str(nova_data_fim_edit), "data_fim_alocacao": str(nova_data_fim_edit), "valor_total": novo_valor_edit, "observacao": novo_local_edit}).eq("id", ev['id']).execute()
                                 if ev.get('cliente_id'): supabase.table("clientes_eventos").update({"nome": novo_nome_cliente_edit, "contato": novo_contato_cliente_edit}).eq("id", ev['cliente_id']).execute()
                                 data_hora_edit = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
                                 supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": f"✏️ EDIÇÃO DE DADOS. Justificativa: {justificativa_edit}", "data_registro": data_hora_edit}).execute()
@@ -821,8 +823,11 @@ else:
         with st.expander("📝 Cadastrar Novo Evento", expanded=False):
             st.markdown("**🗓️ Primeiro, escolha as datas do evento:**")
             col_data1, col_data2 = st.columns(2)
-            with col_data1: data_inicio = st.date_input("Data de Início do Evento", format="DD/MM/YYYY", key="novo_evento_data_inicio")
-            with col_data2: data_fim = st.date_input("Até quando os produtos ficam alocados? (Data Fim)", format="DD/MM/YYYY", value=data_inicio, key="novo_evento_data_fim")
+            with col_data1: 
+                data_inicio = st.date_input("Data de Início do Evento", format="DD/MM/YYYY", key="novo_evento_data_inicio")
+            with col_data2: 
+                # Adicionado o min_value=data_inicio aqui:
+                data_fim = st.date_input("Até quando os produtos ficam alocados? (Data Fim)", format="DD/MM/YYYY", value=data_inicio, min_value=data_inicio, key="novo_evento_data_fim")
 
             qtd_alugada_form, detalhe_alugado_form = calcular_disponibilidade_periodo(data_inicio, data_fim)
 
@@ -899,7 +904,8 @@ else:
                             
                             novo_evento = supabase.table("eventos").insert({
                                 "empresa_id": emp_id, "cliente_id": cliente_id_gerado, "titulo": nome_evento,
-                                "descricao": nome_evento, "data_inicio": str(data_inicio), "data_fim_alocacao": str(data_fim), 
+                                "descricao": nome_evento, "data_inicio": str(data_inicio), 
+                                "data_fim": str(data_fim), "data_fim_alocacao": str(data_fim), 
                                 "status": status_evento, "observacao": f"Local: {local_evento} - {rua_evento}, {numero_evento} - {bairro_evento} - {obs_evento_geral}",
                                 "valor_total": valor_evento
                             }).execute()
