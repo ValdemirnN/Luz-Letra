@@ -1837,159 +1837,21 @@ else:
                 st.download_button("📄 Baixar PDF do Período", data=buffer_pdf_fat, file_name=f"faturamento_{ano_selecionado}.pdf", mime="application/pdf")
             else: st.caption("⚠️ Para gerar o PDF, instale a biblioteca: `pip install reportlab`")
 
-    elif menu == "🧳 Orçamento":
+   elif menu == "🧳 Orçamento":
         st.title("🧳 Orçamento de Viagem / Evento")
-        st.caption("Monte o orçamento de uma viagem para um evento: distância, combustível, alimentação, ajudantes e outras despesas, e veja o lucro estimado.")
 
-        if not GOOGLE_MAPS_API_KEY:
-            st.warning("⚠️ O cálculo automático de KM precisa de uma chave do Google Maps (GOOGLE_MAPS_API_KEY nos secrets). Sem ela, você ainda pode digitar o KM manualmente abaixo.")
-
-        st.markdown("### 📍 Trechos da Viagem")
-        qtd_trechos = st.number_input("Quantas paradas/trechos essa viagem terá?", min_value=1, max_value=10, value=st.session_state.get('orc_qtd_trechos', 1), step=1, key="orc_qtd_trechos")
-
-        trechos_info = []
-        km_total_calculado = 0.0
-        duracao_total_calculada = 0.0
-
-        for i in range(int(qtd_trechos)):
-            st.markdown(f"**Trecho {i+1}**")
-            col_o, col_d, col_km = st.columns([2, 2, 1.3])
-            with col_o: origem_i = st.text_input(f"Saída (Trecho {i+1})", key=f"orc_origem_{i}", placeholder="Ex: Recife, PE")
-            with col_d: destino_i = st.text_input(f"Destino (Trecho {i+1})", key=f"orc_destino_{i}", placeholder="Ex: Caruaru, PE")
-            with col_km:
-                km_manual_i = st.number_input("KM (manual, opcional)", min_value=0.0, value=0.0, step=1.0, key=f"orc_km_manual_{i}")
-            trechos_info.append({"origem": origem_i, "destino": destino_i, "km_manual": km_manual_i})
-
-        if st.button("📏 Calcular Distâncias Automaticamente"):
-            if not GOOGLE_MAPS_API_KEY:
-                mostrar_popup("Configure a GOOGLE_MAPS_API_KEY para calcular automaticamente, ou preencha o KM manual de cada trecho.", tipo="erro")
-            else:
-                resultados_km = {}
-                erro_algum = False
-                for i, trecho in enumerate(trechos_info):
-                    if trecho["origem"].strip() and trecho["destino"].strip():
-                        try:
-                            km_i, duracao_i = calcular_distancia_google_maps(trecho["origem"], trecho["destino"])
-                            resultados_km[i] = {"km": km_i, "duracao_min": duracao_i}
-                        except Exception as e:
-                            erro_algum = True
-                            mostrar_popup(f"Trecho {i+1}: {e}", tipo="erro")
-                st.session_state['orc_resultados_km'] = resultados_km
-                if not erro_algum and resultados_km:
-                    mostrar_popup("DISTÂNCIAS CALCULADAS COM SUCESSO!")
+        def _popup_aviso_orcamento():
+            st.warning("🚧 Esta funcionalidade ainda está em produção.\n\nEstamos trabalhando nela — em breve você poderá montar orçamentos de viagem direto por aqui!")
+            if st.button("Entendi, voltar"):
                 st.rerun()
 
-        resultados_km_salvos = st.session_state.get('orc_resultados_km', {})
-        st.markdown("---")
-        st.markdown("### 📊 Resumo das Distâncias")
-        for i, trecho in enumerate(trechos_info):
-            km_usado_i = trecho["km_manual"] if trecho["km_manual"] > 0 else resultados_km_salvos.get(i, {}).get("km", 0)
-            duracao_usada_i = resultados_km_salvos.get(i, {}).get("duracao_min", 0)
-            km_total_calculado += km_usado_i
-            duracao_total_calculada += duracao_usada_i
-            if km_usado_i > 0:
-                texto_duracao = f" (~{duracao_usada_i/60:.1f}h de viagem)" if duracao_usada_i > 0 else ""
-                st.write(f"🚗 Trecho {i+1}: **{trecho['origem'] or '-'} → {trecho['destino'] or '-'}** — {km_usado_i:.1f} km{texto_duracao}")
+        if hasattr(st, "dialog"):
+            st.dialog("🚧 Funcionalidade em Produção")(_popup_aviso_orcamento)()
+        elif hasattr(st, "experimental_dialog"):
+            st.experimental_dialog("🚧 Funcionalidade em Produção")(_popup_aviso_orcamento)()
+        else:
+            st.warning("🚧 Funcionalidade em produção, aguarde atualizações!")
 
-        col_res1, col_res2 = st.columns(2)
-        col_res1.metric("📏 Distância Total (ida)", f"{km_total_calculado:.1f} km")
-        col_res2.metric("⏱️ Tempo Estimado de Viagem", f"{duracao_total_calculada/60:.1f} h" if duracao_total_calculada > 0 else "—")
-
-        primeira_origem = trechos_info[0]["origem"] if trechos_info else ""
-        ultimo_destino = trechos_info[-1]["destino"] if trechos_info else ""
-        waypoints_meio = [t["destino"] for t in trechos_info[:-1] if t["destino"].strip()]
-        if GOOGLE_MAPS_API_KEY and primeira_origem.strip() and ultimo_destino.strip():
-            st.markdown("#### 🗺️ Rota no Mapa")
-            url_mapa_embed = montar_url_embed_rota_google_maps(primeira_origem, ultimo_destino, waypoints_meio)
-            st.components.v1.iframe(url_mapa_embed, height=400)
-
-        st.markdown("---")
-        st.markdown("### ⛽ Combustível")
-        col_c1, col_c2 = st.columns(2)
-        with col_c1: preco_combustivel_litro = st.number_input("Valor do Combustível (R$/litro)", min_value=0.0, step=0.10, value=6.00, format="%.2f", key="orc_preco_comb")
-        with col_c2: consumo_veiculo_kml = st.number_input("Consumo do Veículo (km por litro)", min_value=0.1, step=0.5, value=10.0, format="%.1f", key="orc_consumo")
-
-        ida_e_volta = st.checkbox("Considerar ida E volta (dobra o KM total)", value=True, key="orc_ida_volta")
-        km_para_calculo = km_total_calculado * 2 if ida_e_volta else km_total_calculado
-        gasto_combustivel_total = (km_para_calculo / consumo_veiculo_kml) * preco_combustivel_litro if consumo_veiculo_kml > 0 else 0.0
-        st.info(f"⛽ Gasto estimado com combustível ({km_para_calculo:.1f} km): **R$ {formatar_moeda(gasto_combustivel_total)}**")
-
-        st.markdown("---")
-        st.markdown("### 🍽️ Alimentação e Outras Despesas")
-        col_g1, col_g2 = st.columns(2)
-        with col_g1: gasto_alimentacao = st.number_input("Alimentação (R$)", min_value=0.0, step=10.0, value=0.0, format="%.2f", key="orc_alimentacao")
-        with col_g2: gasto_pedagio_hospedagem = st.number_input("Pedágio / Hospedagem (R$)", min_value=0.0, step=10.0, value=0.0, format="%.2f", key="orc_pedagio")
-
-        col_g3, col_g4 = st.columns(2)
-        with col_g3: qtd_ajudantes = st.number_input("Quantidade de Ajudantes", min_value=0, step=1, value=0, key="orc_qtd_ajudantes")
-        with col_g4: valor_diaria_ajudante = st.number_input("Valor por Ajudante (R$)", min_value=0.0, step=10.0, value=0.0, format="%.2f", key="orc_valor_ajudante")
-        gasto_ajudantes_total = qtd_ajudantes * valor_diaria_ajudante
-
-        gasto_outras_despesas = st.number_input("Outras Despesas (R$)", min_value=0.0, step=10.0, value=0.0, format="%.2f", key="orc_outras_despesas")
-        obs_orcamento = st.text_area("Observações do Orçamento", key="orc_observacoes")
-
-        total_despesas_orcamento = gasto_combustivel_total + gasto_alimentacao + gasto_pedagio_hospedagem + gasto_ajudantes_total + gasto_outras_despesas
-
-        st.markdown("---")
-        st.markdown("### 💰 Quanto Cobrar / Lucro Estimado")
-        valor_a_cobrar_evento = st.number_input("Valor que pretende cobrar pelo Evento (R$)", min_value=0.0, step=50.0, value=0.0, format="%.2f", key="orc_valor_cobrar")
-        lucro_estimado_orcamento = valor_a_cobrar_evento - total_despesas_orcamento
-        margem_lucro_pct = (lucro_estimado_orcamento / valor_a_cobrar_evento * 100) if valor_a_cobrar_evento > 0 else 0.0
-
-        col_fin1, col_fin2, col_fin3 = st.columns(3)
-        col_fin1.metric("💸 Total de Despesas", formatar_moeda(total_despesas_orcamento))
-        col_fin2.metric("💰 Lucro Estimado", formatar_moeda(lucro_estimado_orcamento))
-        col_fin3.metric("📈 Margem de Lucro", f"{margem_lucro_pct:.1f}%")
-
-        if lucro_estimado_orcamento < 0:
-            st.error("⚠️ Com esse valor cobrado, o evento daria prejuízo considerando as despesas estimadas.")
-        elif valor_a_cobrar_evento > 0 and margem_lucro_pct < 20:
-            st.warning("💡 A margem de lucro está baixa. Considere revisar o valor cobrado ou reduzir despesas.")
-
-        st.markdown("---")
-        nome_orcamento_salvar = st.text_input("Nome/Título deste Orçamento (Ex: Casamento em Caruaru)", key="orc_nome_salvar")
-        if st.button("💾 Salvar Orçamento"):
-            if not nome_orcamento_salvar.strip():
-                mostrar_popup("Dê um nome para este orçamento antes de salvar.", tipo="erro")
-            else:
-                try:
-                    supabase.table("orcamentos").insert({
-                        "empresa_id": emp_id,
-                        "nome": nome_orcamento_salvar,
-                        "trechos": json.dumps(trechos_info),
-                        "km_total": km_total_calculado,
-                        "preco_combustivel_litro": preco_combustivel_litro,
-                        "consumo_veiculo_kml": consumo_veiculo_kml,
-                        "gasto_combustivel": gasto_combustivel_total,
-                        "gasto_alimentacao": gasto_alimentacao,
-                        "gasto_pedagio_hospedagem": gasto_pedagio_hospedagem,
-                        "gasto_ajudantes": gasto_ajudantes_total,
-                        "gasto_outras_despesas": gasto_outras_despesas,
-                        "total_despesas": total_despesas_orcamento,
-                        "valor_a_cobrar": valor_a_cobrar_evento,
-                        "lucro_estimado": lucro_estimado_orcamento,
-                        "observacao": obs_orcamento,
-                        "data_criacao": datetime.now().strftime("%Y-%m-%d")
-                    }).execute()
-                    mostrar_popup("ORÇAMENTO SALVO COM SUCESSO!")
-                except Exception as e:
-                    mostrar_popup(f"Erro ao salvar (crie a tabela 'orcamentos' no banco): {e}", tipo="erro")
-
-        st.markdown("---")
-        st.markdown("### 📋 Orçamentos Salvos")
-        try:
-            orcamentos_salvos = supabase.table("orcamentos").select("*").eq("empresa_id", emp_id).order("data_criacao", desc=True).execute()
-            if orcamentos_salvos.data:
-                for orc in orcamentos_salvos.data:
-                    with st.expander(f"🧳 {orc.get('nome','-')} — {orc.get('km_total',0):.1f} km — Lucro: R$ {formatar_moeda(orc.get('lucro_estimado'))}"):
-                        st.write(f"**Combustível:** R$ {formatar_moeda(orc.get('gasto_combustivel'))} | **Alimentação:** R$ {formatar_moeda(orc.get('gasto_alimentacao'))} | **Ajudantes:** R$ {formatar_moeda(orc.get('gasto_ajudantes'))} | **Outras:** R$ {formatar_moeda(orc.get('gasto_outras_despesas'))}")
-                        st.write(f"**Total de Despesas:** R$ {formatar_moeda(orc.get('total_despesas'))}  |  **Valor a Cobrar:** R$ {formatar_moeda(orc.get('valor_a_cobrar'))}")
-                        if orc.get('observacao'): st.write(f"**Obs:** {orc.get('observacao')}")
-                        if st.button("🗑️ Excluir Orçamento", key=f"del_orc_{orc['id']}"):
-                            supabase.table("orcamentos").delete().eq("id", orc['id']).execute()
-                            mostrar_popup("ORÇAMENTO EXCLUÍDO!")
-                            st.rerun()
-            else:
-                st.caption("Nenhum orçamento salvo ainda.")
+        st.stop()
         except Exception:
             st.caption("⚠️ A tabela 'orcamentos' ainda não existe no banco. Veja o SQL de criação nas instruções fornecidas.")
