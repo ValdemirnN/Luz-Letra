@@ -919,7 +919,6 @@ else:
             if not eventos_check.data:
                 return qtd_alugada, detalhe_alugado
 
-            # 1. Descobre quais eventos tocam o período pesquisado, guardando o intervalo REAL (com hora) de cada um
             intervalos_eventos = {}
             for ev_c in eventos_check.data:
                 if evento_id_excluir and ev_c['id'] == evento_id_excluir: continue
@@ -931,7 +930,6 @@ else:
                 except Exception:
                     continue
 
-                # Trata horários caso o evento antigo não tenha, ou esteja em formato diferente (com ou sem segundos)
                 def _parse_hora_segura(valor_hora):
                     if not valor_hora: return None
                     for fmt in ("%H:%M:%S", "%H:%M"):
@@ -947,20 +945,16 @@ else:
                 dt_inicio_ev = datetime.combine(ev_data_inicio_c, ev_hora_inicio)
                 dt_fim_ev = datetime.combine(ev_data_fim_c, ev_hora_fim)
 
-                # Verifica interseção de Data E Hora (com < e >, evento que termina 13h
-                # e outro que começa 13h NÃO dão choque)
                 if (dt_inicio_ev < dt_fim_busca) and (dt_fim_ev > dt_ini_busca):
                     intervalos_eventos[ev_c['id']] = (dt_inicio_ev, dt_fim_ev)
 
             if not intervalos_eventos:
                 return qtd_alugada, detalhe_alugado
 
-            # 2. Busca os itens alocados desses eventos
             itens_check = supabase.table("itens_evento").select("evento_id, produto_id, quantidade, observacao").in_("evento_id", list(intervalos_eventos.keys())).execute()
             if not itens_check.data:
                 return qtd_alugada, detalhe_alugado
 
-            # 3. Agrupa por produto (e por sub-item, no caso de kits) os intervalos de uso
             ocupacao_produto = {}
             ocupacao_subitem = {}
 
@@ -977,13 +971,11 @@ else:
                     for k_c, v_c in js_item_c.items():
                         ocupacao_subitem.setdefault((pid_c, k_c), []).append((dt_ini_ev, dt_fim_ev, v_c))
 
-            # 4. Sweep-line: acha o pico de uso simultâneo em qualquer instante do tempo
             def _pico_maximo(intervalos):
                 eventos_linha = []
                 for ini, fim, qtd in intervalos:
-                    eventos_linha.append((ini, qtd))     # entra em uso
-                    eventos_linha.append((fim, -qtd))    # sai de uso
-                # saídas processadas antes de entradas no mesmo instante
+                    eventos_linha.append((ini, qtd))
+                    eventos_linha.append((fim, -qtd))
                 eventos_linha.sort(key=lambda x: (x[0], x[1]))
                 atual = 0
                 pico = 0
@@ -992,7 +984,7 @@ else:
                     pico = max(pico, atual)
                 return pico
 
-           for pid_c, intervalos in ocupacao_produto.items():
+            for pid_c, intervalos in ocupacao_produto.items():
                 qtd_alugada[pid_c] = _pico_maximo(intervalos)
 
             for (pid_c, k_c), intervalos in ocupacao_subitem.items():
@@ -1004,7 +996,6 @@ else:
             return {}, {}
 
     def calcular_timeline_disponibilidade_produto(data_ref, produto_id, estoque_total):
-        """Divide o dia em faixas de horário e mostra quanto está livre/reservado em cada faixa."""
         eventos_dia = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
         intervalos = []
 
@@ -1045,46 +1036,7 @@ else:
                 if inicio_recortado < fim_recortado:
                     intervalos.append((inicio_recortado, fim_recortado, mapa_qtd_evento[ev['id']]))
 
-        dt_ini_dia = datetime.combine(data_ref, datetime.min.time())
-        dt_fim_dia = datetime.combine(data_ref, datetime.max.time())
-
-        if not intervalos:
-            return [(dt_ini_dia, dt_fim_dia, 0, estoque_total)]
-
-        pontos = sorted(set([dt_ini_dia, dt_fim_dia] + [p for ini, fim, _ in intervalos for p in (ini, fim)]))
-
-        segmentos = []
-        for i in range(len(pontos) - 1):
-            seg_ini, seg_fim = pontos[i], pontos[i + 1]
-            if seg_ini >= seg_fim: continue
-            reservado_seg = sum(qtd for ini, fim, qtd in intervalos if ini <= seg_ini and fim >= seg_fim)
-            livre_seg = max(0, estoque_total - reservado_seg)
-            segmentos.append((seg_ini, seg_fim, reservado_seg, livre_seg))
-        return segmentos
-
-    def calcular_detalhamento_periodo_produto(data_inicio_periodo, data_fim_periodo, produto_id, estoque_total):
-        """Percorre cada dia do período e retorna só as faixas de horário ONDE HÁ RESERVA (ocupação > 0)."""
-        linhas_detalhe = []
-        try:
-            dia_atual = data_inicio_periodo
-            while dia_atual <= data_fim_periodo:
-                segmentos = calcular_timeline_disponibilidade_produto(dia_atual, produto_id, estoque_total)
-                for seg_ini, seg_fim, reservado, livre in segmentos:
-                    if reservado > 0:
-                        hora_ini_txt = seg_ini.strftime("%H:%M")
-                        hora_fim_txt = "23:59" if seg_fim.time() == datetime.max.time() else seg_fim.strftime("%H:%M")
-                        linhas_detalhe.append({
-                            "Data": dia_atual.strftime("%d/%m/%Y"),
-                            "Horário": f"{hora_ini_txt} às {hora_fim_txt}",
-                            "Reservado": reservado,
-                            "Disponível": livre
-                        })
-                dia_atual += relativedelta(days=1)
-        except Exception as e:
-            st.warning(f"⚠️ Erro ao detalhar período: {e}")
-        return linhas_detalhe
-        
-    def _criar_modal_exclusao():
+        dt_ini_dia = datetime.combine(data_ref,
         def modal(produto_info, tipo, total_remover=0, qtds_json=None, motivo=""):
             if tipo == "parcial":
                 st.warning(f"Tem certeza que deseja remover **{total_remover} peças** de **{produto_info['nome']}** parcialmente?")
