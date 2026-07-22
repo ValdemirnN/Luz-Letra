@@ -651,19 +651,36 @@ else:
         doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm, leftMargin=2 * cm, rightMargin=2 * cm)
         styles = getSampleStyleSheet()
         story = []
+        
+        # 1. ESTILOS PERSONALIZADOS
+        titulo_style = ParagraphStyle('TituloRecibo', parent=styles['Title'], fontSize=16, alignment=TA_CENTER, spaceAfter=20, textColor=colors.HexColor("#1B5E20"))
+        sub_titulo = ParagraphStyle('SubTit', parent=styles['Heading2'], fontSize=12, spaceAfter=6, textColor=colors.HexColor("#333333"))
+        normal_style = styles['Normal']
+        normal_style.fontSize = 10
+        normal_style.leading = 14
+        
+        # Estilo justificado para o Termo de Responsabilidade
+        termo_style = ParagraphStyle('Termo', parent=styles['Normal'], fontSize=9, leading=12, alignment=4, 
+                                     spaceBefore=15, spaceAfter=15, textColor=colors.HexColor("#555555"))
+        
+        # Estilo para o Agradecimento
+        agradecimento_style = ParagraphStyle('Obrigado', parent=styles['Normal'], fontSize=11, alignment=TA_CENTER, 
+                                             spaceBefore=20, fontName="Helvetica-Oblique", textColor=colors.HexColor("#1B5E20"))
+
+        # 2. INSERINDO A LOGO SEM FUNDO
         try:
             import os as _os
+            # Certifique-se de que o arquivo logo_sem_fundo.png está na mesma pasta
             caminho_logo_pdf = "logo_sem_fundo.png" if _os.path.exists("logo_sem_fundo.png") else "logo.jpg"
-            logo_img = RLImage(caminho_logo_pdf, width=6 * cm, height=3 * cm, preserveAspectRatio=True)
+            logo_img = RLImage(caminho_logo_pdf, width=7 * cm, height=3.5 * cm, preserveAspectRatio=True)
             logo_img.hAlign = 'CENTER'
             story.append(logo_img)
-            story.append(Spacer(1, 12))
+            story.append(Spacer(1, 10))
         except: pass
 
-        titulo_style = ParagraphStyle('TituloRecibo', parent=styles['Title'], fontSize=18, alignment=TA_CENTER, spaceAfter=6)
-        story.append(Paragraph("RECIBO DE CONFIRMAÇÃO DO EVENTO", titulo_style))
-        story.append(Spacer(1, 16))
+        story.append(Paragraph("<b>CONTRATO E RECIBO DE LOCAÇÃO</b>", titulo_style))
 
+        # 3. DADOS DO CLIENTE E EVENTO (DENTRO DE UM QUADRO)
         def _fmt_data_pdf(data_iso):
             if not data_iso or data_iso == "-": return "-"
             try: return datetime.strptime(data_iso.split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
@@ -671,28 +688,91 @@ else:
 
         data_ini_pdf = _fmt_data_pdf(evento_dict.get('data_inicio'))
         data_fim_pdf = _fmt_data_pdf(evento_dict.get('data_fim_alocacao'))
+        
+        hora_ini_pdf = evento_dict.get('hora_inicio')[:5] if evento_dict.get('hora_inicio') else "Não inf."
+        hora_fim_pdf = evento_dict.get('hora_fim')[:5] if evento_dict.get('hora_fim') else "Não inf."
+        
         valor_pdf = float(evento_dict.get('valor_total') or 0)
 
-        dados_texto = f"""<b>Evento:</b> {evento_dict.get('descricao', '-')}<br/><b>Cliente:</b> {nome_cliente_pdf}<br/><b>Contato:</b> {contato_cliente_pdf}<br/><b>Data do Evento:</b> {data_ini_pdf} a {data_fim_pdf}<br/><b>Local/Observações:</b> {evento_dict.get('observacao', '-')}<br/><b>Valor Cobrado:</b> R$ {formatar_moeda(valor_pdf)}<br/><b>Status:</b> {evento_dict.get('status', '-')}<br/>"""
-        story.append(Paragraph(dados_texto, styles['Normal']))
-        story.append(Spacer(1, 18))
-        story.append(Paragraph("<b>Produtos Alocados para este Evento:</b>", styles['Heading3']))
-        story.append(Spacer(1, 6))
+        dados_cliente = f"""
+        <b>Cliente:</b> {nome_cliente_pdf}<br/>
+        <b>Contato:</b> {contato_cliente_pdf}<br/>
+        <b>Evento:</b> {evento_dict.get('descricao', '-')}<br/>
+        <b>Período da Locação:</b> {data_ini_pdf} ({hora_ini_pdf}) até {data_fim_pdf} ({hora_fim_pdf})<br/>
+        <b>Local/Observações:</b> {evento_dict.get('observacao', '-')}<br/>
+        <b>Valor Acordado:</b> R$ {formatar_moeda(valor_pdf)}<br/>
+        <b>Status:</b> {evento_dict.get('status', '-')}
+        """
+        
+        tabela_header = Table([[Paragraph(dados_cliente, normal_style)]], colWidths=[17*cm])
+        tabela_header.setStyle(TableStyle([
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")),
+            ('PADDING', (0,0), (-1,-1), 10),
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#FAFAFA"))
+        ]))
+        story.append(tabela_header)
+        story.append(Spacer(1, 20))
 
-        tabela_dados = [["Produto", "Quantidade", "Detalhes"]]
+        # 4. TABELA DE ITENS LOCADOS (COM DESIGN MELHORADO)
+        story.append(Paragraph("<b>ITENS LOCADOS</b>", sub_titulo))
+
+        tabela_dados = [["Produto / Item", "Qtd", "Detalhes (Letras/Números)"]]
         if itens_lista:
             for it in itens_lista:
                 nome_prod_pdf = dict_produtos_ref.get(it['produto_id'], {}).get('nome', f"Produto #{it['produto_id']}")
-                detalhe_pdf = it.get('observacao') or "-"
-                tabela_dados.append([nome_prod_pdf, str(it['quantidade']), detalhe_pdf])
-        else: tabela_dados.append(["Nenhum item alocado", "-", "-"])
+                detalhe_pdf = "-"
+                
+                js_obs = safe_json_load(it.get('observacao'))
+                if js_obs:
+                    detalhe_pdf = ", ".join([f"{k}: {v}x" for k, v in js_obs.items()])
+                elif it.get('observacao'):
+                    detalhe_pdf = it.get('observacao')
 
-        tabela_pdf = Table(tabela_dados, colWidths=[6 * cm, 3 * cm, 7 * cm])
-        tabela_pdf.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#FFC107")),('TEXTCOLOR', (0, 0), (-1, 0), colors.black),('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),('GRID', (0, 0), (-1, -1), 0.5, colors.grey),('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),('FONTSIZE', (0, 0), (-1, -1), 9)]))
+                tabela_dados.append([nome_prod_pdf, str(it['quantidade']), detalhe_pdf])
+        else: 
+            tabela_dados.append(["Nenhum item registrado", "-", "-"])
+
+        tabela_pdf = Table(tabela_dados, colWidths=[8 * cm, 2 * cm, 7 * cm])
+        tabela_pdf.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1B5E20")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F9F9F9")])
+        ]))
         story.append(tabela_pdf)
-        story.append(Spacer(1, 30))
-        story.append(Paragraph(f"Evento confirmado por: <b>{nome_usuario_confirmou}</b>", styles['Normal']))
-        story.append(Paragraph(f"Data de emissão: {datetime.now().strftime('%d/%m/%Y às %H:%M')}", styles['Normal']))
+        story.append(Spacer(1, 20))
+
+        # 5. TERMO DE RESPONSABILIDADE
+        termo_texto = "<b>TERMO DE RESPONSABILIDADE E COMPROMISSO:</b><br/>O cliente acima identificado assume total e irrestrita responsabilidade pela guarda, conservação e integridade de todos os materiais e equipamentos locados durante todo o período do evento. O cliente declara estar ciente de que, em caso de danos, avarias, mau uso, perda ou furto de qualquer item fornecido, será de sua extrema e única responsabilidade arcar com os custos integrais de manutenção, reparo ou reposição do produto ao seu estado original. Ao confirmar esta locação e receber os materiais, o cliente concorda plenamente com estas condições."
+        
+        story.append(Paragraph(termo_texto, termo_style))
+        story.append(Spacer(1, 25))
+
+        # 6. ESPAÇO PARA ASSINATURAS
+        assinaturas_data = [
+            ["_________________________________________________", "_________________________________________________"],
+            ["Luz & Letras - Locações", f"Cliente: {nome_cliente_pdf}"]
+        ]
+        tabela_assinaturas = Table(assinaturas_data, colWidths=[8.5*cm, 8.5*cm])
+        tabela_assinaturas.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('BOTTOMPADDING', (0,0), (-1,0), 0),
+            ('TOPPADDING', (0,1), (-1,1), 2)
+        ]))
+        story.append(tabela_assinaturas)
+        
+        # 7. MENSAGEM DE AGRADECIMENTO
+        story.append(Spacer(1, 20))
+        story.append(Paragraph("A equipe <b>Luz & Letras</b> agradece imensamente a sua preferência!<br/>É um grande privilégio fazer parte deste momento tão especial.", agradecimento_style))
+        
+        # 8. RODAPÉ DE EMISSÃO
+        story.append(Spacer(1, 10))
+        story.append(Paragraph(f"<font color='grey' size='7'>Documento emitido por {nome_usuario_confirmou} em {datetime.now().strftime('%d/%m/%Y às %H:%M')}</font>", styles['Normal']))
+
         doc.build(story)
         buffer.seek(0)
         return buffer
@@ -940,10 +1020,15 @@ else:
                         with col_a:
                             valor_ev = float(ev.get('valor_total') or 0)
                             st.write(f"**Data e Hora:** {data_ini_br} às {hora_ini_fmt} — {data_fim_br} às {hora_fim_fmt}")
-                            st.write(f"**Valor:** R$ {formatar_moeda(valor_ev)}")
+                            
+                            # Mantendo apenas UM valor na tela
                             st.write(f"**Valor:** R$ {formatar_moeda(valor_ev)}")
                             st.write(f"**Contato do Cliente:** {contato_cliente_ev}")
-                            st.write(f"**Observações:** {ev.get('observacao') or '-'}")
+                            
+                            # Separando "Observações" e "Local" em linhas diferentes
+                            obs_bd = ev.get('observacao') or '-'
+                            obs_formatada = obs_bd.replace("Local:", "\n\n**Local:**")
+                            st.write(f"**Observações:** {obs_formatada}")
                         with col_b:
                             opcoes_status = ["Agendado", "Em Andamento", "Concluído", "Cancelado"]
                             idx_status = opcoes_status.index(status_ev) if status_ev in opcoes_status else 0
