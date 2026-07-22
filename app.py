@@ -1839,7 +1839,7 @@ else:
                 st.download_button("📄 Baixar PDF do Período", data=buffer_pdf_fat, file_name=f"faturamento_{ano_selecionado}.pdf", mime="application/pdf")
             else: st.caption("⚠️ Para gerar o PDF, instale a biblioteca: `pip install reportlab`")
                 
-elif menu == "🧳 Orçamento":
+else menu == "🧳 Orçamento":
         st.title("🧳 Orçamento de Viagem / Evento")
 
         def _popup_aviso_orcamento():
