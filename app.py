@@ -918,7 +918,24 @@ else:
         eventos_check = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
         if not eventos_check.data:
             return qtd_alugada, detalhe_alugado
-
+    def calcular_detalhamento_periodo_produto(data_inicio_periodo, data_fim_periodo, produto_id, estoque_total):
+        """Percorre cada dia do período e retorna só as faixas de horário ONDE HÁ RESERVA (ocupação > 0)."""
+        linhas_detalhe = []
+        dia_atual = data_inicio_periodo
+        while dia_atual <= data_fim_periodo:
+            segmentos = calcular_timeline_disponibilidade_produto(dia_atual, produto_id, estoque_total)
+            for seg_ini, seg_fim, reservado, livre in segmentos:
+                if reservado > 0:
+                    hora_ini_txt = seg_ini.strftime("%H:%M")
+                    hora_fim_txt = "23:59" if seg_fim.time() == datetime.max.time() else seg_fim.strftime("%H:%M")
+                    linhas_detalhe.append({
+                        "Data": dia_atual.strftime("%d/%m/%Y"),
+                        "Horário": f"{hora_ini_txt} às {hora_fim_txt}",
+                        "Reservado": reservado,
+                        "Disponível": livre
+                    })
+            dia_atual += relativedelta(days=1)
+        return linhas_detalhe
         # 1. Descobre quais eventos tocam o período pesquisado, guardando o intervalo REAL (com hora) de cada um
         intervalos_eventos = {}
         for ev_c in eventos_check.data:
@@ -1698,6 +1715,19 @@ else:
                     col_c3.metric(f"{icone_status} Livres no Período", total_livre)
                     st.dataframe(df_cat[colunas_mostrar], use_container_width=True, hide_index=True)
                     st.markdown("---")
+
+                # ===== DETALHAMENTO AUTOMÁTICO POR DIA E HORÁRIO (só itens com reserva no período) =====
+                if data_fim_f > data_inicio_f or qtd_alugada:
+                    st.markdown("#### 🕐 Detalhamento por Dia e Horário (apenas itens com reserva)")
+                    produtos_com_reserva = df_produtos[df_produtos['Reservado na Data'] > 0]
+                    if produtos_com_reserva.empty:
+                        st.caption("Nenhum item reservado neste período.")
+                    else:
+                        for _, prod_row in produtos_com_reserva.iterrows():
+                            linhas_detalhe = calcular_detalhamento_periodo_produto(data_inicio_f, data_fim_f, prod_row['id'], prod_row['Estoque Total'])
+                            if linhas_detalhe:
+                                with st.expander(f"{prod_row['Ícone']} {prod_row['nome']}", expanded=False):
+                                    st.dataframe(pd.DataFrame(linhas_detalhe), use_container_width=True, hide_index=True)
             else: st.info("Nenhum produto cadastrado no estoque ainda.")
 
         with st.expander("➕ Adicionar Novo Item ou Kit", expanded=False):
