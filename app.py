@@ -715,19 +715,38 @@ else:
         if any(x in n for x in ['LUZ', 'REFLETOR', 'LED']): return "💡 ILUMINAÇÃO"
         return "📦 OUTROS ITENS GERAIS"
 
-    def calcular_disponibilidade_periodo(data_ini_periodo, data_fim_periodo, evento_id_excluir=None):
+    def calcular_disponibilidade_periodo(data_ini_periodo, data_fim_periodo, hora_ini=None, hora_fim=None, evento_id_excluir=None):
         qtd_alugada = {}
         detalhe_alugado = {}
-        eventos_check = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
+        # Agora busca também hora_inicio e hora_fim
+        eventos_check = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
         eventos_no_periodo = []
+        
+        if hora_ini is None: hora_ini = datetime.min.time()
+        if hora_fim is None: hora_fim = datetime.max.time()
+        
+        dt_ini_busca = datetime.combine(data_ini_periodo, hora_ini)
+        dt_fim_busca = datetime.combine(data_fim_periodo, hora_fim)
+
         if eventos_check.data:
             for ev_c in eventos_check.data:
                 if evento_id_excluir and ev_c['id'] == evento_id_excluir: continue
                 if not ev_c.get('data_inicio') or not ev_c.get('data_fim_alocacao'): continue
-                ev_inicio_c = datetime.strptime(ev_c['data_inicio'].split("T")[0], "%Y-%m-%d").date()
-                ev_fim_c = datetime.strptime(ev_c['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
-                if (ev_inicio_c <= data_fim_periodo) and (ev_fim_c >= data_ini_periodo):
+                
+                ev_data_inicio_c = datetime.strptime(ev_c['data_inicio'].split("T")[0], "%Y-%m-%d").date()
+                ev_data_fim_c = datetime.strptime(ev_c['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
+                
+                # Trata horários caso o evento antigo não tenha
+                ev_hora_inicio = datetime.strptime(ev_c['hora_inicio'], "%H:%M:%S").time() if ev_c.get('hora_inicio') else datetime.min.time()
+                ev_hora_fim = datetime.strptime(ev_c['hora_fim'], "%H:%M:%S").time() if ev_c.get('hora_fim') else datetime.max.time()
+                
+                dt_inicio_ev = datetime.combine(ev_data_inicio_c, ev_hora_inicio)
+                dt_fim_ev = datetime.combine(ev_data_fim_c, ev_hora_fim)
+
+                # Verifica interseção de Data E Hora
+                if (dt_inicio_ev <= dt_fim_busca) and (dt_fim_ev >= dt_ini_busca):
                     eventos_no_periodo.append(ev_c['id'])
+                    
         if eventos_no_periodo:
             itens_check = supabase.table("itens_evento").select("produto_id, quantidade, observacao").in_("evento_id", eventos_no_periodo).execute()
             if itens_check.data:
@@ -740,7 +759,6 @@ else:
                         for k_c, v_c in js_item_c.items():
                             detalhe_alugado[pid_c][k_c] = detalhe_alugado[pid_c].get(k_c, 0) + v_c
         return qtd_alugada, detalhe_alugado
-
     def _criar_modal_exclusao():
         def modal(produto_info, tipo, total_remover=0, qtds_json=None, motivo=""):
             if tipo == "parcial":
@@ -1111,12 +1129,19 @@ else:
 
         st.markdown("---")
         with st.expander("📝 Cadastrar Novo Evento", expanded=False):
-            st.markdown("**🗓️ Primeiro, escolha as datas do evento:**")
-            col_data1, col_data2 = st.columns(2)
-            with col_data1: data_inicio = st.date_input("Data de Início do Evento", format="DD/MM/YYYY", key="novo_evento_data_inicio")
-            with col_data2: data_fim = st.date_input("Até quando os produtos ficam alocados? (Data Fim)", format="DD/MM/YYYY", value=data_inicio, min_value=data_inicio, key="novo_evento_data_fim")
+            st.markdown("**🗓️ Primeiro, escolha as datas e horários do evento:**")
+            col_data1, col_data2, col_hora1, col_hora2 = st.columns(4)
+            with col_data1: data_inicio = st.date_input("Data Início", format="DD/MM/YYYY", key="novo_evento_data_inicio")
+            with col_data2: data_fim = st.date_input("Data Fim", value=data_inicio, min_value=data_inicio, key="novo_evento_data_fim")
+            with col_hora1: hora_inicio = st.time_input("Hora Início", key="novo_evento_hora_inicio")
+            with col_hora2: hora_fim = st.time_input("Hora Fim", key="novo_evento_hora_fim")
 
-            qtd_alugada_form, detalhe_alugado_form = calcular_disponibilidade_periodo(data_inicio, data_fim)
+            qtd_alugada_form, detalhe_alugado_form = calcular_disponibilidade_periodo(data_inicio, data_fim, hora_inicio, hora_fim)
+            
+            # ... (Restante do seu código do formulário de evento) ...
+            
+            # ATENÇÃO: No momento do insert do evento (supabase.table("eventos").insert), adicione as novas colunas:
+            # "hora_inicio": str(hora_inicio), "hora_fim": str(hora_fim)
 
             with st.form("form_evento"):
                 col_1, col_2, col_3, col_3b = st.columns(4)
@@ -1391,7 +1416,122 @@ else:
                     if st.button("🗑️ Solicitar Exclusão", key="btn_solicita_excluir_produto"):
                         popup_confirmacao_estoque(produto_selecionado_info, "total")
             else: st.info("Nenhum produto cadastrado para excluir.")
+# 1. ADICIONAR QUANTIDADE A PRODUTO EXISTENTE
+        with st.expander("⬆️ Adicionar Quantidade a Produto Existente", expanded=False):
+            if produtos_lista.data:
+                opcoes_add = {f"{p['nome']} (Estoque Atual: {p['quantidade_estoque']})": p for p in produtos_lista.data}
+                prod_selecionado_add = st.selectbox("Selecione o produto para aumentar o estoque", list(opcoes_add.keys()), key="select_add_qtd")
+                prod_alvo_add = opcoes_add[prod_selecionado_add]
 
+                nova_qtd_add = st.number_input("Quantidade de peças adquiridas/adicionadas", min_value=1, step=1, key="num_add_qtd")
+                
+                if st.button("➕ Confirmar Adição ao Estoque"):
+                    qtd_final = prod_alvo_add['quantidade_estoque'] + nova_qtd_add
+                    # Se for kit (letras/numeros) é preciso uma lógica extra, aqui foca no total físico
+                    supabase.table("produtos").update({"quantidade_estoque": qtd_final}).eq("id", prod_alvo_add['id']).execute()
+                    mostrar_popup("Estoque atualizado com sucesso!")
+                    st.rerun()
+
+        # 2. CONTROLE DE MANUTENÇÃO
+        with st.expander("🔧 Controle de Manutenção", expanded=False):
+            tab_enviar_manut, tab_extrato_manut = st.tabs(["Enviar para Manutenção", "Extrato de Manutenção"])
+            
+            with tab_enviar_manut:
+                if produtos_lista.data:
+                    opcoes_manut = {p['nome']: p for p in produtos_lista.data}
+                    prod_manut_nome = st.selectbox("Selecione o Produto", list(opcoes_manut.keys()), key="sel_manut")
+                    prod_manut = opcoes_manut[prod_manut_nome]
+                    
+                    col_m1, col_m2 = st.columns(2)
+                    with col_m1: qtd_manut = st.number_input("Qtd para Manutenção", min_value=1, max_value=prod_manut['quantidade_estoque'], step=1)
+                    with col_m2: motivo_manut = st.text_input("Motivo / Defeito")
+                    
+                    if st.button("🔧 Registrar Manutenção"):
+                        if not motivo_manut.strip():
+                            mostrar_popup("Informe o motivo da manutenção.", tipo="erro")
+                        else:
+                            # Tira do estoque
+                            novo_estoque = prod_manut['quantidade_estoque'] - qtd_manut
+                            supabase.table("produtos").update({"quantidade_estoque": novo_estoque}).eq("id", prod_manut['id']).execute()
+                            # Registra na tabela de manutenção
+                            supabase.table("manutencao").insert({
+                                "empresa_id": emp_id, "produto_id": prod_manut['id'],
+                                "quantidade": qtd_manut, "motivo": motivo_manut,
+                                "status": "Em Manutenção", "data_envio": str(datetime.now().date())
+                            }).execute()
+                            mostrar_popup("Produto enviado para manutenção!")
+                            st.rerun()
+            
+            with tab_extrato_manut:
+                # Carrega manutenção da empresa
+                try:
+                    manut_lista = supabase.table("manutencao").select("*, produtos(nome)").eq("empresa_id", emp_id).execute()
+                    if manut_lista.data:
+                        for m in manut_lista.data:
+                            nome_p = m['produtos']['nome'] if m.get('produtos') else f"Produto #{m['produto_id']}"
+                            st.write(f"🛠️ **{nome_p}** — {m['quantidade']} un. | Data: {m['data_envio']} | Status: {m['status']}")
+                            st.caption(f"Motivo: {m['motivo']}")
+                            
+                            if m['status'] == "Em Manutenção":
+                                if st.button(f"✅ Retornar ao Estoque (ID {m['id']})", key=f"ret_manut_{m['id']}"):
+                                    # Devolve pro estoque
+                                    prod_atual = supabase.table("produtos").select("quantidade_estoque").eq("id", m['produto_id']).execute()
+                                    if prod_atual.data:
+                                        estq_atualizado = prod_atual.data[0]['quantidade_estoque'] + m['quantidade']
+                                        supabase.table("produtos").update({"quantidade_estoque": estq_atualizado}).eq("id", m['produto_id']).execute()
+                                        # Atualiza status
+                                        supabase.table("manutencao").update({"status": "Concluído"}).eq("id", m['id']).execute()
+                                        mostrar_popup("Produto devolvido ao estoque principal!")
+                                        st.rerun()
+                            st.markdown("---")
+                    else:
+                        st.info("Nenhum item em manutenção.")
+                except Exception as e:
+                    st.warning("Crie a tabela 'manutencao' no Supabase para ver o extrato.")
+
+        # 3. CONTROLE DE ITENS QUEBRADOS
+        with st.expander("🗑️ Controle de Itens Quebrados", expanded=False):
+            tab_reg_quebrado, tab_lista_quebrados = st.tabs(["Registrar Quebra", "Histórico de Quebrados"])
+            
+            with tab_reg_quebrado:
+                if produtos_lista.data:
+                    opcoes_quebrado = {p['nome']: p for p in produtos_lista.data}
+                    prod_quebra_nome = st.selectbox("Selecione o Produto", list(opcoes_quebrado.keys()), key="sel_quebrado")
+                    prod_quebrado = opcoes_quebrado[prod_quebra_nome]
+                    
+                    col_q1, col_q2 = st.columns(2)
+                    with col_q1: qtd_quebrada = st.number_input("Quantidade Quebrada/Perdida", min_value=1, max_value=prod_quebrado['quantidade_estoque'], step=1)
+                    with col_q2: motivo_quebra = st.text_input("Detalhes (Ex: Quebrou na festa X)")
+                    
+                    if st.button("🗑️ Registrar Baixa por Quebra"):
+                        if not motivo_quebra.strip():
+                            mostrar_popup("Informe os detalhes da quebra.", tipo="erro")
+                        else:
+                            # Tira do estoque permanentemente
+                            novo_estoque_q = prod_quebrado['quantidade_estoque'] - qtd_quebrada
+                            supabase.table("produtos").update({"quantidade_estoque": novo_estoque_q}).eq("id", prod_quebrado['id']).execute()
+                            # Registra no histórico
+                            supabase.table("itens_quebrados").insert({
+                                "empresa_id": emp_id, "produto_id": prod_quebrado['id'],
+                                "quantidade": qtd_quebrada, "motivo": motivo_quebra,
+                                "data_registro": str(datetime.now().date())
+                            }).execute()
+                            mostrar_popup("Baixa de estoque registrada com sucesso!")
+                            st.rerun()
+            
+            with tab_lista_quebrados:
+                try:
+                    quebrados_lista = supabase.table("itens_quebrados").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_registro", desc=True).execute()
+                    if quebrados_lista.data:
+                        for q in quebrados_lista.data:
+                            nome_pq = q['produtos']['nome'] if q.get('produtos') else f"Produto #{q['produto_id']}"
+                            st.error(f"❌ **{nome_pq}** — {q['quantidade']} un. perdidas em {q['data_registro']}")
+                            st.caption(f"Motivo: {q['motivo']}")
+                            st.markdown("---")
+                    else:
+                        st.info("Nenhum item quebrado registrado.")
+                except Exception as e:
+                    st.warning("Crie a tabela 'itens_quebrados' no Supabase para ver o histórico.")
     elif menu == "🛒 Compras":
         st.title("Controle de Compras")
         col_cp3, col_cp4 = st.columns(2)
