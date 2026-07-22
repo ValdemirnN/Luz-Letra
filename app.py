@@ -375,13 +375,15 @@ def criar_ou_atualizar_evento_google_agenda(refresh_token, evento_dict, google_e
     return resp.json().get("id")
 
 def sincronizar_evento_google_agenda_silencioso(usuario_id_dono, evento_dict, google_event_id_existente=None):
-    """Tenta criar/atualizar o evento na Google Agenda do usuário; falha silenciosamente se não conectado."""
     try:
         u = supabase.table("usuarios").select("google_refresh_token").eq("id", usuario_id_dono).execute()
-        if not u.data or not u.data[0].get("google_refresh_token"): return None
+        if not u.data or not u.data[0].get("google_refresh_token"):
+            st.warning("DEBUG: usuário não tem refresh_token salvo.")
+            return None
         refresh_token_u = u.data[0]["google_refresh_token"]
         return criar_ou_atualizar_evento_google_agenda(refresh_token_u, evento_dict, google_event_id_existente)
-    except Exception:
+    except Exception as e:
+        st.warning(f"DEBUG erro Google Agenda: {e}")
         return None
 
 # ==========================================
