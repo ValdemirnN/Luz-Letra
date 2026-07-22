@@ -689,6 +689,13 @@ else:
         except Exception:
             return None
 
+    def remover_documento_evento(caminho_storage):
+        if not caminho_storage: return
+        try:
+            supabase.storage.from_(BUCKET_DOCUMENTOS).remove([caminho_storage])
+        except Exception:
+            pass
+
     def formatar_telefone_br(numero):
         if not numero: return numero
         apenas_digitos = "".join(c for c in numero if c.isdigit())
