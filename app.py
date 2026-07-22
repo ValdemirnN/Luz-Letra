@@ -47,7 +47,6 @@ document.getElementsByTagName('head')[0].appendChild(meta);
 # Acesse em: https://SEU_APP.streamlit.app/?privacidade=1
 # ==========================================
 if st.query_params.get("privacidade") == "1":
-    ...
     st.title("Política de Privacidade - Luz & Letras Sistema")
     st.markdown("""
     **Última atualização:** 21 de julho de 2026
@@ -831,52 +830,101 @@ else:
         if any(x in n for x in ['LUZ', 'REFLETOR', 'LED']): return "💡 ILUMINAÇÃO"
         return "📦 OUTROS ITENS GERAIS"
 
+    # ==========================================================================
+    # ✅ CORREÇÃO APLICADA AQUI (22/07/2026)
+    # PROBLEMA: "Soma cega" — dois eventos no mesmo dia em horários diferentes
+    # (ex: 08h-12h e 14h-18h) estavam tendo suas quantidades somadas uma em
+    # cima da outra, mesmo sem nunca coincidirem no tempo. Isso fazia o
+    # sistema achar que o estoque tinha "estourado" quando na prática nunca
+    # saiu mais do que o pico real de uso simultâneo.
+    #
+    # SOLUÇÃO: em vez de somar a quantidade de TODOS os eventos que tocam o
+    # período pesquisado, agora calculamos o PICO DE OCUPAÇÃO SIMULTÂNEA
+    # (técnica de "sweep-line" / linha de varredura): percorremos a linha do
+    # tempo somando quando um evento "entra em uso" e subtraindo quando
+    # "sai de uso", guardando o maior valor acumulado. Dois eventos que não
+    # se cruzam no tempo nunca mais se somam entre si.
+    # ==========================================================================
     def calcular_disponibilidade_periodo(data_ini_periodo, data_fim_periodo, hora_ini=None, hora_fim=None, evento_id_excluir=None):
         qtd_alugada = {}
         detalhe_alugado = {}
-        # Agora busca também hora_inicio e hora_fim
-        eventos_check = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
-        eventos_no_periodo = []
-        
+
         if hora_ini is None: hora_ini = datetime.min.time()
         if hora_fim is None: hora_fim = datetime.max.time()
-        
         dt_ini_busca = datetime.combine(data_ini_periodo, hora_ini)
         dt_fim_busca = datetime.combine(data_fim_periodo, hora_fim)
 
-        if eventos_check.data:
-            for ev_c in eventos_check.data:
-                if evento_id_excluir and ev_c['id'] == evento_id_excluir: continue
-                if not ev_c.get('data_inicio') or not ev_c.get('data_fim_alocacao'): continue
-                
-                ev_data_inicio_c = datetime.strptime(ev_c['data_inicio'].split("T")[0], "%Y-%m-%d").date()
-                ev_data_fim_c = datetime.strptime(ev_c['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
-                
-                # Trata horários caso o evento antigo não tenha
-                ev_hora_inicio = datetime.strptime(ev_c['hora_inicio'], "%H:%M:%S").time() if ev_c.get('hora_inicio') else datetime.min.time()
-                ev_hora_fim = datetime.strptime(ev_c['hora_fim'], "%H:%M:%S").time() if ev_c.get('hora_fim') else datetime.max.time()
-                
-                # ... (resto do código igual acima dessa linha) ...
-                dt_inicio_ev = datetime.combine(ev_data_inicio_c, ev_hora_inicio)
-                dt_fim_ev = datetime.combine(ev_data_fim_c, ev_hora_fim)
+        eventos_check = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
+        if not eventos_check.data:
+            return qtd_alugada, detalhe_alugado
 
-                # Verifica interseção de Data E Hora (CORRIGIDO PARA < e >)
-                # Assim, se um evento termina 13:00 e outro começa 13:00, eles NÃO dão choque.
-                if (dt_inicio_ev < dt_fim_busca) and (dt_fim_ev > dt_ini_busca):
-                    eventos_no_periodo.append(ev_c['id'])
-                # ... (resto do código igual abaixo dessa linha) ...
-                    
-        if eventos_no_periodo:
-            itens_check = supabase.table("itens_evento").select("produto_id, quantidade, observacao").in_("evento_id", eventos_no_periodo).execute()
-            if itens_check.data:
-                for item_c in itens_check.data:
-                    pid_c = item_c['produto_id']
-                    qtd_alugada[pid_c] = qtd_alugada.get(pid_c, 0) + item_c['quantidade']
-                    js_item_c = safe_json_load(item_c['observacao'])
-                    if js_item_c:
-                        if pid_c not in detalhe_alugado: detalhe_alugado[pid_c] = {}
-                        for k_c, v_c in js_item_c.items():
-                            detalhe_alugado[pid_c][k_c] = detalhe_alugado[pid_c].get(k_c, 0) + v_c
+        # 1. Descobre quais eventos tocam o período pesquisado, guardando o intervalo REAL (com hora) de cada um
+        intervalos_eventos = {}
+        for ev_c in eventos_check.data:
+            if evento_id_excluir and ev_c['id'] == evento_id_excluir: continue
+            if not ev_c.get('data_inicio') or not ev_c.get('data_fim_alocacao'): continue
+
+            ev_data_inicio_c = datetime.strptime(ev_c['data_inicio'].split("T")[0], "%Y-%m-%d").date()
+            ev_data_fim_c = datetime.strptime(ev_c['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
+
+            # Trata horários caso o evento antigo não tenha
+            ev_hora_inicio = datetime.strptime(ev_c['hora_inicio'], "%H:%M:%S").time() if ev_c.get('hora_inicio') else datetime.min.time()
+            ev_hora_fim = datetime.strptime(ev_c['hora_fim'], "%H:%M:%S").time() if ev_c.get('hora_fim') else datetime.max.time()
+
+            dt_inicio_ev = datetime.combine(ev_data_inicio_c, ev_hora_inicio)
+            dt_fim_ev = datetime.combine(ev_data_fim_c, ev_hora_fim)
+
+            # Verifica interseção de Data E Hora (com < e >, evento que termina 13h
+            # e outro que começa 13h NÃO dão choque)
+            if (dt_inicio_ev < dt_fim_busca) and (dt_fim_ev > dt_ini_busca):
+                intervalos_eventos[ev_c['id']] = (dt_inicio_ev, dt_fim_ev)
+
+        if not intervalos_eventos:
+            return qtd_alugada, detalhe_alugado
+
+        # 2. Busca os itens alocados desses eventos
+        itens_check = supabase.table("itens_evento").select("evento_id, produto_id, quantidade, observacao").in_("evento_id", list(intervalos_eventos.keys())).execute()
+        if not itens_check.data:
+            return qtd_alugada, detalhe_alugado
+
+        # 3. Agrupa por produto (e por sub-item, no caso de kits) os intervalos de uso
+        ocupacao_produto = {}
+        ocupacao_subitem = {}
+
+        for item_c in itens_check.data:
+            pid_c = item_c['produto_id']
+            ev_id_c = item_c['evento_id']
+            if ev_id_c not in intervalos_eventos: continue
+            dt_ini_ev, dt_fim_ev = intervalos_eventos[ev_id_c]
+
+            ocupacao_produto.setdefault(pid_c, []).append((dt_ini_ev, dt_fim_ev, item_c['quantidade']))
+
+            js_item_c = safe_json_load(item_c['observacao'])
+            if js_item_c:
+                for k_c, v_c in js_item_c.items():
+                    ocupacao_subitem.setdefault((pid_c, k_c), []).append((dt_ini_ev, dt_fim_ev, v_c))
+
+        # 4. Sweep-line: acha o pico de uso simultâneo em qualquer instante do tempo
+        def _pico_maximo(intervalos):
+            eventos_linha = []
+            for ini, fim, qtd in intervalos:
+                eventos_linha.append((ini, qtd))     # entra em uso
+                eventos_linha.append((fim, -qtd))    # sai de uso
+            # saídas processadas antes de entradas no mesmo instante
+            eventos_linha.sort(key=lambda x: (x[0], x[1]))
+            atual = 0
+            pico = 0
+            for _, delta in eventos_linha:
+                atual += delta
+                pico = max(pico, atual)
+            return pico
+
+        for pid_c, intervalos in ocupacao_produto.items():
+            qtd_alugada[pid_c] = _pico_maximo(intervalos)
+
+        for (pid_c, k_c), intervalos in ocupacao_subitem.items():
+            detalhe_alugado.setdefault(pid_c, {})[k_c] = _pico_maximo(intervalos)
+
         return qtd_alugada, detalhe_alugado
     def _criar_modal_exclusao():
         def modal(produto_info, tipo, total_remover=0, qtds_json=None, motivo=""):
@@ -1246,7 +1294,6 @@ else:
                         with col_ec2: novo_contato_cliente_edit = st.text_input("Contato do Cliente", value=contato_cliente_ev if contato_cliente_ev != "-" else "", key=f"edit_contato_cli_{ev['id']}")
                         justificativa_edit = st.text_input("Justificativa (obrigatório)", key=f"edit_just_{ev['id']}")
 
-# Substitua o 'if st.button("💾 Salvar Alterações"...' por este bloco abaixo:
                         col_btn_edit1, col_btn_edit2 = st.columns(2)
                         
                         with col_btn_edit1:
@@ -1307,11 +1354,6 @@ else:
             with col_hora2: hora_fim = st.time_input("Hora Fim", key="novo_evento_hora_fim")
 
             qtd_alugada_form, detalhe_alugado_form = calcular_disponibilidade_periodo(data_inicio, data_fim, hora_inicio, hora_fim)
-            
-            # ... (Restante do seu código do formulário de evento) ...
-            
-            # ATENÇÃO: No momento do insert do evento (supabase.table("eventos").insert), adicione as novas colunas:
-            # "hora_inicio": str(hora_inicio), "hora_fim": str(hora_fim)
 
             with st.form("form_evento"):
                 col_1, col_2, col_3, col_3b = st.columns(4)
@@ -1465,28 +1507,13 @@ else:
                 df_produtos['Detalhes/Inventário'] = df_produtos['observacao'].apply(format_obs)
                 df_produtos['Status'] = df_produtos['quantidade_estoque'].apply(status_cor)
 
-                eventos = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
-                eventos_no_periodo = []
-                if eventos.data:
-                    for ev in eventos.data:
-                        if not ev.get('data_inicio') or not ev.get('data_fim_alocacao'): continue
-                        ev_inicio = datetime.strptime(ev['data_inicio'].split("T")[0], "%Y-%m-%d").date()
-                        ev_fim = datetime.strptime(ev['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
-                        if (ev_inicio <= data_fim_f) and (ev_fim >= data_inicio_f):
-                            eventos_no_periodo.append(ev['id'])
-                
-                qtd_alugada = {}
-                detalhe_alugado = {}
-                if eventos_no_periodo:
-                    itens = supabase.table("itens_evento").select("produto_id, quantidade, observacao").in_("evento_id", eventos_no_periodo).execute()
-                    if itens.data:
-                        for item in itens.data:
-                            pid = item['produto_id']
-                            qtd_alugada[pid] = qtd_alugada.get(pid, 0) + item['quantidade']
-                            js_item = safe_json_load(item['observacao'])
-                            if js_item:
-                                if pid not in detalhe_alugado: detalhe_alugado[pid] = {}
-                                for k, v in js_item.items(): detalhe_alugado[pid][k] = detalhe_alugado[pid].get(k, 0) + v
+                # ==========================================================================
+                # ✅ CORREÇÃO: antes este bloco tinha sua PRÓPRIA lógica de soma
+                # (sem considerar hora, e somando "cegamente" eventos que não se cruzam).
+                # Agora ele usa a MESMA função corrigida usada no resto do sistema,
+                # que calcula o pico real de ocupação simultânea.
+                # ==========================================================================
+                qtd_alugada, detalhe_alugado = calcular_disponibilidade_periodo(data_inicio_f, data_fim_f)
 
                 def calcular_disponivel(row): return row['quantidade_estoque'] - qtd_alugada.get(row['id'], 0)
                 def calc_livres_detalhe(row):
@@ -1735,7 +1762,7 @@ else:
                     else:
                         st.info("Nenhum item em manutenção.")
                 except Exception as e:
-                    st.warning("Crie a tabela 'manutencao' no Supabase para ver o extrato.")
+                    st.error(f"Erro ao carregar manutenção: {e}")
 
         # 3. CONTROLE DE ITENS QUEBRADOS
         with st.expander("🗑️ Controle de Itens Quebrados", expanded=False):
@@ -1779,7 +1806,7 @@ else:
                     else:
                         st.info("Nenhum item quebrado registrado.")
                 except Exception as e:
-                    st.warning("Crie a tabela 'itens_quebrados' no Supabase para ver o histórico.")
+                    st.error(f"Erro ao carregar itens quebrados: {e}")
     elif menu == "🛒 Compras":
         st.title("Controle de Compras")
         col_cp3, col_cp4 = st.columns(2)
