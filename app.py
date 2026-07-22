@@ -226,7 +226,7 @@ GMAIL_REMETENTE = st.secrets.get("GMAIL_REMETENTE", "SEU_EMAIL_AQUI@gmail.com")
 GMAIL_SENHA_APP = st.secrets.get("GMAIL_SENHA_APP", "SUA_SENHA_DE_APP_DE_16_DIGITOS")
 MP_ACCESS_TOKEN = st.secrets.get("MP_ACCESS_TOKEN", "COLOQUE_SEU_ACCESS_TOKEN_DO_MERCADO_PAGO_AQUI")
 URL_BASE_SISTEMA = st.secrets.get("URL_BASE_SISTEMA", "http://localhost:8501")
-VALOR_ASSINATURA_MENSAL = 300,00
+VALOR_ASSINATURA_MENSAL = 300.00
 
 # ==========================================
 # CONFIGURAÇÕES GOOGLE (MAPS + AGENDA)
@@ -992,7 +992,7 @@ else:
                     pico = max(pico, atual)
                 return pico
 
-            for pid_c, intervalos in ocupacao_produto.items():
+           for pid_c, intervalos in ocupacao_produto.items():
                 qtd_alugada[pid_c] = _pico_maximo(intervalos)
 
             for (pid_c, k_c), intervalos in ocupacao_subitem.items():
@@ -1002,6 +1002,88 @@ else:
         except Exception as e:
             st.warning(f"⚠️ Erro ao calcular disponibilidade: {e}")
             return {}, {}
+
+    def calcular_timeline_disponibilidade_produto(data_ref, produto_id, estoque_total):
+        """Divide o dia em faixas de horário e mostra quanto está livre/reservado em cada faixa."""
+        eventos_dia = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
+        intervalos = []
+
+        if eventos_dia.data:
+            itens_produto = supabase.table("itens_evento").select("evento_id, quantidade").eq("produto_id", produto_id).execute()
+            mapa_qtd_evento = {i['evento_id']: i['quantidade'] for i in (itens_produto.data or [])}
+
+            dt_ini_dia = datetime.combine(data_ref, datetime.min.time())
+            dt_fim_dia = datetime.combine(data_ref, datetime.max.time())
+
+            def _parse_hora_segura_tl(valor_hora):
+                if not valor_hora: return None
+                for fmt in ("%H:%M:%S", "%H:%M"):
+                    try:
+                        return datetime.strptime(valor_hora[:8], fmt).time()
+                    except Exception:
+                        continue
+                return None
+
+            for ev in eventos_dia.data:
+                if ev['id'] not in mapa_qtd_evento: continue
+                if not ev.get('data_inicio') or not ev.get('data_fim_alocacao'): continue
+
+                try:
+                    ev_data_ini = datetime.strptime(ev['data_inicio'].split("T")[0], "%Y-%m-%d").date()
+                    ev_data_fim = datetime.strptime(ev['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
+                except Exception:
+                    continue
+
+                ev_hora_ini = _parse_hora_segura_tl(ev.get('hora_inicio')) or datetime.min.time()
+                ev_hora_fim = _parse_hora_segura_tl(ev.get('hora_fim')) or datetime.max.time()
+
+                dt_ini_ev = datetime.combine(ev_data_ini, ev_hora_ini)
+                dt_fim_ev = datetime.combine(ev_data_fim, ev_hora_fim)
+
+                inicio_recortado = max(dt_ini_ev, dt_ini_dia)
+                fim_recortado = min(dt_fim_ev, dt_fim_dia)
+                if inicio_recortado < fim_recortado:
+                    intervalos.append((inicio_recortado, fim_recortado, mapa_qtd_evento[ev['id']]))
+
+        dt_ini_dia = datetime.combine(data_ref, datetime.min.time())
+        dt_fim_dia = datetime.combine(data_ref, datetime.max.time())
+
+        if not intervalos:
+            return [(dt_ini_dia, dt_fim_dia, 0, estoque_total)]
+
+        pontos = sorted(set([dt_ini_dia, dt_fim_dia] + [p for ini, fim, _ in intervalos for p in (ini, fim)]))
+
+        segmentos = []
+        for i in range(len(pontos) - 1):
+            seg_ini, seg_fim = pontos[i], pontos[i + 1]
+            if seg_ini >= seg_fim: continue
+            reservado_seg = sum(qtd for ini, fim, qtd in intervalos if ini <= seg_ini and fim >= seg_fim)
+            livre_seg = max(0, estoque_total - reservado_seg)
+            segmentos.append((seg_ini, seg_fim, reservado_seg, livre_seg))
+        return segmentos
+
+    def calcular_detalhamento_periodo_produto(data_inicio_periodo, data_fim_periodo, produto_id, estoque_total):
+        """Percorre cada dia do período e retorna só as faixas de horário ONDE HÁ RESERVA (ocupação > 0)."""
+        linhas_detalhe = []
+        try:
+            dia_atual = data_inicio_periodo
+            while dia_atual <= data_fim_periodo:
+                segmentos = calcular_timeline_disponibilidade_produto(dia_atual, produto_id, estoque_total)
+                for seg_ini, seg_fim, reservado, livre in segmentos:
+                    if reservado > 0:
+                        hora_ini_txt = seg_ini.strftime("%H:%M")
+                        hora_fim_txt = "23:59" if seg_fim.time() == datetime.max.time() else seg_fim.strftime("%H:%M")
+                        linhas_detalhe.append({
+                            "Data": dia_atual.strftime("%d/%m/%Y"),
+                            "Horário": f"{hora_ini_txt} às {hora_fim_txt}",
+                            "Reservado": reservado,
+                            "Disponível": livre
+                        })
+                dia_atual += relativedelta(days=1)
+        except Exception as e:
+            st.warning(f"⚠️ Erro ao detalhar período: {e}")
+        return linhas_detalhe
+        
     def _criar_modal_exclusao():
         def modal(produto_info, tipo, total_remover=0, qtds_json=None, motivo=""):
             if tipo == "parcial":
