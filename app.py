@@ -1120,49 +1120,126 @@ else:
         else: st.info("Nenhuma empresa comprou o sistema ainda.")
 
     elif menu == "📊 Dashboard":
-        st.title("Dashboard e Gráficos")
+        st.title("📊 Dashboard e Visão Geral")
         nome_exibicao = st.session_state.get('nome_usuario') or "Usuário"
         st.markdown(f"### 👋 Bem-vindo, {nome_exibicao}!")
-        col_grafico1, col_grafico2 = st.columns(2)
+        st.markdown("---")
+
+        # 1. COLETA DE DADOS GERAIS
+        eventos_dash = supabase.table("eventos").select("id, valor_total, status").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
+        receita_ev = sum(float(e.get('valor_total') or 0) for e in (eventos_dash.data or []))
+        total_eventos_ativos = len(eventos_dash.data) if eventos_dash.data else 0
+
+        try:
+            compras_dash = supabase.table("compras").select("valor_total").eq("empresa_id", emp_id).execute()
+            despesa_comp = sum(float(c.get('valor_total') or 0) for c in (compras_dash.data or []))
+        except: despesa_comp = 0.0
+
+        try:
+            viagens_dash = supabase.table("despesas_viagem").select("valor").eq("empresa_id", emp_id).execute()
+            despesa_viagem = sum(float(v.get('valor') or 0) for v in (viagens_dash.data or []))
+        except: despesa_viagem = 0.0
+
+        fat_dash = supabase.table("faturamento").select("tipo, valor").eq("empresa_id", emp_id).execute()
+        receita_manual = sum(float(f.get('valor') or 0) for f in (fat_dash.data or []) if f.get('tipo') == 'receita')
+        despesa_manual = sum(float(f.get('valor') or 0) for f in (fat_dash.data or []) if f.get('tipo') == 'despesa')
+
+        total_receitas = receita_ev + receita_manual
+        total_despesas = despesa_comp + despesa_viagem + despesa_manual
+        lucro_liquido = total_receitas - total_despesas
+
+        # 2. CARDS DE KPI (Indicadores Principais) no topo
+        col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
+        col_kpi1.metric("💰 Receita Total", f"R$ {formatar_moeda(total_receitas)}")
+        col_kpi2.metric("📉 Despesas Totais", f"R$ {formatar_moeda(total_despesas)}")
+        col_kpi3.metric("✨ Lucro Líquido", f"R$ {formatar_moeda(lucro_liquido)}", delta="Positivo" if lucro_liquido >= 0 else "Atenção", delta_color="normal" if lucro_liquido >= 0 else "inverse")
+        col_kpi4.metric("🎉 Eventos Ativos", total_eventos_ativos)
         
+        st.markdown("---")
+
+        # 3. GRÁFICOS
+        col_grafico1, col_grafico2 = st.columns(2)
+
         with col_grafico1:
-            st.subheader("Receitas vs Despesas")
-            eventos_dash = supabase.table("eventos").select("valor_total").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
-            receita_ev = sum(float(e.get('valor_total') or 0) for e in (eventos_dash.data or []))
-            try:
-                compras_dash = supabase.table("compras").select("valor_total").eq("empresa_id", emp_id).execute()
-                despesa_comp = sum(float(c.get('valor_total') or 0) for c in (compras_dash.data or []))
-            except: despesa_comp = 0.0
-            try:
-                viagens_dash = supabase.table("despesas_viagem").select("valor").eq("empresa_id", emp_id).execute()
-                despesa_viagem = sum(float(v.get('valor') or 0) for v in (viagens_dash.data or []))
-            except: despesa_viagem = 0.0
-            fat_dash = supabase.table("faturamento").select("tipo, valor").eq("empresa_id", emp_id).execute()
-            receita_manual = sum(float(f.get('valor') or 0) for f in (fat_dash.data or []) if f.get('tipo') == 'receita')
-            despesa_manual = sum(float(f.get('valor') or 0) for f in (fat_dash.data or []) if f.get('tipo') == 'despesa')
-            total_receitas = receita_ev + receita_manual
-            total_despesas = despesa_comp + despesa_viagem + despesa_manual
-            
+            st.subheader("💵 Fluxo Financeiro (Receitas vs Despesas)")
             if total_receitas > 0 or total_despesas > 0:
-                df_financeiro = pd.DataFrame({"Categoria": ["Receitas", "Despesas"], "Valor (R$)": [total_receitas, total_despesas]})
-                fig_fin = px.bar(df_financeiro, x="Categoria", y="Valor (R$)", color="Categoria", color_discrete_map={"Receitas": "#1B5E20", "Despesas": "#D32F2F"}, text="Valor (R$)")
-                fig_fin.update_traces(texttemplate='R$ %{text:,.2f}', textposition='outside')
-                fig_fin.update_layout(showlegend=False, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", yaxis=dict(showticklabels=False))
-                st.plotly_chart(fig_fin, use_container_width=True)
-            else: st.write("Sem dados financeiros registrados ainda.")
+                df_financeiro = pd.DataFrame({
+                    "Categoria": ["Receitas", "Despesas"],
+                    "Valor": [total_receitas, total_despesas]
+                })
+                # Usando um visual mais moderno, template escuro
+                fig_fin = px.bar(df_financeiro, x="Categoria", y="Valor", color="Categoria",
+                                 color_discrete_map={"Receitas": "#2E7D32", "Despesas": "#C62828"},
+                                 text="Valor", template="plotly_dark")
+                
+                # Formatando os números em cima das barras e removendo linhas de grade chatas
+                fig_fin.update_traces(texttemplate='R$ %{text:,.2f}', textposition='outside', marker_line_width=0, textfont_size=14)
+                fig_fin.update_layout(
+                    showlegend=False, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                    yaxis=dict(showgrid=False, showticklabels=False, title="", zeroline=False),
+                    xaxis=dict(title="", showgrid=False, tickfont=dict(size=14)), margin=dict(t=30, b=0, l=0, r=0)
+                )
+                # Expandimos a altura pra ficar mais imponente na tela
+                st.plotly_chart(fig_fin, use_container_width=True, height=400)
+            else:
+                st.info("Sem dados financeiros registrados ainda.")
 
         with col_grafico2:
-            st.subheader("Status dos Eventos")
-            eventos = supabase.table("eventos").select("status").eq("empresa_id", emp_id).execute()
-            if eventos.data:
-                status_counts = pd.DataFrame(eventos.data)["status"].value_counts().reset_index()
+            st.subheader("📊 Distribuição de Status dos Eventos")
+            eventos_status = supabase.table("eventos").select("status").eq("empresa_id", emp_id).execute()
+            if eventos_status.data:
+                df_status = pd.DataFrame(eventos_status.data)
+                status_counts = df_status["status"].value_counts().reset_index()
                 status_counts.columns = ["Status", "Quantidade"]
-                mapa_cores_status = {"Concluído": "#1B5E20", "Agendado": "#FFC107", "Cancelado": "#D32F2F", "Em Andamento": "#66BB6A"}
-                fig_status = px.bar(status_counts, x="Status", y="Quantidade", color="Status", color_discrete_map=mapa_cores_status, text="Quantidade")
-                fig_status.update_layout(showlegend=False, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
-                st.plotly_chart(fig_status, use_container_width=True)
-            else: st.write("Sem dados.")
+                mapa_cores_status = {"Concluído": "#2E7D32", "Agendado": "#FBC02D", "Cancelado": "#C62828", "Em Andamento": "#0277BD"}
+                
+                # Gráfico de Rosca (Donut) com buraco no meio e bordas pretas separando as fatias
+                fig_status = px.pie(status_counts, names="Status", values="Quantidade", hole=0.55,
+                                    color="Status", color_discrete_map=mapa_cores_status, template="plotly_dark")
+                fig_status.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#0e0e0e', width=2)), textfont_size=13)
+                fig_status.update_layout(showlegend=False, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", margin=dict(t=30, b=0, l=0, r=0))
+                st.plotly_chart(fig_status, use_container_width=True, height=400)
+            else:
+                st.info("Sem eventos cadastrados ainda.")
 
+        st.markdown("---")
+        
+        # 4. NOVO GRÁFICO: TOP PRODUTOS MAIS ALUGADOS
+        st.subheader("🏆 Top Produtos Mais Alugados")
+        st.caption("Visão geral de quais peças geram mais saída do seu estoque.")
+        itens_dash = supabase.table("itens_evento").select("produto_id, quantidade").eq("empresa_id", emp_id).execute()
+        
+        if itens_dash.data:
+            prods_ref = supabase.table("produtos").select("id, nome").eq("empresa_id", emp_id).execute()
+            mapa_nomes = {p['id']: p['nome'] for p in (prods_ref.data or [])}
+            
+            # Agrupar quantidades de tudo que já saiu
+            uso_produtos = {}
+            for item in itens_dash.data:
+                pid = item['produto_id']
+                uso_produtos[pid] = uso_produtos.get(pid, 0) + item['quantidade']
+            
+            if uso_produtos:
+                df_top_prods = pd.DataFrame([
+                    {"Produto": mapa_nomes.get(pid, f"Produto {pid}"), "Locações": qtd}
+                    for pid, qtd in uso_produtos.items()
+                ])
+                # Pega os 7 mais alugados e inverte para o maior ficar no topo do gráfico horizontal
+                df_top_prods = df_top_prods.sort_values(by="Locações", ascending=True).tail(7) 
+                
+                # Gráfico de barras horizontais douradas (tema Luz & Letras)
+                fig_top = px.bar(df_top_prods, x="Locações", y="Produto", orientation='h', template="plotly_dark",
+                                 text="Locações", color_discrete_sequence=["#FFC107"])
+                
+                fig_top.update_traces(textposition='outside', marker_line_width=0, textfont_size=14, marker_border_radius=4)
+                fig_top.update_layout(
+                    showlegend=False, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                    xaxis=dict(showgrid=False, showticklabels=False, title="", zeroline=False),
+                    yaxis=dict(title="", showgrid=False, tickfont=dict(size=13, color='white')), margin=dict(t=10, b=0, l=0, r=0)
+                )
+                st.plotly_chart(fig_top, use_container_width=True)
+        else:
+            st.info("Nenhum item alocado para gerar este gráfico.")
     elif menu == "📅 Agendamento":
         st.title("Agendamento e Locação de Itens")
         produtos_disp = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao").eq("empresa_id", emp_id).execute()
