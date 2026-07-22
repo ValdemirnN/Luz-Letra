@@ -1238,43 +1238,76 @@ else:
                     if not nome_evento or not nome_cliente or not contato_cliente or not local_evento or not rua_evento or not bairro_evento or not numero_evento or valor_evento is None:
                         mostrar_popup("Por favor, preencha todos os campos obrigatórios!", tipo="erro")
                     else:
+                        # --- 🛡️ VALIDAÇÃO DE SEGURANÇA CONTRA ESTOQUE NEGATIVO ---
+                        estoque_insuficiente = False
+                        msg_erro_estoque = ""
                         alocacoes_agrupadas = {}
+                        
                         for key, qtd in quantidades_selecionadas.items():
                             if qtd > 0:
                                 p_id_str, sub_item = key.split("_", 1)
-                                if int(p_id_str) not in alocacoes_agrupadas: alocacoes_agrupadas[int(p_id_str)] = {'total': 0, 'detalhes': {}}
-                                alocacoes_agrupadas[int(p_id_str)]['total'] += qtd
-                                if sub_item != "NORMAL": alocacoes_agrupadas[int(p_id_str)]['detalhes'][sub_item] = qtd
+                                p_id_int = int(p_id_str)
+                                
+                                # Busca os dados reais do produto
+                                prod_info = next((p for p in produtos_disp.data if p['id'] == p_id_int), None)
+                                if not prod_info: continue
+                                
+                                # Verifica o limite se for produto normal
+                                if sub_item == "NORMAL":
+                                    disp = max(0, prod_info['quantidade_estoque'] - qtd_alugada_form.get(p_id_int, 0))
+                                    if qtd > disp:
+                                        estoque_insuficiente = True
+                                        msg_erro_estoque = f"Estoque insuficiente para {prod_info['nome']}. Você pediu {qtd}, mas só temos {disp} livres nesse horário."
+                                        break
+                                # Verifica o limite se for sub-item (letras/números)
+                                else:
+                                    js_est = safe_json_load(prod_info.get('observacao')) or {}
+                                    disp_sub = js_est.get(sub_item, 0) - detalhe_alugado_form.get(p_id_int, {}).get(sub_item, 0)
+                                    disp_sub = max(0, disp_sub)
+                                    if qtd > disp_sub:
+                                        estoque_insuficiente = True
+                                        msg_erro_estoque = f"Estoque insuficiente para {prod_info['nome']} ({sub_item}). Você pediu {qtd}, mas só temos {disp_sub} livres."
+                                        break
+                                
+                                # Agrupa se passar na validação
+                                if p_id_int not in alocacoes_agrupadas: alocacoes_agrupadas[p_id_int] = {'total': 0, 'detalhes': {}}
+                                alocacoes_agrupadas[p_id_int]['total'] += qtd
+                                if sub_item != "NORMAL": alocacoes_agrupadas[p_id_int]['detalhes'][sub_item] = qtd
 
-                        try:
-                            contato_cliente_formatado = formatar_telefone_br(contato_cliente)
-                            novo_cliente = supabase.table("clientes_eventos").insert({"empresa_id": emp_id, "nome": nome_cliente, "contato": contato_cliente_formatado}).execute()
-                            cliente_id_gerado = novo_cliente.data[0]['id']
-                            
-                            novo_evento = supabase.table("eventos").insert({
-                                "empresa_id": emp_id, "cliente_id": cliente_id_gerado, "titulo": nome_evento,
-                                "descricao": nome_evento, "data_inicio": str(data_inicio), 
-                                "data_fim": str(data_fim), "data_fim_alocacao": str(data_fim), 
-                                "status": status_evento, "observacao": f"Local: {local_evento} - {rua_evento}, {numero_evento} - {bairro_evento} - {obs_evento_geral}",
-                                "valor_total": valor_evento
-                            }).execute()
-                            evento_id_gerado = novo_evento.data[0]['id']
+                        # Se der erro no estoque, bloqueia tudo e avisa
+                        if estoque_insuficiente:
+                            mostrar_popup(msg_erro_estoque, tipo="erro")
+                        else:
+                            try:
+                                contato_cliente_formatado = formatar_telefone_br(contato_cliente)
+                                novo_cliente = supabase.table("clientes_eventos").insert({"empresa_id": emp_id, "nome": nome_cliente, "contato": contato_cliente_formatado}).execute()
+                                cliente_id_gerado = novo_cliente.data[0]['id']
+                                
+                                novo_evento = supabase.table("eventos").insert({
+                                    "empresa_id": emp_id, "cliente_id": cliente_id_gerado, "titulo": nome_evento,
+                                    "descricao": nome_evento, "data_inicio": str(data_inicio), 
+                                    "data_fim": str(data_fim), "data_fim_alocacao": str(data_fim), 
+                                    "hora_inicio": str(hora_inicio), "hora_fim": str(hora_fim),
+                                    "status": status_evento, "observacao": f"Local: {local_evento} - {rua_evento}, {numero_evento} - {bairro_evento} - {obs_evento_geral}",
+                                    "valor_total": valor_evento
+                                }).execute()
+                                evento_id_gerado = novo_evento.data[0]['id']
 
-                            google_event_id_novo = sincronizar_evento_google_agenda_silencioso(st.session_state['usuario_id'], novo_evento.data[0])
-                            if google_event_id_novo:
-                                try: supabase.table("eventos").update({"google_event_id": google_event_id_novo}).eq("id", evento_id_gerado).execute()
-                                except Exception: pass
+                                google_event_id_novo = sincronizar_evento_google_agenda_silencioso(st.session_state['usuario_id'], novo_evento.data[0])
+                                if google_event_id_novo:
+                                    try: supabase.table("eventos").update({"google_event_id": google_event_id_novo}).eq("id", evento_id_gerado).execute()
+                                    except Exception: pass
 
-                            data_hora = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
-                            for p_id, info in alocacoes_agrupadas.items():
-                                obs_json_evento = json.dumps(info['detalhes']) if info['detalhes'] else ""
-                                supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "produto_id": p_id, "quantidade": info['total'], "observacao": obs_json_evento}).execute()
-                                supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "descricao": f"🟢 ALOCAÇÃO INICIAL: Adicionou {info['total']}x Produto {p_id}.", "data_registro": data_hora}).execute()
+                                data_hora = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+                                for p_id, info in alocacoes_agrupadas.items():
+                                    obs_json_evento = json.dumps(info['detalhes']) if info['detalhes'] else ""
+                                    supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "produto_id": p_id, "quantidade": info['total'], "observacao": obs_json_evento}).execute()
+                                    supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "descricao": f"🟢 ALOCAÇÃO INICIAL: Adicionou {info['total']}x Produto {p_id}.", "data_registro": data_hora}).execute()
 
-                            mostrar_popup("CADASTRO DE EVENTO CONCLUÍDO COM SUCESSO!")
-                            st.rerun()
-                        except Exception as e: 
-                            mostrar_popup(f"Erro: {e}", tipo="erro")
+                                mostrar_popup("CADASTRO DE EVENTO CONCLUÍDO COM SUCESSO!")
+                                st.rerun()
+                            except Exception as e: 
+                                mostrar_popup(f"Erro: {e}", tipo="erro")
 
     elif menu == "📦 Estoque":
         st.title("Controle de Estoque Inteligente")
