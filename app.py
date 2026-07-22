@@ -1138,7 +1138,7 @@ else:
             st.markdown("**🗓️ Primeiro, escolha as datas e horários do evento:**")
             col_data1, col_data2, col_hora1, col_hora2 = st.columns(4)
             with col_data1: data_inicio = st.date_input("Data Início", format="DD/MM/YYYY", key="novo_evento_data_inicio")
-            with col_data2: data_fim = st.date_input("Data Fim", value=data_inicio, min_value=data_inicio, key="novo_evento_data_fim")
+            with col_data2: data_fim = st.date_input("Data Fim", value=data_inicio, min_value=data_inicio, format="DD/MM/YYYY", key="novo_evento_data_fim")
             with col_hora1: hora_inicio = st.time_input("Hora Início", key="novo_evento_hora_inicio")
             with col_hora2: hora_fim = st.time_input("Hora Fim", key="novo_evento_hora_fim")
 
