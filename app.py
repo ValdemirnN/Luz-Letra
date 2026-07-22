@@ -1855,5 +1855,3 @@ else:
             st.warning("🚧 Funcionalidade em produção, aguarde atualizações!")
 
         st.stop()
-        except Exception:
-            st.caption("⚠️ A tabela 'orcamentos' ainda não existe no banco. Veja o SQL de criação nas instruções fornecidas.")
