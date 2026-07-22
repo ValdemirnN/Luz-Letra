@@ -226,7 +226,7 @@ GMAIL_REMETENTE = st.secrets.get("GMAIL_REMETENTE", "SEU_EMAIL_AQUI@gmail.com")
 GMAIL_SENHA_APP = st.secrets.get("GMAIL_SENHA_APP", "SUA_SENHA_DE_APP_DE_16_DIGITOS")
 MP_ACCESS_TOKEN = st.secrets.get("MP_ACCESS_TOKEN", "COLOQUE_SEU_ACCESS_TOKEN_DO_MERCADO_PAGO_AQUI")
 URL_BASE_SISTEMA = st.secrets.get("URL_BASE_SISTEMA", "http://localhost:8501")
-VALOR_ASSINATURA_MENSAL = 49.90
+VALOR_ASSINATURA_MENSAL = 300,00
 
 # ==========================================
 # CONFIGURAÇÕES GOOGLE (MAPS + AGENDA)
@@ -665,6 +665,29 @@ else:
             try: return json.loads(val)
             except: return None
         return None
+
+    # ==========================================
+    # ARMAZENAMENTO DE DOCUMENTOS (Comprovante e Contrato Assinado)
+    # ==========================================
+    BUCKET_DOCUMENTOS = "documentos-eventos"
+
+    def upload_documento_evento(evento_id, arquivo, tipo_doc):
+        """tipo_doc: 'comprovante' ou 'contrato_assinado'"""
+        extensao = arquivo.name.split(".")[-1]
+        caminho_storage = f"evento_{evento_id}/{tipo_doc}_{int(time.time())}.{extensao}"
+        supabase.storage.from_(BUCKET_DOCUMENTOS).upload(
+            caminho_storage, arquivo.getvalue(),
+            file_options={"content-type": arquivo.type}
+        )
+        return caminho_storage
+
+    def gerar_url_assinada_documento(caminho_storage, validade_segundos=3600):
+        if not caminho_storage: return None
+        try:
+            resultado = supabase.storage.from_(BUCKET_DOCUMENTOS).create_signed_url(caminho_storage, validade_segundos)
+            return resultado.get("signedURL") or resultado.get("signedUrl")
+        except Exception:
+            return None
 
     def formatar_telefone_br(numero):
         if not numero: return numero
@@ -1145,6 +1168,66 @@ else:
                             nome_usuario_pdf = st.session_state.get('nome_usuario') or "Usuário do Sistema"
                             buffer_pdf = gerar_recibo_evento_pdf(ev, itens_ev.data or [], dict_produtos, nome_cliente_ev, contato_cliente_ev, nome_usuario_pdf)
                             st.download_button("📄 Baixar Recibo de Confirmação (PDF)", data=buffer_pdf, file_name=f"recibo_evento_{ev['id']}.pdf", mime="application/pdf", key=f"recibo_pdf_{ev['id']}")
+
+                        st.markdown("---")
+                        st.subheader("💳 Confirmação de Pagamento")
+                        if ev.get('pagamento_confirmado'):
+                            st.success(f"✅ Pagamento confirmado via **{ev.get('metodo_confirmacao_pagamento','-')}** em {ev.get('data_confirmacao_pagamento','-')}")
+                            if ev.get('comprovante_pagamento_url'):
+                                url_comprovante = gerar_url_assinada_documento(ev['comprovante_pagamento_url'])
+                                if url_comprovante: st.link_button("📎 Ver Comprovante de Pagamento", url_comprovante)
+                        else:
+                            metodo_confirmacao = st.radio(
+                                "Como confirmar o pagamento?",
+                                ["📎 Anexar comprovante", "✅ Confirmar sem comprovante (ex: pago em mãos)"],
+                                key=f"metodo_pag_{ev['id']}"
+                            )
+                            if metodo_confirmacao.startswith("📎"):
+                                arquivo_comprovante = st.file_uploader("Envie o comprovante (imagem ou PDF)", type=["png", "jpg", "jpeg", "pdf"], key=f"upload_comp_{ev['id']}")
+                                if st.button("💾 Confirmar Pagamento com Comprovante", key=f"btn_conf_pag_comp_{ev['id']}"):
+                                    if not arquivo_comprovante:
+                                        mostrar_popup("Selecione o arquivo do comprovante.", tipo="erro")
+                                    else:
+                                        try:
+                                            caminho_salvo = upload_documento_evento(ev['id'], arquivo_comprovante, "comprovante")
+                                            supabase.table("eventos").update({
+                                                "pagamento_confirmado": True,
+                                                "metodo_confirmacao_pagamento": "Comprovante anexado",
+                                                "comprovante_pagamento_url": caminho_salvo,
+                                                "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")
+                                            }).eq("id", ev['id']).execute()
+                                            mostrar_popup("PAGAMENTO CONFIRMADO COM SUCESSO!")
+                                            st.rerun()
+                                        except Exception as e:
+                                            mostrar_popup(f"Erro ao salvar comprovante: {e}", tipo="erro")
+                            else:
+                                if st.button("✅ Confirmar Pagamento", key=f"btn_conf_pag_sem_{ev['id']}"):
+                                    supabase.table("eventos").update({
+                                        "pagamento_confirmado": True,
+                                        "metodo_confirmacao_pagamento": "Confirmado manualmente",
+                                        "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")
+                                    }).eq("id", ev['id']).execute()
+                                    mostrar_popup("PAGAMENTO CONFIRMADO COM SUCESSO!")
+                                    st.rerun()
+
+                        st.markdown("---")
+                        st.subheader("📝 Contrato Assinado")
+                        if ev.get('contrato_assinado_url'):
+                            url_contrato = gerar_url_assinada_documento(ev['contrato_assinado_url'])
+                            if url_contrato: st.link_button("📎 Ver Contrato Assinado", url_contrato)
+                            st.caption("Enviou um novo por engano? Suba o arquivo certo abaixo para substituir.")
+                        arquivo_contrato_assinado = st.file_uploader("Envie o contrato assinado (PDF ou foto)", type=["pdf", "png", "jpg", "jpeg"], key=f"upload_contrato_{ev['id']}")
+                        if st.button("💾 Salvar Contrato Assinado", key=f"btn_contrato_{ev['id']}"):
+                            if not arquivo_contrato_assinado:
+                                mostrar_popup("Selecione o arquivo do contrato assinado.", tipo="erro")
+                            else:
+                                try:
+                                    caminho_contrato = upload_documento_evento(ev['id'], arquivo_contrato_assinado, "contrato_assinado")
+                                    supabase.table("eventos").update({"contrato_assinado_url": caminho_contrato}).eq("id", ev['id']).execute()
+                                    mostrar_popup("CONTRATO ASSINADO SALVO COM SUCESSO!")
+                                    st.rerun()
+                                except Exception as e:
+                                    mostrar_popup(f"Erro ao salvar contrato: {e}", tipo="erro")
 
                         if ev.get('google_event_id'):
                             st.caption("📅 Este evento já está sincronizado com a sua Google Agenda.")
