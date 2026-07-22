@@ -1671,7 +1671,11 @@ else:
                 # Agora ele usa a MESMA função corrigida usada no resto do sistema,
                 # que calcula o pico real de ocupação simultânea.
                 # ==========================================================================
-                qtd_alugada, detalhe_alugado = calcular_disponibilidade_periodo(data_inicio_f, data_fim_f)
+                try:
+                    qtd_alugada, detalhe_alugado = calcular_disponibilidade_periodo(data_inicio_f, data_fim_f)
+                except Exception as e:
+                    st.exception(e)
+                    qtd_alugada, detalhe_alugado = {}, {}
 
                 def calcular_disponivel(row): return row['quantidade_estoque'] - qtd_alugada.get(row['id'], 0)
                 def calc_livres_detalhe(row):
