@@ -1766,7 +1766,7 @@ else:
 
         # 3. CONTROLE DE ITENS QUEBRADOS
         with st.expander("🗑️ Controle de Itens Quebrados", expanded=False):
-            tab_reg_quebrado, tab_lista_quebrados = st.tabs(["Registrar Quebra", "Histórico de Quebrados"])
+            tab_reg_quebrado, tab_lista_quebrados = st.tabs(["Registrar Quebrados", "Histórico de Quebrados"])
             
             with tab_reg_quebrado:
                 if produtos_lista.data:
@@ -1775,10 +1775,10 @@ else:
                     prod_quebrado = opcoes_quebrado[prod_quebra_nome]
                     
                     col_q1, col_q2 = st.columns(2)
-                    with col_q1: qtd_quebrada = st.number_input("Quantidade Quebrada/Perdida", min_value=1, max_value=prod_quebrado['quantidade_estoque'], step=1)
+                    with col_q1: qtd_quebrada = st.number_input("Quantidade Quebrada/Perdida", min_value=1, max_value=pSrod_quebrado['quantidade_estoque'], step=1)
                     with col_q2: motivo_quebra = st.text_input("Detalhes (Ex: Quebrou na festa X)")
                     
-                    if st.button("🗑️ Registrar Baixa por Quebra"):
+                    if st.button("🗑️ Registrar Baixa por Quebrados"):
                         if not motivo_quebra.strip():
                             mostrar_popup("Informe os detalhes da quebra.", tipo="erro")
                         else:
