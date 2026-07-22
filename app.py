@@ -746,12 +746,15 @@ else:
                 ev_hora_inicio = datetime.strptime(ev_c['hora_inicio'], "%H:%M:%S").time() if ev_c.get('hora_inicio') else datetime.min.time()
                 ev_hora_fim = datetime.strptime(ev_c['hora_fim'], "%H:%M:%S").time() if ev_c.get('hora_fim') else datetime.max.time()
                 
+                # ... (resto do código igual acima dessa linha) ...
                 dt_inicio_ev = datetime.combine(ev_data_inicio_c, ev_hora_inicio)
                 dt_fim_ev = datetime.combine(ev_data_fim_c, ev_hora_fim)
 
-                # Verifica interseção de Data E Hora
-                if (dt_inicio_ev <= dt_fim_busca) and (dt_fim_ev >= dt_ini_busca):
+                # Verifica interseção de Data E Hora (CORRIGIDO PARA < e >)
+                # Assim, se um evento termina 13:00 e outro começa 13:00, eles NÃO dão choque.
+                if (dt_inicio_ev < dt_fim_busca) and (dt_fim_ev > dt_ini_busca):
                     eventos_no_periodo.append(ev_c['id'])
+                # ... (resto do código igual abaixo dessa linha) ...
                     
         if eventos_no_periodo:
             itens_check = supabase.table("itens_evento").select("produto_id, quantidade, observacao").in_("evento_id", eventos_no_periodo).execute()
@@ -923,8 +926,12 @@ else:
                 data_ini_br = _fmt_br(data_ini_fmt)
                 data_fim_br = _fmt_br(data_fim_fmt)
                 status_ev = ev.get('status') or "-"
+                
+                # Formata a hora para HH:MM, ou define padrão se não houver
+                hora_ini_fmt = ev.get('hora_inicio')[:5] if ev.get('hora_inicio') else "00:00"
+                hora_fim_fmt = ev.get('hora_fim')[:5] if ev.get('hora_fim') else "23:59"
 
-                with st.expander(f"🎉 {titulo_ev} — {nome_cliente_ev} | {data_ini_br} até {data_fim_br} | Status: {status_ev}"):
+                with st.expander(f"🎉 {titulo_ev} — {nome_cliente_ev} | {data_ini_br} ({hora_ini_fmt}) até {data_fim_br} ({hora_fim_fmt}) | Status: {status_ev}"):
                     itens_ev = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao").eq("evento_id", ev['id']).execute()
                     tab_detalhes, tab_add, tab_rem, tab_editar, tab_hist = st.tabs(["📋 Detalhes & Recibo", "➕ Adicionar Itens", "➖ Remover Itens", "✏️ Editar Evento", "🕒 Histórico"])
 
@@ -932,7 +939,8 @@ else:
                         col_a, col_b = st.columns(2)
                         with col_a:
                             valor_ev = float(ev.get('valor_total') or 0)
-                            st.write(f"**Data do Evento:** {data_ini_br} até {data_fim_br}")
+                            st.write(f"**Data e Hora:** {data_ini_br} às {hora_ini_fmt} — {data_fim_br} às {hora_fim_fmt}")
+                            st.write(f"**Valor:** R$ {formatar_moeda(valor_ev)}")
                             st.write(f"**Valor:** R$ {formatar_moeda(valor_ev)}")
                             st.write(f"**Contato do Cliente:** {contato_cliente_ev}")
                             st.write(f"**Observações:** {ev.get('observacao') or '-'}")
@@ -1101,12 +1109,23 @@ else:
                             if not data_iso: return datetime.now().date()
                             try: return datetime.strptime(data_iso.split("T")[0], "%Y-%m-%d").date()
                             except: return datetime.now().date()
-                        col_ed1, col_ed2 = st.columns(2)
+                            
+                        # Nova função para interpretar a hora salva no banco de dados
+                        def _parse_time_edit(time_str):
+                            if not time_str: return datetime.min.time()
+                            try: return datetime.strptime(time_str[:5], "%H:%M").time()
+                            except: return datetime.min.time()
+
+                        # Alterado para 4 colunas para organizar datas e horas lado a lado
+                        col_ed1, col_ed2, col_ed3, col_ed4 = st.columns(4)
                         with col_ed1: nova_data_inicio_edit = st.date_input("Data de Início", value=_parse_data_edit(ev.get('data_inicio')), format="DD/MM/YYYY", key=f"edit_data_ini_{ev['id']}")
                         with col_ed2: nova_data_fim_edit = st.date_input("Data Fim", value=_parse_data_edit(ev.get('data_fim_alocacao')), format="DD/MM/YYYY", key=f"edit_data_fim_{ev['id']}")
+                        with col_ed3: nova_hora_inicio_edit = st.time_input("Hora Início", value=_parse_time_edit(ev.get('hora_inicio')), key=f"edit_hora_ini_{ev['id']}")
+                        with col_ed4: nova_hora_fim_edit = st.time_input("Hora Fim", value=_parse_time_edit(ev.get('hora_fim')), key=f"edit_hora_fim_{ev['id']}")
                         
                         novo_valor_edit = st.number_input("Valor Cobrado (R$)", min_value=0.0, step=50.0, value=float(ev.get('valor_total') or 0), format="%.2f", key=f"edit_valor_{ev['id']}")
                         novo_local_edit = st.text_area("Local/Observações", value=ev.get('observacao') or "", key=f"edit_local_{ev['id']}")
+                        
                         col_ec1, col_ec2 = st.columns(2)
                         with col_ec1: novo_nome_cliente_edit = st.text_input("Nome do Cliente", value=nome_cliente_ev, key=f"edit_nome_cli_{ev['id']}")
                         with col_ec2: novo_contato_cliente_edit = st.text_input("Contato do Cliente", value=contato_cliente_ev if contato_cliente_ev != "-" else "", key=f"edit_contato_cli_{ev['id']}")
@@ -1115,14 +1134,27 @@ else:
                         if st.button("💾 Salvar Alterações", key=f"btn_edit_evento_{ev['id']}"):
                             if not justificativa_edit.strip(): mostrar_popup("Informe a justificativa da alteração.", tipo="erro")
                             else:
-                                supabase.table("eventos").update({"data_inicio": str(nova_data_inicio_edit), "data_fim": str(nova_data_fim_edit), "data_fim_alocacao": str(nova_data_fim_edit), "valor_total": novo_valor_edit, "observacao": novo_local_edit}).eq("id", ev['id']).execute()
+                                # Aqui a tabela recebe os novos parâmetros de hora_inicio e hora_fim
+                                supabase.table("eventos").update({
+                                    "data_inicio": str(nova_data_inicio_edit), 
+                                    "data_fim": str(nova_data_fim_edit), 
+                                    "data_fim_alocacao": str(nova_data_fim_edit), 
+                                    "hora_inicio": str(nova_hora_inicio_edit),
+                                    "hora_fim": str(nova_hora_fim_edit),
+                                    "valor_total": novo_valor_edit, 
+                                    "observacao": novo_local_edit
+                                }).eq("id", ev['id']).execute()
+                                
                                 if ev.get('cliente_id'): supabase.table("clientes_eventos").update({"nome": novo_nome_cliente_edit, "contato": novo_contato_cliente_edit}).eq("id", ev['cliente_id']).execute()
+                                
                                 evento_atualizado_google = dict(ev)
                                 evento_atualizado_google.update({"data_inicio": str(nova_data_inicio_edit), "data_fim_alocacao": str(nova_data_fim_edit), "observacao": novo_local_edit})
                                 novo_id_google_edit = sincronizar_evento_google_agenda_silencioso(st.session_state['usuario_id'], evento_atualizado_google, ev.get('google_event_id'))
+                                
                                 if novo_id_google_edit and not ev.get('google_event_id'):
                                     try: supabase.table("eventos").update({"google_event_id": novo_id_google_edit}).eq("id", ev['id']).execute()
                                     except Exception: pass
+                                
                                 data_hora_edit = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
                                 supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": f"✏️ EDIÇÃO DE DADOS. Justificativa: {justificativa_edit}", "data_registro": data_hora_edit}).execute()
                                 mostrar_popup("EDIÇÃO CONCLUÍDA COM SUCESSO!")
@@ -1132,7 +1164,6 @@ else:
                         historico_ev = supabase.table("historico_eventos").select("descricao, data_registro").eq("evento_id", ev['id']).order("data_registro", desc=True).execute()
                         if historico_ev.data:
                             for h in historico_ev.data: st.write(f"🕒 **{h['data_registro']}** — {h['descricao']}")
-
         st.markdown("---")
         with st.expander("📝 Cadastrar Novo Evento", expanded=False):
             st.markdown("**🗓️ Primeiro, escolha as datas e horários do evento:**")
