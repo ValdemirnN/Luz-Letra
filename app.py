@@ -28,7 +28,7 @@ except ImportError:
 # ==========================================
 # 1. CONFIGURAÇÃO E CONEXÃO
 # ==========================================
-st.set_page_config(page_title="Luz & Letras - Sistema", page_icon="logo.jpg", layout="wide")
+st.set_page_config(page_title="Luz & Letras", page_icon="logo.jpg", layout="wide")
 
 # ==========================================
 # VERIFICAÇÃO DE PROPRIEDADE - GOOGLE SEARCH CONSOLE
