@@ -676,40 +676,64 @@ else:
         else: return f"({ddd}) {resto[:4]}-{resto[4:]}"
 
     def gerar_recibo_evento_pdf(evento_dict, itens_lista, dict_produtos_ref, nome_cliente_pdf, contato_cliente_pdf, nome_usuario_confirmou):
+        import os as _os
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm, leftMargin=2 * cm, rightMargin=2 * cm)
+
+        COR_DOURADO = colors.HexColor("#FFC107")
+        COR_PRETO = colors.HexColor("#0E0E0E")
+        COR_CINZA_CLARO = colors.HexColor("#F2F2F2")
+        COR_TEXTO_CINZA = colors.HexColor("#555555")
+
+        caminho_logo_pdf = "logo_sem_fundo.png" if _os.path.exists("logo_sem_fundo.png") else ("logo.jpg" if _os.path.exists("logo.jpg") else None)
+
+        # ===== CABEÇALHO (faixa preta com a logo + título dourado, repete em toda página) =====
+        def _desenhar_cabecalho_recibo(canvas_obj, doc_obj):
+            canvas_obj.saveState()
+            largura_pagina, altura_pagina = A4
+            altura_faixa = 3.2 * cm
+            canvas_obj.setFillColor(COR_PRETO)
+            canvas_obj.rect(0, altura_pagina - altura_faixa, largura_pagina, altura_faixa, fill=1, stroke=0)
+            if caminho_logo_pdf:
+                try:
+                    canvas_obj.drawImage(caminho_logo_pdf, 2 * cm, altura_pagina - altura_faixa + 0.35 * cm, width=3.6 * cm, height=2.5 * cm, preserveAspectRatio=True, mask='auto')
+                except Exception:
+                    pass
+            canvas_obj.setFillColor(COR_DOURADO)
+            canvas_obj.setFont("Helvetica-Bold", 16)
+            canvas_obj.drawString(6.2 * cm, altura_pagina - 1.5 * cm, "CONTRATO E RECIBO DE LOCAÇÃO")
+            canvas_obj.setFillColor(colors.white)
+            canvas_obj.setFont("Helvetica", 10)
+            canvas_obj.drawString(6.2 * cm, altura_pagina - 2.15 * cm, f"Evento: {evento_dict.get('descricao', '-')}")
+            canvas_obj.setFillColor(colors.grey)
+            canvas_obj.setFont("Helvetica", 8)
+            canvas_obj.drawString(2 * cm, 1.2 * cm, f"Luz & Letras — Emitido em {datetime.now().strftime('%d/%m/%Y às %H:%M')}")
+            canvas_obj.drawRightString(largura_pagina - 2 * cm, 1.2 * cm, f"Página {doc_obj.page}")
+            canvas_obj.restoreState()
+
+        frame_recibo = Frame(2 * cm, 1.8 * cm, A4[0] - 4 * cm, A4[1] - 5.4 * cm, id='corpo_recibo')
+        doc = BaseDocTemplate(buffer, pagesize=A4)
+        doc.addPageTemplates([PageTemplate(id='ComCabecalhoRecibo', frames=[frame_recibo], onPage=_desenhar_cabecalho_recibo)])
+
         styles = getSampleStyleSheet()
         story = []
-        
-        # 1. ESTILOS PERSONALIZADOS
-        titulo_style = ParagraphStyle('TituloRecibo', parent=styles['Title'], fontSize=16, alignment=TA_CENTER, spaceAfter=20, textColor=colors.HexColor("#1B5E20"))
-        sub_titulo = ParagraphStyle('SubTit', parent=styles['Heading2'], fontSize=12, spaceAfter=6, textColor=colors.HexColor("#333333"))
+
+        sub_titulo = ParagraphStyle('SubTitRecibo', parent=styles['Heading2'], fontSize=12, spaceAfter=6, textColor=COR_PRETO)
         normal_style = styles['Normal']
         normal_style.fontSize = 10
         normal_style.leading = 14
-        
-        # Estilo justificado para o Termo de Responsabilidade
-        termo_style = ParagraphStyle('Termo', parent=styles['Normal'], fontSize=9, leading=12, alignment=4, 
-                                     spaceBefore=15, spaceAfter=15, textColor=colors.HexColor("#555555"))
-        
-        # Estilo para o Agradecimento
-        agradecimento_style = ParagraphStyle('Obrigado', parent=styles['Normal'], fontSize=11, alignment=TA_CENTER, 
-                                             spaceBefore=20, fontName="Helvetica-Oblique", textColor=colors.HexColor("#1B5E20"))
 
-        # 2. INSERINDO A LOGO SEM FUNDO
-        try:
-            import os as _os
-            # Certifique-se de que o arquivo logo_sem_fundo.png está na mesma pasta
-            caminho_logo_pdf = "logo_sem_fundo.png" if _os.path.exists("logo_sem_fundo.png") else "logo.jpg"
-            logo_img = RLImage(caminho_logo_pdf, width=7 * cm, height=3.5 * cm, preserveAspectRatio=True)
-            logo_img.hAlign = 'CENTER'
-            story.append(logo_img)
-            story.append(Spacer(1, 10))
-        except: pass
+        termo_style = ParagraphStyle('TermoRecibo', parent=styles['Normal'], fontSize=9, leading=12, alignment=4,
+                                     spaceBefore=15, spaceAfter=15, textColor=COR_TEXTO_CINZA)
 
-        story.append(Paragraph("<b>CONTRATO E RECIBO DE LOCAÇÃO</b>", titulo_style))
+        agradecimento_style = ParagraphStyle('ObrigadoRecibo', parent=styles['Normal'], fontSize=11, alignment=TA_CENTER,
+                                             spaceBefore=20, fontName="Helvetica-Oblique", textColor=COR_PRETO)
 
-        # 3. DADOS DO CLIENTE E EVENTO (DENTRO DE UM QUADRO)
+        assinatura_nome_style = ParagraphStyle('AssNome', parent=normal_style, alignment=TA_CENTER, spaceBefore=4, fontName="Helvetica-Bold")
+        assinatura_data_style = ParagraphStyle('AssData', parent=normal_style, alignment=TA_CENTER, spaceBefore=2, fontSize=9, textColor=COR_TEXTO_CINZA)
+
+        story.append(Spacer(1, 10))
+
+        # DADOS DO CLIENTE E EVENTO
         def _fmt_data_pdf(data_iso):
             if not data_iso or data_iso == "-": return "-"
             try: return datetime.strptime(data_iso.split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
@@ -717,10 +741,8 @@ else:
 
         data_ini_pdf = _fmt_data_pdf(evento_dict.get('data_inicio'))
         data_fim_pdf = _fmt_data_pdf(evento_dict.get('data_fim_alocacao'))
-        
         hora_ini_pdf = evento_dict.get('hora_inicio')[:5] if evento_dict.get('hora_inicio') else "Não inf."
         hora_fim_pdf = evento_dict.get('hora_fim')[:5] if evento_dict.get('hora_fim') else "Não inf."
-        
         valor_pdf = float(evento_dict.get('valor_total') or 0)
 
         dados_cliente = f"""
@@ -732,7 +754,7 @@ else:
         <b>Valor Acordado:</b> R$ {formatar_moeda(valor_pdf)}<br/>
         <b>Status:</b> {evento_dict.get('status', '-')}
         """
-        
+
         tabela_header = Table([[Paragraph(dados_cliente, normal_style)]], colWidths=[17*cm])
         tabela_header.setStyle(TableStyle([
             ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")),
@@ -742,7 +764,7 @@ else:
         story.append(tabela_header)
         story.append(Spacer(1, 20))
 
-        # 4. TABELA DE ITENS LOCADOS (COM DESIGN MELHORADO)
+        # ITENS LOCADOS
         story.append(Paragraph("<b>ITENS LOCADOS</b>", sub_titulo))
 
         tabela_dados = [["Produto / Item", "Qtd", "Detalhes (Letras/Números)"]]
@@ -750,57 +772,54 @@ else:
             for it in itens_lista:
                 nome_prod_pdf = dict_produtos_ref.get(it['produto_id'], {}).get('nome', f"Produto #{it['produto_id']}")
                 detalhe_pdf = "-"
-                
                 js_obs = safe_json_load(it.get('observacao'))
                 if js_obs:
                     detalhe_pdf = ", ".join([f"{k}: {v}x" for k, v in js_obs.items()])
                 elif it.get('observacao'):
                     detalhe_pdf = it.get('observacao')
-
                 tabela_dados.append([nome_prod_pdf, str(it['quantidade']), detalhe_pdf])
-        else: 
+        else:
             tabela_dados.append(["Nenhum item registrado", "-", "-"])
 
         tabela_pdf = Table(tabela_dados, colWidths=[8 * cm, 2 * cm, 7 * cm])
         tabela_pdf.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1B5E20")),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('BACKGROUND', (0, 0), (-1, 0), COR_PRETO),
+            ('TEXTCOLOR', (0, 0), (-1, 0), COR_DOURADO),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F9F9F9")])
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, COR_CINZA_CLARO])
         ]))
         story.append(tabela_pdf)
         story.append(Spacer(1, 20))
 
-        # 5. TERMO DE RESPONSABILIDADE
+        # TERMO DE RESPONSABILIDADE
         termo_texto = "<b>TERMO DE RESPONSABILIDADE E COMPROMISSO:</b><br/>O cliente acima identificado assume total e irrestrita responsabilidade pela guarda, conservação e integridade de todos os materiais e equipamentos locados durante todo o período do evento. O cliente declara estar ciente de que, em caso de danos, avarias, mau uso, perda ou furto de qualquer item fornecido, será de sua extrema e única responsabilidade arcar com os custos integrais de manutenção, reparo ou reposição do produto ao seu estado original. Ao confirmar esta locação e receber os materiais, o cliente concorda plenamente com estas condições."
-        
         story.append(Paragraph(termo_texto, termo_style))
         story.append(Spacer(1, 25))
 
-        # 6. ESPAÇO PARA ASSINATURAS
-        assinaturas_data = [
-            ["_________________________________________________", "_________________________________________________"],
-            ["Luz & Letras - Locações", f"Cliente: {nome_cliente_pdf}"]
-        ]
-        tabela_assinaturas = Table(assinaturas_data, colWidths=[8.5*cm, 8.5*cm])
-        tabela_assinaturas.setStyle(TableStyle([
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTSIZE', (0,0), (-1,-1), 9),
-            ('BOTTOMPADDING', (0,0), (-1,0), 0),
-            ('TOPPADDING', (0,1), (-1,1), 2)
-        ]))
-        story.append(tabela_assinaturas)
-        
-        # 7. MENSAGEM DE AGRADECIMENTO
-        story.append(Spacer(1, 20))
+        # ===== ASSINATURAS SEPARADAS (empresa e cliente bem distantes uma da outra) =====
+        story.append(Paragraph("<b>ASSINATURAS</b>", sub_titulo))
+        story.append(Spacer(1, 30))
+
+        linha_assinatura_empresa = Table([["_________________________________________________"]], colWidths=[15*cm])
+        linha_assinatura_empresa.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')]))
+        story.append(linha_assinatura_empresa)
+        story.append(Paragraph("Luz & Letras - Locações", assinatura_nome_style))
+        story.append(Paragraph("Data: ____/____/________", assinatura_data_style))
+
+        story.append(Spacer(1, 40))
+
+        linha_assinatura_cliente = Table([["_________________________________________________"]], colWidths=[15*cm])
+        linha_assinatura_cliente.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')]))
+        story.append(linha_assinatura_cliente)
+        story.append(Paragraph(f"Cliente: {nome_cliente_pdf}", assinatura_nome_style))
+        story.append(Paragraph("Data: ____/____/________", assinatura_data_style))
+
+        # AGRADECIMENTO
+        story.append(Spacer(1, 25))
         story.append(Paragraph("A equipe <b>Luz & Letras</b> agradece imensamente a sua preferência!<br/>É um grande privilégio fazer parte deste momento tão especial.", agradecimento_style))
-        
-        # 8. RODAPÉ DE EMISSÃO
-        story.append(Spacer(1, 10))
-        story.append(Paragraph(f"<font color='grey' size='7'>Documento emitido por {nome_usuario_confirmou} em {datetime.now().strftime('%d/%m/%Y às %H:%M')}</font>", styles['Normal']))
 
         doc.build(story)
         buffer.seek(0)
