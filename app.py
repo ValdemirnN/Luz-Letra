@@ -1131,34 +1131,52 @@ else:
                         with col_ec2: novo_contato_cliente_edit = st.text_input("Contato do Cliente", value=contato_cliente_ev if contato_cliente_ev != "-" else "", key=f"edit_contato_cli_{ev['id']}")
                         justificativa_edit = st.text_input("Justificativa (obrigatório)", key=f"edit_just_{ev['id']}")
 
-                        if st.button("💾 Salvar Alterações", key=f"btn_edit_evento_{ev['id']}"):
-                            if not justificativa_edit.strip(): mostrar_popup("Informe a justificativa da alteração.", tipo="erro")
-                            else:
-                                # Aqui a tabela recebe os novos parâmetros de hora_inicio e hora_fim
-                                supabase.table("eventos").update({
-                                    "data_inicio": str(nova_data_inicio_edit), 
-                                    "data_fim": str(nova_data_fim_edit), 
-                                    "data_fim_alocacao": str(nova_data_fim_edit), 
-                                    "hora_inicio": str(nova_hora_inicio_edit),
-                                    "hora_fim": str(nova_hora_fim_edit),
-                                    "valor_total": novo_valor_edit, 
-                                    "observacao": novo_local_edit
-                                }).eq("id", ev['id']).execute()
-                                
-                                if ev.get('cliente_id'): supabase.table("clientes_eventos").update({"nome": novo_nome_cliente_edit, "contato": novo_contato_cliente_edit}).eq("id", ev['cliente_id']).execute()
-                                
-                                evento_atualizado_google = dict(ev)
-                                evento_atualizado_google.update({"data_inicio": str(nova_data_inicio_edit), "data_fim_alocacao": str(nova_data_fim_edit), "observacao": novo_local_edit})
-                                novo_id_google_edit = sincronizar_evento_google_agenda_silencioso(st.session_state['usuario_id'], evento_atualizado_google, ev.get('google_event_id'))
-                                
-                                if novo_id_google_edit and not ev.get('google_event_id'):
-                                    try: supabase.table("eventos").update({"google_event_id": novo_id_google_edit}).eq("id", ev['id']).execute()
-                                    except Exception: pass
-                                
-                                data_hora_edit = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
-                                supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": f"✏️ EDIÇÃO DE DADOS. Justificativa: {justificativa_edit}", "data_registro": data_hora_edit}).execute()
-                                mostrar_popup("EDIÇÃO CONCLUÍDA COM SUCESSO!")
-                                st.rerun()
+# Substitua o 'if st.button("💾 Salvar Alterações"...' por este bloco abaixo:
+                        col_btn_edit1, col_btn_edit2 = st.columns(2)
+                        
+                        with col_btn_edit1:
+                            if st.button("💾 Salvar Alterações", key=f"btn_edit_evento_{ev['id']}"):
+                                if not justificativa_edit.strip(): mostrar_popup("Informe a justificativa da alteração.", tipo="erro")
+                                else:
+                                    supabase.table("eventos").update({
+                                        "data_inicio": str(nova_data_inicio_edit), 
+                                        "data_fim": str(nova_data_fim_edit), 
+                                        "data_fim_alocacao": str(nova_data_fim_edit), 
+                                        "hora_inicio": str(nova_hora_inicio_edit),
+                                        "hora_fim": str(nova_hora_fim_edit),
+                                        "valor_total": novo_valor_edit, 
+                                        "observacao": novo_local_edit
+                                    }).eq("id", ev['id']).execute()
+                                    
+                                    if ev.get('cliente_id'): supabase.table("clientes_eventos").update({"nome": novo_nome_cliente_edit, "contato": novo_contato_cliente_edit}).eq("id", ev['cliente_id']).execute()
+                                    
+                                    evento_atualizado_google = dict(ev)
+                                    evento_atualizado_google.update({"data_inicio": str(nova_data_inicio_edit), "data_fim_alocacao": str(nova_data_fim_edit), "observacao": novo_local_edit})
+                                    novo_id_google_edit = sincronizar_evento_google_agenda_silencioso(st.session_state['usuario_id'], evento_atualizado_google, ev.get('google_event_id'))
+                                    
+                                    if novo_id_google_edit and not ev.get('google_event_id'):
+                                        try: supabase.table("eventos").update({"google_event_id": novo_id_google_edit}).eq("id", ev['id']).execute()
+                                        except Exception: pass
+                                    
+                                    data_hora_edit = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+                                    supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": f"✏️ EDIÇÃO DE DADOS. Justificativa: {justificativa_edit}", "data_registro": data_hora_edit}).execute()
+                                    mostrar_popup("EDIÇÃO CONCLUÍDA COM SUCESSO!")
+                                    st.rerun()
+
+                        with col_btn_edit2:
+                            if st.button("🗑️ Excluir Evento", key=f"btn_excluir_evento_{ev['id']}"):
+                                try:
+                                    # Removemos as dependências primeiro para evitar erros no banco de dados
+                                    supabase.table("itens_evento").delete().eq("evento_id", ev['id']).execute()
+                                    supabase.table("historico_eventos").delete().eq("evento_id", ev['id']).execute()
+                                    
+                                    # Em seguida, apagamos o evento principal
+                                    supabase.table("eventos").delete().eq("id", ev['id']).execute()
+                                    
+                                    mostrar_popup("EVENTO EXCLUÍDO COM SUCESSO!")
+                                    st.rerun()
+                                except Exception as e:
+                                    mostrar_popup(f"Erro ao excluir: {e}", tipo="erro")
 
                     with tab_hist:
                         historico_ev = supabase.table("historico_eventos").select("descricao, data_registro").eq("evento_id", ev['id']).order("data_registro", desc=True).execute()
