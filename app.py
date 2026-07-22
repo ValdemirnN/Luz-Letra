@@ -96,7 +96,7 @@ div[data-testid="InputInstructions"] {
     display: none !important; 
 }
 
-/* Oculta os botões de + e - dos campos de número */
+/* Oculta os botões de + e - nativos do navegador */
 input[type="number"]::-webkit-inner-spin-button, 
 input[type="number"]::-webkit-outer-spin-button {
     -webkit-appearance: none;
@@ -104,6 +104,12 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 input[type="number"] {
     -moz-appearance: textfield;
+}
+
+/* Oculta os botões de + e - customizados do Streamlit */
+[data-testid="stNumberInputStepDown"],
+[data-testid="stNumberInputStepUp"] {
+    display: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
