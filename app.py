@@ -1330,7 +1330,7 @@ else:
             else: st.info("Nenhum produto cadastrado no estoque ainda.")
 
         with st.expander("➕ Adicionar Novo Item ou Kit", expanded=False):
-            tipo_cadastro = st.radio("O que você vai cadastrar?", ["Produto Normal", "🔠 Kit Letras (A-Z)", "🔢 Kit Números (1 a 100)"])
+            tipo_cadastro = st.radio("O que você vai cadastrar?", ["Produto Normal", "🔠 Kit Letras (A-Z)", "🔢 Kit Números (0 a 9)"])
             with st.form("form_estoque_add"):
                 if tipo_cadastro == "Produto Normal":
                     nome_prod = st.text_input("Nome do Item (Ex: CADEIRA DE FERRO)")
@@ -1343,29 +1343,38 @@ else:
                             st.rerun()    
                 elif tipo_cadastro == "🔠 Kit Letras (A-Z)":
                     nome_prod = st.text_input("Nome do Kit", value="LETRAS ILUMINADAS")
-                    letras = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    # Lista com emojis padronizados para cada letra
+                    letras = [f"🔠 {l}" for l in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
                     cols_l = st.columns(6)
                     qtd_letras = {}
+                    
                     for i, l in enumerate(letras):
-                        qtd_letras[l] = cols_l[i%6].number_input(f"Letra {l}", min_value=0, value=None)
+                        qtd_letras[l] = cols_l[i%6].number_input(l, min_value=0, value=None)
+                    
                     if st.form_submit_button("Salvar Kit Letras"):
                         total_letras = sum((v or 0) for v in qtd_letras.values())
-                        if total_letras == 0: mostrar_popup("Coloque pelo menos 1 letra!", tipo="erro")
+                        if total_letras == 0: 
+                            mostrar_popup("Coloque pelo menos 1 letra!", tipo="erro")
                         else:
                             obs_json = json.dumps({k: (v or 0) for k, v in qtd_letras.items() if (v or 0) > 0})
                             supabase.table("produtos").insert({"empresa_id": emp_id, "nome": nome_prod.upper(), "quantidade_estoque": total_letras, "observacao": obs_json}).execute()
                             mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
                             st.rerun()
-                elif tipo_cadastro == "🔢 Kit Números (1 a 100)":
+
+                elif tipo_cadastro == "🔢 Kit Números (0 a 9)":
                     nome_prod = st.text_input("Nome do Kit", value="NÚMEROS ILUMINADOS")
-                    numeros = [str(n) for n in range(1, 101)]
+                    # Emojis nativos em formato de bloco para números de 0 a 9
+                    numeros = ["0️⃣", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"]
                     cols_n = st.columns(10)
                     qtd_numeros = {}
+                    
                     for i, num in enumerate(numeros):
                         qtd_numeros[num] = cols_n[i%10].number_input(num, min_value=0, value=None)
+                    
                     if st.form_submit_button("Salvar Kit Números"):
                         total_numeros = sum((v or 0) for v in qtd_numeros.values())
-                        if total_numeros == 0: mostrar_popup("Coloque pelo menos 1 número!", tipo="erro")
+                        if total_numeros == 0: 
+                            mostrar_popup("Coloque pelo menos 1 número!", tipo="erro")
                         else:
                             obs_json = json.dumps({k: (v or 0) for k, v in qtd_numeros.items() if (v or 0) > 0})
                             supabase.table("produtos").insert({"empresa_id": emp_id, "nome": nome_prod.upper(), "quantidade_estoque": total_numeros, "observacao": obs_json}).execute()
@@ -1423,14 +1432,50 @@ else:
                 prod_selecionado_add = st.selectbox("Selecione o produto para aumentar o estoque", list(opcoes_add.keys()), key="select_add_qtd")
                 prod_alvo_add = opcoes_add[prod_selecionado_add]
 
-                nova_qtd_add = st.number_input("Quantidade de peças adquiridas/adicionadas", min_value=1, step=1, key="num_add_qtd")
-                
-                if st.button("➕ Confirmar Adição ao Estoque"):
-                    qtd_final = prod_alvo_add['quantidade_estoque'] + nova_qtd_add
-                    # Se for kit (letras/numeros) é preciso uma lógica extra, aqui foca no total físico
-                    supabase.table("produtos").update({"quantidade_estoque": qtd_final}).eq("id", prod_alvo_add['id']).execute()
-                    mostrar_popup("Estoque atualizado com sucesso!")
-                    st.rerun()
+                # Verifica se o produto é um Kit (possui JSON na observação)
+                js_estoque_add = safe_json_load(prod_alvo_add.get('observacao'))
+
+                if js_estoque_add:
+                    st.markdown(f"**Especifique a quantidade recebida para cada item de {prod_alvo_add['nome']}:**")
+                    cols_add_kit = st.columns(10)
+                    idx_add = 0
+                    qtds_adicionar_kit = {}
+                    
+                    for k, v_atual in js_estoque_add.items():
+                        val_add_k = cols_add_kit[idx_add % 10].number_input(f"{k} (Tem: {v_atual})", min_value=0, value=0, key=f"add_kit_{prod_alvo_add['id']}_{k}")
+                        if val_add_k > 0:
+                            qtds_adicionar_kit[k] = val_add_k
+                        idx_add += 1
+                    
+                    if st.button("➕ Confirmar Adição ao Estoque", key="btn_add_kit_estoque"):
+                        if not qtds_adicionar_kit:
+                            mostrar_popup("Adicione quantidade em pelo menos um item.", tipo="erro")
+                        else:
+                            novo_json_add = dict(js_estoque_add)
+                            total_adicionado = 0
+                            # Atualiza o JSON e soma o total geral
+                            for k, v in qtds_adicionar_kit.items():
+                                novo_json_add[k] = novo_json_add.get(k, 0) + v
+                                total_adicionado += v
+                            
+                            qtd_final = prod_alvo_add['quantidade_estoque'] + total_adicionado
+                            
+                            supabase.table("produtos").update({
+                                "quantidade_estoque": qtd_final,
+                                "observacao": json.dumps(novo_json_add)
+                            }).eq("id", prod_alvo_add['id']).execute()
+                            
+                            mostrar_popup("Estoque atualizado com sucesso!")
+                            st.rerun()
+                else:
+                    # Comportamento normal para produtos sem sub-itens
+                    nova_qtd_add = st.number_input("Quantidade de peças adquiridas/adicionadas", min_value=1, step=1, key="num_add_qtd_normal")
+                    
+                    if st.button("➕ Confirmar Adição ao Estoque", key="btn_add_normal_estoque"):
+                        qtd_final = prod_alvo_add['quantidade_estoque'] + nova_qtd_add
+                        supabase.table("produtos").update({"quantidade_estoque": qtd_final}).eq("id", prod_alvo_add['id']).execute()
+                        mostrar_popup("Estoque atualizado com sucesso!")
+                        st.rerun()
 
         # 2. CONTROLE DE MANUTENÇÃO
         with st.expander("🔧 Controle de Manutenção", expanded=False):
