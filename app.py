@@ -909,101 +909,99 @@ else:
     def calcular_disponibilidade_periodo(data_ini_periodo, data_fim_periodo, hora_ini=None, hora_fim=None, evento_id_excluir=None):
         qtd_alugada = {}
         detalhe_alugado = {}
+        try:
+            if hora_ini is None: hora_ini = datetime.min.time()
+            if hora_fim is None: hora_fim = datetime.max.time()
+            dt_ini_busca = datetime.combine(data_ini_periodo, hora_ini)
+            dt_fim_busca = datetime.combine(data_fim_periodo, hora_fim)
 
-        if hora_ini is None: hora_ini = datetime.min.time()
-        if hora_fim is None: hora_fim = datetime.max.time()
-        dt_ini_busca = datetime.combine(data_ini_periodo, hora_ini)
-        dt_fim_busca = datetime.combine(data_fim_periodo, hora_fim)
+            eventos_check = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
+            if not eventos_check.data:
+                return qtd_alugada, detalhe_alugado
 
-        eventos_check = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
-        if not eventos_check.data:
+            # 1. Descobre quais eventos tocam o período pesquisado, guardando o intervalo REAL (com hora) de cada um
+            intervalos_eventos = {}
+            for ev_c in eventos_check.data:
+                if evento_id_excluir and ev_c['id'] == evento_id_excluir: continue
+                if not ev_c.get('data_inicio') or not ev_c.get('data_fim_alocacao'): continue
+
+                try:
+                    ev_data_inicio_c = datetime.strptime(ev_c['data_inicio'].split("T")[0], "%Y-%m-%d").date()
+                    ev_data_fim_c = datetime.strptime(ev_c['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
+                except Exception:
+                    continue
+
+                # Trata horários caso o evento antigo não tenha, ou esteja em formato diferente (com ou sem segundos)
+                def _parse_hora_segura(valor_hora):
+                    if not valor_hora: return None
+                    for fmt in ("%H:%M:%S", "%H:%M"):
+                        try:
+                            return datetime.strptime(valor_hora[:8], fmt).time()
+                        except Exception:
+                            continue
+                    return None
+
+                ev_hora_inicio = _parse_hora_segura(ev_c.get('hora_inicio')) or datetime.min.time()
+                ev_hora_fim = _parse_hora_segura(ev_c.get('hora_fim')) or datetime.max.time()
+
+                dt_inicio_ev = datetime.combine(ev_data_inicio_c, ev_hora_inicio)
+                dt_fim_ev = datetime.combine(ev_data_fim_c, ev_hora_fim)
+
+                # Verifica interseção de Data E Hora (com < e >, evento que termina 13h
+                # e outro que começa 13h NÃO dão choque)
+                if (dt_inicio_ev < dt_fim_busca) and (dt_fim_ev > dt_ini_busca):
+                    intervalos_eventos[ev_c['id']] = (dt_inicio_ev, dt_fim_ev)
+
+            if not intervalos_eventos:
+                return qtd_alugada, detalhe_alugado
+
+            # 2. Busca os itens alocados desses eventos
+            itens_check = supabase.table("itens_evento").select("evento_id, produto_id, quantidade, observacao").in_("evento_id", list(intervalos_eventos.keys())).execute()
+            if not itens_check.data:
+                return qtd_alugada, detalhe_alugado
+
+            # 3. Agrupa por produto (e por sub-item, no caso de kits) os intervalos de uso
+            ocupacao_produto = {}
+            ocupacao_subitem = {}
+
+            for item_c in itens_check.data:
+                pid_c = item_c['produto_id']
+                ev_id_c = item_c['evento_id']
+                if ev_id_c not in intervalos_eventos: continue
+                dt_ini_ev, dt_fim_ev = intervalos_eventos[ev_id_c]
+
+                ocupacao_produto.setdefault(pid_c, []).append((dt_ini_ev, dt_fim_ev, item_c['quantidade']))
+
+                js_item_c = safe_json_load(item_c['observacao'])
+                if js_item_c:
+                    for k_c, v_c in js_item_c.items():
+                        ocupacao_subitem.setdefault((pid_c, k_c), []).append((dt_ini_ev, dt_fim_ev, v_c))
+
+            # 4. Sweep-line: acha o pico de uso simultâneo em qualquer instante do tempo
+            def _pico_maximo(intervalos):
+                eventos_linha = []
+                for ini, fim, qtd in intervalos:
+                    eventos_linha.append((ini, qtd))     # entra em uso
+                    eventos_linha.append((fim, -qtd))    # sai de uso
+                # saídas processadas antes de entradas no mesmo instante
+                eventos_linha.sort(key=lambda x: (x[0], x[1]))
+                atual = 0
+                pico = 0
+                for _, delta in eventos_linha:
+                    atual += delta
+                    pico = max(pico, atual)
+                return pico
+
+            for pid_c, intervalos in ocupacao_produto.items():
+                qtd_alugada[pid_c] = _pico_maximo(intervalos)
+
+            for (pid_c, k_c), intervalos in ocupacao_subitem.items():
+                detalhe_alugado.setdefault(pid_c, {})[k_c] = _pico_maximo(intervalos)
+
             return qtd_alugada, detalhe_alugado
-    def calcular_detalhamento_periodo_produto(data_inicio_periodo, data_fim_periodo, produto_id, estoque_total):
-        """Percorre cada dia do período e retorna só as faixas de horário ONDE HÁ RESERVA (ocupação > 0)."""
-        linhas_detalhe = []
-        dia_atual = data_inicio_periodo
-        while dia_atual <= data_fim_periodo:
-            segmentos = calcular_timeline_disponibilidade_produto(dia_atual, produto_id, estoque_total)
-            for seg_ini, seg_fim, reservado, livre in segmentos:
-                if reservado > 0:
-                    hora_ini_txt = seg_ini.strftime("%H:%M")
-                    hora_fim_txt = "23:59" if seg_fim.time() == datetime.max.time() else seg_fim.strftime("%H:%M")
-                    linhas_detalhe.append({
-                        "Data": dia_atual.strftime("%d/%m/%Y"),
-                        "Horário": f"{hora_ini_txt} às {hora_fim_txt}",
-                        "Reservado": reservado,
-                        "Disponível": livre
-                    })
-            dia_atual += relativedelta(days=1)
-        return linhas_detalhe
-        # 1. Descobre quais eventos tocam o período pesquisado, guardando o intervalo REAL (com hora) de cada um
-        intervalos_eventos = {}
-        for ev_c in eventos_check.data:
-            if evento_id_excluir and ev_c['id'] == evento_id_excluir: continue
-            if not ev_c.get('data_inicio') or not ev_c.get('data_fim_alocacao'): continue
-
-            ev_data_inicio_c = datetime.strptime(ev_c['data_inicio'].split("T")[0], "%Y-%m-%d").date()
-            ev_data_fim_c = datetime.strptime(ev_c['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
-
-            # Trata horários caso o evento antigo não tenha
-            ev_hora_inicio = datetime.strptime(ev_c['hora_inicio'], "%H:%M:%S").time() if ev_c.get('hora_inicio') else datetime.min.time()
-            ev_hora_fim = datetime.strptime(ev_c['hora_fim'], "%H:%M:%S").time() if ev_c.get('hora_fim') else datetime.max.time()
-
-            dt_inicio_ev = datetime.combine(ev_data_inicio_c, ev_hora_inicio)
-            dt_fim_ev = datetime.combine(ev_data_fim_c, ev_hora_fim)
-
-            # Verifica interseção de Data E Hora (com < e >, evento que termina 13h
-            # e outro que começa 13h NÃO dão choque)
-            if (dt_inicio_ev < dt_fim_busca) and (dt_fim_ev > dt_ini_busca):
-                intervalos_eventos[ev_c['id']] = (dt_inicio_ev, dt_fim_ev)
-
-        if not intervalos_eventos:
-            return qtd_alugada, detalhe_alugado
-
-        # 2. Busca os itens alocados desses eventos
-        itens_check = supabase.table("itens_evento").select("evento_id, produto_id, quantidade, observacao").in_("evento_id", list(intervalos_eventos.keys())).execute()
-        if not itens_check.data:
-            return qtd_alugada, detalhe_alugado
-
-        # 3. Agrupa por produto (e por sub-item, no caso de kits) os intervalos de uso
-        ocupacao_produto = {}
-        ocupacao_subitem = {}
-
-        for item_c in itens_check.data:
-            pid_c = item_c['produto_id']
-            ev_id_c = item_c['evento_id']
-            if ev_id_c not in intervalos_eventos: continue
-            dt_ini_ev, dt_fim_ev = intervalos_eventos[ev_id_c]
-
-            ocupacao_produto.setdefault(pid_c, []).append((dt_ini_ev, dt_fim_ev, item_c['quantidade']))
-
-            js_item_c = safe_json_load(item_c['observacao'])
-            if js_item_c:
-                for k_c, v_c in js_item_c.items():
-                    ocupacao_subitem.setdefault((pid_c, k_c), []).append((dt_ini_ev, dt_fim_ev, v_c))
-
-        # 4. Sweep-line: acha o pico de uso simultâneo em qualquer instante do tempo
-        def _pico_maximo(intervalos):
-            eventos_linha = []
-            for ini, fim, qtd in intervalos:
-                eventos_linha.append((ini, qtd))     # entra em uso
-                eventos_linha.append((fim, -qtd))    # sai de uso
-            # saídas processadas antes de entradas no mesmo instante
-            eventos_linha.sort(key=lambda x: (x[0], x[1]))
-            atual = 0
-            pico = 0
-            for _, delta in eventos_linha:
-                atual += delta
-                pico = max(pico, atual)
-            return pico
-
-        for pid_c, intervalos in ocupacao_produto.items():
-            qtd_alugada[pid_c] = _pico_maximo(intervalos)
-
-        for (pid_c, k_c), intervalos in ocupacao_subitem.items():
-            detalhe_alugado.setdefault(pid_c, {})[k_c] = _pico_maximo(intervalos)
-
-        return qtd_alugada, detalhe_alugado
+        except Exception as e:
+            st.warning(f"⚠️ Erro ao calcular disponibilidade: {e}")
+            return {}, {}
     def _criar_modal_exclusao():
         def modal(produto_info, tipo, total_remover=0, qtds_json=None, motivo=""):
             if tipo == "parcial":
