@@ -824,13 +824,26 @@ else:
 
         # ===== ASSINATURAS SEPARADAS (empresa e cliente bem distantes uma da outra) =====
         story.append(Paragraph("<b>ASSINATURAS</b>", sub_titulo))
-        story.append(Spacer(1, 30))
+        story.append(Spacer(1, 20))
+
+        # Imagem da assinatura da empresa (se o arquivo existir)
+        caminho_assinatura_empresa = "assinatura_empresa.png" if _os.path.exists("assinatura_empresa.png") else None
+        if caminho_assinatura_empresa:
+            try:
+                img_assinatura = RLImage(caminho_assinatura_empresa, width=5 * cm, height=2.2 * cm, preserveAspectRatio=True)
+                img_assinatura.hAlign = 'CENTER'
+                story.append(img_assinatura)
+                story.append(Spacer(1, 4))
+            except Exception:
+                story.append(Spacer(1, 30))
+        else:
+            story.append(Spacer(1, 30))
 
         linha_assinatura_empresa = Table([["_________________________________________________"]], colWidths=[15*cm])
         linha_assinatura_empresa.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')]))
         story.append(linha_assinatura_empresa)
         story.append(Paragraph("Luz & Letras - Locações", assinatura_nome_style))
-        story.append(Paragraph("Data: ____/____/________", assinatura_data_style))
+        story.append(Paragraph(f"Data: {datetime.now().strftime('%d/%m/%Y')}", assinatura_data_style))
 
         story.append(Spacer(1, 40))
 
@@ -839,7 +852,6 @@ else:
         story.append(linha_assinatura_cliente)
         story.append(Paragraph(f"Cliente: {nome_cliente_pdf}", assinatura_nome_style))
         story.append(Paragraph("Data: ____/____/________", assinatura_data_style))
-
         # AGRADECIMENTO
         story.append(Spacer(1, 25))
         story.append(Paragraph("A equipe <b>Luz & Letras</b> agradece imensamente a sua preferência!<br/>É um grande privilégio fazer parte deste momento tão especial.", agradecimento_style))
@@ -1170,12 +1182,24 @@ else:
                             st.download_button("📄 Baixar Recibo de Confirmação (PDF)", data=buffer_pdf, file_name=f"recibo_evento_{ev['id']}.pdf", mime="application/pdf", key=f"recibo_pdf_{ev['id']}")
 
                         st.markdown("---")
-                        st.subheader("💳 Confirmação de Pagamento")
                         if ev.get('pagamento_confirmado'):
                             st.success(f"✅ Pagamento confirmado via **{ev.get('metodo_confirmacao_pagamento','-')}** em {ev.get('data_confirmacao_pagamento','-')}")
-                            if ev.get('comprovante_pagamento_url'):
-                                url_comprovante = gerar_url_assinada_documento(ev['comprovante_pagamento_url'])
-                                if url_comprovante: st.link_button("📎 Ver Comprovante de Pagamento", url_comprovante)
+                            col_pag_v, col_pag_r = st.columns([3, 1])
+                            with col_pag_v:
+                                if ev.get('comprovante_pagamento_url'):
+                                    url_comprovante = gerar_url_assinada_documento(ev['comprovante_pagamento_url'])
+                                    if url_comprovante: st.link_button("📎 Ver Comprovante de Pagamento", url_comprovante)
+                            with col_pag_r:
+                                if st.button("🗑️ Remover", key=f"del_comp_{ev['id']}"):
+                                    remover_documento_evento(ev.get('comprovante_pagamento_url'))
+                                    supabase.table("eventos").update({
+                                        "pagamento_confirmado": False,
+                                        "metodo_confirmacao_pagamento": None,
+                                        "comprovante_pagamento_url": None,
+                                        "data_confirmacao_pagamento": None
+                                    }).eq("id", ev['id']).execute()
+                                    mostrar_popup("COMPROVANTE REMOVIDO COM SUCESSO!")
+                                    st.rerun()
                         else:
                             metodo_confirmacao = st.radio(
                                 "Como confirmar o pagamento?",
@@ -1213,8 +1237,16 @@ else:
                         st.markdown("---")
                         st.subheader("📝 Contrato Assinado")
                         if ev.get('contrato_assinado_url'):
-                            url_contrato = gerar_url_assinada_documento(ev['contrato_assinado_url'])
-                            if url_contrato: st.link_button("📎 Ver Contrato Assinado", url_contrato)
+                            col_cont_v, col_cont_r = st.columns([3, 1])
+                            with col_cont_v:
+                                url_contrato = gerar_url_assinada_documento(ev['contrato_assinado_url'])
+                                if url_contrato: st.link_button("📎 Ver Contrato Assinado", url_contrato)
+                            with col_cont_r:
+                                if st.button("🗑️ Remover", key=f"del_contrato_{ev['id']}"):
+                                    remover_documento_evento(ev.get('contrato_assinado_url'))
+                                    supabase.table("eventos").update({"contrato_assinado_url": None}).eq("id", ev['id']).execute()
+                                    mostrar_popup("CONTRATO REMOVIDO COM SUCESSO!")
+                                    st.rerun()
                             st.caption("Enviou um novo por engano? Suba o arquivo certo abaixo para substituir.")
                         arquivo_contrato_assinado = st.file_uploader("Envie o contrato assinado (PDF ou foto)", type=["pdf", "png", "jpg", "jpeg"], key=f"upload_contrato_{ev['id']}")
                         if st.button("💾 Salvar Contrato Assinado", key=f"btn_contrato_{ev['id']}"):
