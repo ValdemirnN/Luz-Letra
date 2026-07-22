@@ -111,6 +111,36 @@ input[type="number"] {
 [data-testid="stNumberInputStepUp"] {
     display: none !important;
 }
+
+/* --------------------------------------------------- */
+/* MÁGICA: AVISO DE ESTOQUE INSUFICIENTE EM TEMPO REAL */
+/* --------------------------------------------------- */
+
+/* 1. Pinta a caixinha de vermelho imediatamente quando passa do limite (max_value) */
+div[data-testid="stNumberInput"] input[type="number"]:out-of-range {
+    background-color: #3b0a0a !important; /* Fundo vermelho escuro */
+    color: #ff4b4b !important; /* Texto vermelho brilhante */
+    border: 2px solid #ff4b4b !important; /* Borda vermelha chamativa */
+    border-radius: 6px;
+}
+
+/* 2. Mostra a mensagem customizada abaixo do campo em tempo real */
+div[data-testid="stNumberInput"]:has(input:out-of-range)::after {
+    content: "⚠️ A QUANTIDADE EM ESTOQUE É INSUFICIENTE!";
+    color: #ff4b4b;
+    font-size: 13px;
+    font-weight: bold;
+    display: block;
+    margin-top: 6px;
+    animation: piscarErro 1s infinite; /* Efeito chamativo opcional */
+}
+
+/* Efeito para a mensagem piscar suavemente */
+@keyframes piscarErro {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
 </style>
 """, unsafe_allow_html=True)
 
