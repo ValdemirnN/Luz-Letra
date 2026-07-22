@@ -1231,7 +1231,7 @@ else:
                 fig_top = px.bar(df_top_prods, x="Locações", y="Produto", orientation='h', template="plotly_dark",
                                  text="Locações", color_discrete_sequence=["#FFC107"])
                 
-                fig_top.update_traces(textposition='outside', marker_line_width=0, textfont_size=14, marker_border_radius=4)
+                fig_top.update_traces(textposition='outside', marker_line_width=0, textfont_size=14)
                 fig_top.update_layout(
                     showlegend=False, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
                     xaxis=dict(showgrid=False, showticklabels=False, title="", zeroline=False),
