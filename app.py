@@ -263,8 +263,6 @@ def confirmar_email_por_link():
     except Exception: pass
 
 confirmar_email_por_link()
-if st.query_params.get("code") and st.query_params.get("state"):
-    processar_callback_google()
 
 def criar_preferencia_pagamento_mp(usuario_id, email_cliente, descricao):
     url = "https://api.mercadopago.com/checkout/preferences"
@@ -338,6 +336,9 @@ def processar_callback_google():
         st.session_state['erro_google_msg'] = f"Erro ao conectar Google Agenda: {e}"
         try: st.query_params.clear()
         except Exception: pass
+
+if st.query_params.get("code") and st.query_params.get("state"):
+    processar_callback_google()
 
 def obter_access_token_google(refresh_token):
     resp = requests.post("https://oauth2.googleapis.com/token", data={
