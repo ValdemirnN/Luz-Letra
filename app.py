@@ -1036,7 +1036,7 @@ else:
                 if inicio_recortado < fim_recortado:
                     intervalos.append((inicio_recortado, fim_recortado, mapa_qtd_evento[ev['id']]))
 
-        dt_ini_dia = datetime.combine(data_ref,
+        def _criar_modal_exclusao():
         def modal(produto_info, tipo, total_remover=0, qtds_json=None, motivo=""):
             if tipo == "parcial":
                 st.warning(f"Tem certeza que deseja remover **{total_remover} peças** de **{produto_info['nome']}** parcialmente?")
