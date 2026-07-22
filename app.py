@@ -1122,6 +1122,13 @@ else:
     elif menu == "📊 Dashboard":
         import plotly.graph_objects as go
         
+        # Oculta a marca d'água apenas nesta página específica
+        st.markdown("""
+        <style>
+        .stApp::before { display: none !important; }
+        </style>
+        """, unsafe_allow_html=True)
+
         st.title("📊 Dashboard e Inteligência de Negócio")
         nome_exibicao = st.session_state.get('nome_usuario') or "Usuário"
         st.markdown(f"### 👋 Bem-vindo, {nome_exibicao}!")
@@ -1132,7 +1139,6 @@ else:
         # ==========================================
         # 1. COLETA E PROCESSAMENTO DE DADOS GERAIS
         # ==========================================
-        # Eventos
         try: eventos_dash = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, valor_total, status, descricao, clientes_eventos(nome)").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
         except: eventos_dash = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, valor_total, status, descricao").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
         
@@ -1140,17 +1146,14 @@ else:
         total_eventos_ativos = len(eventos_dash.data) if eventos_dash.data else 0
         ticket_medio = receita_ev / total_eventos_ativos if total_eventos_ativos > 0 else 0.0
 
-        # Compras
         try: compras_dash = supabase.table("compras").select("valor_total, data_compra").eq("empresa_id", emp_id).execute()
         except: compras_dash = type('obj', (object,), {'data': []})
         despesa_comp = sum(float(c.get('valor_total') or 0) for c in (compras_dash.data or []))
 
-        # Viagens
         try: viagens_dash = supabase.table("despesas_viagem").select("valor, data_despesa").eq("empresa_id", emp_id).execute()
         except: viagens_dash = type('obj', (object,), {'data': []})
         despesa_viagem = sum(float(v.get('valor') or 0) for v in (viagens_dash.data or []))
 
-        # Faturamento Manual
         try: fat_dash = supabase.table("faturamento").select("tipo, valor, data_pagamento").eq("empresa_id", emp_id).execute()
         except: fat_dash = type('obj', (object,), {'data': []})
         receita_manual = sum(float(f.get('valor') or 0) for f in (fat_dash.data or []) if f.get('tipo') == 'receita')
@@ -1193,12 +1196,10 @@ else:
             except: pass
 
         st.markdown("<br>", unsafe_allow_html=True)
-
-        # Configuração de cor sólida para o fundo dos gráficos (esconde a marca d'água)
         COR_FUNDO_GRAFICO = "#161618"
 
         # ==========================================
-        # 4. EVOLUÇÃO FINANCEIRA (Line/Area Chart) E STATUS (Donut)
+        # 4. EVOLUÇÃO FINANCEIRA E STATUS
         # ==========================================
         col_g1, col_g2 = st.columns([2, 1])
 
@@ -1206,13 +1207,11 @@ else:
             st.subheader("📈 Evolução Financeira")
             timeline_data = []
             
-            # Agrupando Receitas
             for e in (eventos_dash.data or []):
                 if e.get('data_inicio'): timeline_data.append({'Data': e['data_inicio'].split("T")[0], 'Receita': float(e.get('valor_total') or 0), 'Despesa': 0.0})
             for f in (fat_dash.data or []):
                 if f.get('data_pagamento') and f.get('tipo') == 'receita': timeline_data.append({'Data': f['data_pagamento'].split("T")[0], 'Receita': float(f.get('valor') or 0), 'Despesa': 0.0})
             
-            # Agrupando Despesas
             for c in (compras_dash.data or []):
                 if c.get('data_compra'): timeline_data.append({'Data': c['data_compra'].split("T")[0], 'Receita': 0.0, 'Despesa': float(c.get('valor_total') or 0)})
             for v in (viagens_dash.data or []):
@@ -1224,7 +1223,9 @@ else:
                 df_tl = pd.DataFrame(timeline_data)
                 df_tl['Data'] = pd.to_datetime(df_tl['Data'])
                 df_tl['Mês/Ano'] = df_tl['Data'].dt.to_period('M').dt.strftime('%m/%Y')
-                df_agrupado = df_tl.groupby('Mês/Ano').sum().reset_index()
+                
+                # Correção do erro: soma apenas as colunas numéricas especificas
+                df_agrupado = df_tl.groupby('Mês/Ano')[['Receita', 'Despesa']].sum().reset_index()
                 df_agrupado['sort_date'] = pd.to_datetime(df_agrupado['Mês/Ano'], format='%m/%Y')
                 df_agrupado = df_agrupado.sort_values('sort_date')
 
@@ -1251,10 +1252,7 @@ else:
                 fig_status = px.pie(status_counts, names="Status", values="Quantidade", hole=0.6,
                                     color="Status", color_discrete_map=mapa_cores_status, template="plotly_dark")
                 fig_status.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color=COR_FUNDO_GRAFICO, width=3)))
-                
-                # Número total bem no centro do Donut (Design Moderno)
                 fig_status.add_annotation(text=f"<b>{total_eventos_ativos}</b><br>Eventos", x=0.5, y=0.5, font_size=18, showarrow=False, align="center")
-                
                 fig_status.update_layout(showlegend=False, plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO, margin=dict(t=20, b=20, l=0, r=0))
                 st.plotly_chart(fig_status, use_container_width=True, height=350)
             else:
@@ -1267,7 +1265,6 @@ else:
         # ==========================================
         col_g3, col_g4, col_g5 = st.columns([1.2, 1.2, 1])
 
-        # Calcula Ocupação Atual (Cálculo Leve)
         ids_ativos_hoje = []
         if eventos_dash.data:
             for ev in eventos_dash.data:
@@ -1297,12 +1294,12 @@ else:
 
         with col_g3:
             st.subheader("🎯 Taxa de Ocupação Hoje")
-            st.caption("Volume do seu estoque total que está alugado neste exato momento.")
+            st.caption("Volume do estoque total alugado no momento.")
             fig_gauge = go.Figure(go.Indicator(
-                mode = "gauge+number+delta",
+                mode = "gauge+number",
                 value = taxa_ocupacao,
-                number = {'suffix': "%", 'font': {'size': 40, 'color': '#FFC107'}},
-                title = {'text': f"{itens_alocados_hoje} itens de {total_estoque_fisico} na rua", 'font': {'size': 14}},
+                number = {'suffix': "%", 'font': {'size': 36, 'color': '#FFC107'}},
+                title = {'text': f"{itens_alocados_hoje} de {total_estoque_fisico} itens na rua", 'font': {'size': 13}},
                 gauge = {
                     'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "white"},
                     'bar': {'color': "#FFC107"},
@@ -1334,9 +1331,8 @@ else:
                 
                 if uso_produtos:
                     df_top = pd.DataFrame([{"Produto": mapa_nomes.get(pid, f"Prod {pid}"), "Locações": qtd} for pid, qtd in uso_produtos.items()])
-                    df_top = df_top.sort_values(by="Locações", ascending=True).tail(5) # Pega os 5 maiores
+                    df_top = df_top.sort_values(by="Locações", ascending=True).tail(5)
                     
-                    # Calcula Porcentagem para o Label
                     df_top['Porcentagem'] = (df_top['Locações'] / total_alugueis_historico) * 100
                     df_top['Label'] = df_top['Locações'].astype(str) + " (" + df_top['Porcentagem'].round(1).astype(str) + "%)"
 
