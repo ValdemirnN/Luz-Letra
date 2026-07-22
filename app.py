@@ -31,10 +31,23 @@ except ImportError:
 st.set_page_config(page_title="Luz & Letras - Sistema", page_icon="logo.jpg", layout="wide")
 
 # ==========================================
+# VERIFICAÇÃO DE PROPRIEDADE - GOOGLE SEARCH CONSOLE
+# ==========================================
+st.markdown("""
+<script>
+var meta = document.createElement('meta');
+meta.name = "google-site-verification";
+meta.content = "BLsnKznEf1epekQKo6x3onFRT5C7hTLZDLdUfnXIFG4";
+document.getElementsByTagName('head')[0].appendChild(meta);
+</script>
+""", unsafe_allow_html=True)
+
+# ==========================================
 # PÁGINA PÚBLICA: POLÍTICA DE PRIVACIDADE (sem precisar de login)
 # Acesse em: https://SEU_APP.streamlit.app/?privacidade=1
 # ==========================================
 if st.query_params.get("privacidade") == "1":
+    ...
     st.title("Política de Privacidade - Luz & Letras Sistema")
     st.markdown("""
     **Última atualização:** 21 de julho de 2026
