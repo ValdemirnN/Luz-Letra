@@ -1375,20 +1375,93 @@ else:
             else:
                 st.info("Nenhum evento cadastrado.")
     elif menu == "📅 Agendamento":
-        st.title("Agendamento e Locação de Itens")
+        st.title("📅 Gestão de Agendamentos")
+        
         produtos_disp = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao").eq("empresa_id", emp_id).execute()
         dict_produtos = {p['id']: p for p in produtos_disp.data} if produtos_disp.data else {}
 
+        # 1. PUXANDO DADOS E CLIENTES
+        eventos_cadastrados = supabase.table("eventos").select("*").eq("empresa_id", emp_id).order("data_inicio", desc=False).execute()
+        lista_todos_eventos = eventos_cadastrados.data or []
+        
+        try: clientes_resultado = supabase.table("clientes_eventos").select("id, nome, contato").eq("empresa_id", emp_id).execute()
+        except: clientes_resultado = supabase.table("clientes_eventos").select("id, nome").eq("empresa_id", emp_id).execute()
+        mapa_clientes = {c['id']: c for c in clientes_resultado.data} if clientes_resultado.data else {}
+
+        hoje_dt = datetime.now().date()
+
+        # ==========================================
+        # 2. KPIs SUPERIORES (Resumo Operacional)
+        # ==========================================
+        eventos_hoje = 0
+        eventos_proximos_7_dias = 0
+        
+        for ev_kpi in lista_todos_eventos:
+            if ev_kpi.get('status') not in ["Cancelado", "Concluído"] and ev_kpi.get('data_inicio'):
+                try:
+                    d_ini_kpi = datetime.strptime(ev_kpi['data_inicio'].split("T")[0], "%Y-%m-%d").date()
+                    if d_ini_kpi == hoje_dt:
+                        eventos_hoje += 1
+                    elif hoje_dt < d_ini_kpi <= (hoje_dt + relativedelta(days=7)):
+                        eventos_proximos_7_dias += 1
+                except: pass
+
+        st.markdown("#### 📊 Visão Operacional")
+        col_k1, col_k2, col_k3 = st.columns(3)
+        col_k1.metric("📍 Eventos Hoje", eventos_hoje)
+        col_k2.metric("🔜 Próximos 7 Dias", eventos_proximos_7_dias)
+        col_k3.metric("📑 Total na Base", len(lista_todos_eventos))
+
         st.markdown("---")
-        st.subheader("📋 Eventos Já Cadastrados")
-        eventos_cadastrados = supabase.table("eventos").select("*").eq("empresa_id", emp_id).order("data_inicio", desc=True).execute()
+        
+        # ==========================================
+        # 3. FILTROS INTELIGENTES
+        # ==========================================
+        st.markdown("#### 🔍 Filtrar Eventos")
+        col_f1, col_f2, col_f3 = st.columns([1, 1.2, 1.5])
+        
+        with col_f1:
+            filtro_status = st.multiselect("Status", ["Agendado", "Em Andamento", "Concluído", "Cancelado"], default=["Agendado", "Em Andamento"])
+        with col_f2:
+            filtro_data = st.date_input("Período (Início e Fim)", value=[hoje_dt, hoje_dt + relativedelta(days=30)], format="DD/MM/YYYY")
+        with col_f3:
+            filtro_busca = st.text_input("Buscar Cliente ou Título", placeholder="Digite o nome...")
 
-        if eventos_cadastrados.data:
-            try: clientes_resultado = supabase.table("clientes_eventos").select("id, nome, contato").eq("empresa_id", emp_id).execute()
-            except: clientes_resultado = supabase.table("clientes_eventos").select("id, nome").eq("empresa_id", emp_id).execute()
-            mapa_clientes = {c['id']: c for c in clientes_resultado.data} if clientes_resultado.data else {}
+        # Aplicando as regras de filtro na lista de eventos
+        eventos_filtrados = []
+        for ev in lista_todos_eventos:
+            passa_status = (ev.get('status') in filtro_status) if filtro_status else True
+            
+            passa_data = True
+            if isinstance(filtro_data, tuple) and len(filtro_data) == 2:
+                try:
+                    d_ini_ev = datetime.strptime(ev['data_inicio'].split("T")[0], "%Y-%m-%d").date()
+                    if not (filtro_data[0] <= d_ini_ev <= filtro_data[1]):
+                        passa_data = False
+                except: passa_data = False
+            elif isinstance(filtro_data, tuple) and len(filtro_data) == 1:
+                try:
+                    d_ini_ev = datetime.strptime(ev['data_inicio'].split("T")[0], "%Y-%m-%d").date()
+                    if d_ini_ev != filtro_data[0]:
+                        passa_data = False
+                except: passa_data = False
 
-            for ev in eventos_cadastrados.data:
+            passa_busca = True
+            if filtro_busca.strip():
+                termo = filtro_busca.lower()
+                titulo = (ev.get('descricao') or "").lower()
+                nome_cli = (mapa_clientes.get(ev.get('cliente_id'), {}).get('nome', "")).lower()
+                if termo not in titulo and termo not in nome_cli:
+                    passa_busca = False
+            
+            if passa_status and passa_data and passa_busca:
+                eventos_filtrados.append(ev)
+
+        st.markdown("---")
+        st.subheader(f"📋 Eventos Encontrados ({len(eventos_filtrados)})")
+
+        if eventos_filtrados:
+            for ev in eventos_filtrados:
                 cliente_info = mapa_clientes.get(ev.get('cliente_id'), {})
                 nome_cliente_ev = cliente_info.get('nome', "Cliente não informado")
                 contato_cliente_ev = cliente_info.get('contato') or "-"
