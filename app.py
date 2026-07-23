@@ -480,8 +480,9 @@ def montar_url_embed_rota_google_maps(origem, destino, waypoints=None):
     return url
 
 if 'logado' not in st.session_state:
-    st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': ''})
-    restaurar_sessao_por_token()
+    st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': '', 'token_sessao': None})
+
+# Note que apagamos a linha "restaurar_sessao_por_token()" que ficava aqui embaixo.
 
 def fazer_logout():
     st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': ''})
@@ -498,7 +499,6 @@ if not st.session_state['logado']:
 
     if entrar:
         try:
-            # Puxamos o campo "plano" para saber o limite de telas
             try: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome, plano").eq("email", email_login).execute()
             except: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, plano").eq("email", email_login).execute()
 
@@ -517,7 +517,6 @@ if not st.session_state['logado']:
                     
                     if qtd_logados >= limite_aparelhos:
                         mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
-                        # Guarda o ID para liberar o botão de emergência abaixo
                         st.session_state['bloqueio_usuario_id'] = usuario['id']
                     else:
                         # Gera um token novo e registra a entrada no banco
@@ -527,16 +526,31 @@ if not st.session_state['logado']:
 
                         nome_usuario_login = usuario.get('nome') or usuario.get('email', 'Usuário')
                         
-                        # === A MÁGICA AQUI ===
-                        # Salvamos o token no session_state (escondido) e não usamos mais st.query_params.update
+                        # Salvamos o token na MEMÓRIA (session_state) e NUNCA MAIS na URL
                         st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login, 'token_sessao': novo_token})
                         
                         if 'bloqueio_usuario_id' in st.session_state:
                             del st.session_state['bloqueio_usuario_id']
                             
-                        # Limpa qualquer coisa que estiver na URL para impedir cópias
+                        # Limpa qualquer coisa que estiver escrita no link lá em cima
                         st.query_params.clear()
                         st.rerun()
+                else: 
+                    mostrar_popup("Senha incorreta.", tipo="erro")
+            else: 
+                mostrar_popup("E-mail não encontrado.", tipo="erro")
+        except Exception as e: 
+            mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
+
+    # === BOTÃO SALVA-VIDAS (Fora do formulário) ===
+    if st.session_state.get('bloqueio_usuario_id'):
+        st.warning("⚠️ Você já possui aparelhos conectados no seu limite.")
+        if st.button("Desconectar antigos à força e Entrar"):
+            uid_bloqueado = st.session_state['bloqueio_usuario_id']
+            supabase.table("sessoes_ativas").delete().eq("usuario_id", uid_bloqueado).execute()
+            del st.session_state['bloqueio_usuario_id']
+            mostrar_popup("Aparelhos antigos desconectados! Faça login novamente.")
+            st.rerun()
                 else: 
                     mostrar_popup("Senha incorreta.", tipo="erro")
             else: 
