@@ -585,7 +585,7 @@ if not st.session_state['logado']:
                         ativar_conta_apos_pagamento(st.session_state['conta_criada_id'], "pix")
                         mostrar_popup("Pagamento confirmado!")
                         del st.session_state['conta_criada_id']
-                    else: mostrar_popup("Pagamento não identificado.", tipo="erro")
+        else: mostrar_popup("Pagamento não identificado.", tipo="erro")
 
 # ==========================================
 # 4. ÁREA LOGADA (SISTEMA COMPLETO)
