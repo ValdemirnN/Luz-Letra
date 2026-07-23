@@ -571,22 +571,6 @@ if not st.session_state['logado']:
                         mostrar_popup("Pagamento confirmado!")
                         del st.session_state['conta_criada_id']
                     else: mostrar_popup("Pagamento não identificado.", tipo="erro")
-        else:
-            if st.button("Gerar Link"):
-                try:
-                    preferencia = criar_preferencia_pagamento_mp(st.session_state['conta_criada_id'], st.session_state['conta_criada_email'], f"Assinatura Mensal - {plano_escolhido_tela}", valor_cobrado)
-                    st.session_state['link_pagamento_mp'] = preferencia.get('init_point')
-                    supabase.table("usuarios").update({"metodo_pagamento": "pix" if "Pix" in metodo_escolhido else "cartao", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
-                except Exception as e: mostrar_popup(f"Erro ao gerar link: {e}", tipo="erro")
-            
-            if st.session_state.get('link_pagamento_mp'):
-                st.link_button("🔗 Ir para Pagamento", st.session_state['link_pagamento_mp'])
-                if st.button("🔄 Já paguei, verificar"):
-                    if verificar_pagamento_mp(st.session_state['conta_criada_id']):
-                        ativar_conta_apos_pagamento(st.session_state['conta_criada_id'], "pix")
-                        mostrar_popup("Pagamento confirmado!")
-                        del st.session_state['conta_criada_id']
-                    else: mostrar_popup("Pagamento não identificado.", tipo="erro")
 # ==========================================
 # 4. ÁREA LOGADA (SISTEMA COMPLETO)
 # ==========================================
