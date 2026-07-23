@@ -518,6 +518,12 @@ if not st.session_state['logado']:
                     
                     if qtd_logados >= limite_aparelhos:
                         mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido. Desconecte-se do outro para entrar.", tipo="erro")
+                        
+                        # BOTÃO SALVA-VIDAS: Derruba as sessões presas
+                        if st.button("⚠️ Desconectar todos os meus aparelhos à força"):
+                            supabase.table("sessoes_ativas").delete().eq("usuario_id", usuario['id']).execute()
+                            mostrar_popup("Aparelhos desconectados! Clique em Entrar novamente.")
+                            st.rerun()
                     else:
                         # Gera um token novo e registra a entrada no banco
                         novo_token = secrets.token_urlsafe(24)
