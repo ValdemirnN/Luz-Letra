@@ -934,40 +934,46 @@ else:
         # TERMO DE RESPONSABILIDADE
         termo_texto = "<b>TERMO DE RESPONSABILIDADE E COMPROMISSO:</b><br/>O cliente acima identificado assume total e irrestrita responsabilidade pela guarda, conservação e integridade de todos os materiais e equipamentos locados durante todo o período do evento. O cliente declara estar ciente de que, em caso de danos, avarias, mau uso, perda ou furto de qualquer item fornecido, será de sua extrema e única responsabilidade arcar com os custos integrais de manutenção, reparo ou reposição do produto ao seu estado original. Ao confirmar esta locação e receber os materiais, o cliente concorda plenamente com estas condições."
         story.append(Paragraph(termo_texto, termo_style))
-        story.append(Spacer(1, 25))
+        story.append(Spacer(1, 15)) # Espaço reduzido
 
-        # ===== ASSINATURAS SEPARADAS (empresa e cliente bem distantes uma da outra) =====
+        # ===== ASSINATURAS LADO A LADO (Economiza muito espaço vertical) =====
         story.append(Paragraph("<b>ASSINATURAS</b>", sub_titulo))
-        story.append(Spacer(1, 20))
+        story.append(Spacer(1, 5))
 
-        # Imagem da assinatura da empresa (se o arquivo existir)
+        # Tenta carregar a imagem da assinatura da empresa, se existir
+        img_assinatura = ""
         caminho_assinatura_empresa = "assinatura_empresa.png" if _os.path.exists("assinatura_empresa.png") else None
         if caminho_assinatura_empresa:
             try:
-                img_assinatura = RLImage(caminho_assinatura_empresa, width=5 * cm, height=2.2 * cm, preserveAspectRatio=True)
-                img_assinatura.hAlign = 'CENTER'
-                story.append(img_assinatura)
-                story.append(Spacer(1, 4))
-            except Exception:
-                story.append(Spacer(1, 30))
-        else:
-            story.append(Spacer(1, 30))
+                img_assinatura = RLImage(caminho_assinatura_empresa, width=4 * cm, height=1.5 * cm, preserveAspectRatio=True)
+            except Exception: pass
 
-        linha_assinatura_empresa = Table([["_________________________________________________"]], colWidths=[15*cm])
-        linha_assinatura_empresa.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')]))
-        story.append(linha_assinatura_empresa)
-        story.append(Paragraph("Luz & Letras - Locações", assinatura_nome_style))
-        story.append(Paragraph(f"Data: {datetime.now().strftime('%d/%m/%Y')}", assinatura_data_style))
+        # Estrutura da tabela lado a lado
+        assinaturas_data = [
+            [img_assinatura, ""], # Linha invisível para a imagem da empresa ficar em cima da linha
+            ["____________________________________", "____________________________________"],
+            ["Luz & Letras - Locações", f"Cliente: {nome_cliente_pdf[:25]}"], 
+            [f"Data: {datetime.now().strftime('%d/%m/%Y')}", "Data: ____/____/________"]
+        ]
+        
+        tabela_assinaturas = Table(assinaturas_data, colWidths=[8.5*cm, 8.5*cm])
+        tabela_assinaturas.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'BOTTOM'),
+            ('FONTNAME', (0, 2), (-1, 2), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 2), (-1, 2), 10),
+            ('FONTNAME', (0, 3), (-1, 3), 'Helvetica'),
+            ('FONTSIZE', (0, 3), (-1, 3), 9),
+            ('TEXTCOLOR', (0, 3), (-1, 3), COR_TEXTO_CINZA),
+            ('BOTTOMPADDING', (0,0), (-1,0), 0),
+            ('BOTTOMPADDING', (0,1), (-1,1), 2),
+            ('TOPPADDING', (0,2), (-1,2), 2),
+            ('TOPPADDING', (0,3), (-1,3), 0),
+        ]))
+        story.append(tabela_assinaturas)
 
-        story.append(Spacer(1, 40))
-
-        linha_assinatura_cliente = Table([["_________________________________________________"]], colWidths=[15*cm])
-        linha_assinatura_cliente.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')]))
-        story.append(linha_assinatura_cliente)
-        story.append(Paragraph(f"Cliente: {nome_cliente_pdf}", assinatura_nome_style))
-        story.append(Paragraph("Data: ____/____/________", assinatura_data_style))
         # AGRADECIMENTO
-        story.append(Spacer(1, 25))
+        story.append(Spacer(1, 15)) 
         story.append(Paragraph("A equipe <b>Luz & Letras</b> agradece imensamente a sua preferência!<br/>É um grande privilégio fazer parte deste momento tão especial.", agradecimento_style))
 
         doc.build(story)
