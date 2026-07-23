@@ -246,38 +246,55 @@ except Exception as e:
 
 
 # ==========================================
-# 2. CONTROLE DE SESSÃO E SEGURANÇA
+# 2. CONTROLE DE SESSÃO E SEGURANÇA NO BANCO
 # ==========================================
-SECRET_TOKEN_KEY = "luzletras_sistema_2026_chave_secreta"
 
-def gerar_token_sessao(usuario_id, senha_hash):
-    base = f"{usuario_id}:{senha_hash}:{SECRET_TOKEN_KEY}"
-    return hashlib.sha256(base.encode()).hexdigest()[:24]
+def fazer_logout():
+    # Se existe um token no navegador, deleta do banco para liberar a vaga
+    token_atual = st.query_params.get("tk")
+    if token_atual:
+        try: supabase.table("sessoes_ativas").delete().eq("token", token_atual).execute()
+        except: pass
+        
+    st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': ''})
+    st.query_params.clear()
 
 def restaurar_sessao_por_token():
     try:
         params = st.query_params
         uid_param = params.get("uid")
         tk_param = params.get("tk")
+        
         if uid_param and tk_param:
             usuario_id_restaurar = int(uid_param)
+            
+            # 1. VALIDA O MIDDLEWARE: Verifica se o token ainda existe na tabela sessoes_ativas
+            sessao_banco = supabase.table("sessoes_ativas").select("id").eq("token", tk_param).eq("usuario_id", usuario_id_restaurar).execute()
+            
+            if not sessao_banco.data:
+                # Se a sessão não está no banco (foi derrubada ou deslogada), limpa tudo
+                st.query_params.clear()
+                return
+
+            # 2. Puxa os dados do usuário se a sessão for válida
             try: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome").eq("id", usuario_id_restaurar).execute()
             except: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo").eq("id", usuario_id_restaurar).execute()
 
             if resultado.data:
                 usuario = resultado.data[0]
-                token_esperado = gerar_token_sessao(usuario['id'], usuario['senha_hash'])
-                if usuario['ativo'] and tk_param == token_esperado:
+                if usuario['ativo']:
                     plano_valido = True
                     if usuario.get('empresa_id'):
                         assinatura_check = supabase.table("assinaturas").select("data_vencimento").eq("empresa_id", usuario['empresa_id']).order("data_vencimento", desc=True).limit(1).execute()
                         if assinatura_check.data:
                             venc_check = assinatura_check.data[0]['data_vencimento'].split("T")[0]
                             if datetime.strptime(venc_check, "%Y-%m-%d").date() < datetime.now().date(): plano_valido = False
+                    
                     if plano_valido:
                         nome_usuario_restaurar = usuario.get('nome') or usuario.get('email', 'Usuário')
                         st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_restaurar})
                     else: st.query_params.clear()
+                else: st.query_params.clear()
     except Exception: pass
 
 def enviar_email_confirmacao(destinatario, nome_destinatario, token):
@@ -482,20 +499,41 @@ if not st.session_state['logado']:
 
     if entrar:
         try:
-            try: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome").eq("email", email_login).execute()
-            except: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo").eq("email", email_login).execute()
+            # Puxamos o campo "plano" para saber o limite de telas
+            try: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome, plano").eq("email", email_login).execute()
+            except: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, plano").eq("email", email_login).execute()
 
             if resultado.data:
                 usuario = resultado.data[0]
-                if not usuario['ativo']: mostrar_popup("Usuário bloqueado. Fale com o administrador.", tipo="erro")
+                if not usuario['ativo']: 
+                    mostrar_popup("Usuário bloqueado. Fale com o administrador.", tipo="erro")
                 elif usuario['senha_hash'] == senha_login:
-                    nome_usuario_login = usuario.get('nome') or usuario.get('email', 'Usuário')
-                    st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login})
-                    st.query_params.update({"uid": str(usuario['id']), "tk": gerar_token_sessao(usuario['id'], usuario['senha_hash'])})
-                    st.rerun()
-                else: mostrar_popup("Senha incorreta.", tipo="erro")
-            else: mostrar_popup("E-mail não encontrado.", tipo="erro")
-        except Exception as e: mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
+                    
+                    # === VERIFICAÇÃO DE LIMITE DE APARELHOS ===
+                    plano_usuario = usuario.get('plano') or 'basico'
+                    limite_aparelhos = 3 if plano_usuario == 'pro' else 1
+                    
+                    sessoes_ativas = supabase.table("sessoes_ativas").select("id").eq("usuario_id", usuario['id']).execute()
+                    qtd_logados = len(sessoes_ativas.data) if sessoes_ativas.data else 0
+                    
+                    if qtd_logados >= limite_aparelhos:
+                        mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido. Desconecte-se do outro para entrar.", tipo="erro")
+                    else:
+                        # Gera um token novo e registra a entrada no banco
+                        novo_token = secrets.token_urlsafe(24)
+                        data_exp = (datetime.now() + relativedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+                        supabase.table("sessoes_ativas").insert({"usuario_id": usuario['id'], "token": novo_token, "data_expiracao": data_exp}).execute()
+
+                        nome_usuario_login = usuario.get('nome') or usuario.get('email', 'Usuário')
+                        st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login})
+                        st.query_params.update({"uid": str(usuario['id']), "tk": novo_token})
+                        st.rerun()
+                else: 
+                    mostrar_popup("Senha incorreta.", tipo="erro")
+            else: 
+                mostrar_popup("E-mail não encontrado.", tipo="erro")
+        except Exception as e: 
+            mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
 
     st.markdown("---")
     with st.expander("🆕 Ainda não tem conta? Criar conta"):
