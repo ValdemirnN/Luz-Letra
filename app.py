@@ -532,7 +532,7 @@ if not st.session_state['logado']:
                         mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
                         st.session_state['bloqueio_usuario_id'] = usuario['id']
                     else:
-                        # Repare que as linhas abaixo estão empurradas para a direita em relação ao "else:"
+                        # Tudo a partir daqui tem que ter mais espaço à esquerda que o 'else:'
                         novo_token = secrets.token_urlsafe(24)
                         data_exp = (datetime.now() + relativedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
                         supabase.table("sessoes_ativas").insert({"usuario_id": usuario['id'], "token": novo_token, "data_expiracao": data_exp}).execute()
@@ -541,10 +541,15 @@ if not st.session_state['logado']:
                         
                         st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login, 'token_sessao': novo_token})
                         
+                        if 'bloqueio_usuario_id' in st.session_state:
+                            del st.session_state['bloqueio_usuario_id']
+                            
+                        # === GRAVA NO COOKIE ===
                         cookies["tk"] = novo_token
                         cookies["uid"] = str(usuario['id'])
                         cookies.save()
                         
+                        st.query_params.clear()
                         st.rerun()
                 else: 
                     mostrar_popup("Senha incorreta.", tipo="erro")
@@ -552,7 +557,6 @@ if not st.session_state['logado']:
                 mostrar_popup("E-mail não encontrado.", tipo="erro")
         except Exception as e: 
             mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
-
     # === BOTÃO SALVA-VIDAS (Fora do formulário) ===
     if st.session_state.get('bloqueio_usuario_id'):
         st.warning("⚠️ Você já possui aparelhos conectados no seu limite.")
