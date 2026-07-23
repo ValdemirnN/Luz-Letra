@@ -244,41 +244,53 @@ except Exception as e:
     st.error("Erro ao conectar com o banco. Verifique suas chaves.")
     st.stop()
 
+# ==========================================
+# INICIALIZAÇÃO DE COOKIES
+# ==========================================
+from streamlit_cookies_manager import EncryptedCookieManager
+
+cookies = EncryptedCookieManager(
+    prefix="luzletras/",
+    password=st.secrets.get("COOKIES_PASSWORD", "luz-letras-senha-super-secreta-2026"),
+)
+if not cookies.ready():
+    st.stop()
 
 # ==========================================
 # 2. CONTROLE DE SESSÃO E SEGURANÇA NO BANCO
 # ==========================================
 
 def fazer_logout():
-    # Pega o token escondido na memória (e não mais da URL)
     token_atual = st.session_state.get("token_sessao")
     if token_atual:
         try: supabase.table("sessoes_ativas").delete().eq("token", token_atual).execute()
         except: pass
-        
+    
+    # Deleta os cookies de login
+    if "tk" in cookies: del cookies["tk"]
+    if "uid" in cookies: del cookies["uid"]
+    cookies.save()
+    
     st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': '', 'token_sessao': None})
-    st.query_params.clear()
+
 def restaurar_sessao_por_token():
     try:
-        params = st.query_params
-        uid_param = params.get("uid")
-        tk_param = params.get("tk")
-        
+        # Puxa o token e UID que estão escondidos e salvos no navegador (Cookie)
+        tk_param = cookies.get("tk")
+        uid_param = cookies.get("uid")
+
         if uid_param and tk_param:
             usuario_id_restaurar = int(uid_param)
-            
-            # 1. VALIDA O MIDDLEWARE: Verifica se o token ainda existe na tabela sessoes_ativas
+
+            # Valida no banco se essa sessão ainda existe
             sessao_banco = supabase.table("sessoes_ativas").select("id").eq("token", tk_param).eq("usuario_id", usuario_id_restaurar).execute()
-            
             if not sessao_banco.data:
-                # Se a sessão não está no banco (foi derrubada ou deslogada), limpa tudo
-                st.query_params.clear()
+                # Se não existe, limpa o cookie inútil
+                del cookies["tk"]; del cookies["uid"]; cookies.save()
                 return
 
-            # 2. Puxa os dados do usuário se a sessão for válida
-            try: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome").eq("id", usuario_id_restaurar).execute()
-            except: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo").eq("id", usuario_id_restaurar).execute()
-
+            # Puxa dados do usuário para entrar
+            resultado = supabase.table("usuarios").select("id, perfil, empresa_id, ativo, nome").eq("id", usuario_id_restaurar).execute()
             if resultado.data:
                 usuario = resultado.data[0]
                 if usuario['ativo']:
@@ -287,14 +299,16 @@ def restaurar_sessao_por_token():
                         assinatura_check = supabase.table("assinaturas").select("data_vencimento").eq("empresa_id", usuario['empresa_id']).order("data_vencimento", desc=True).limit(1).execute()
                         if assinatura_check.data:
                             venc_check = assinatura_check.data[0]['data_vencimento'].split("T")[0]
-                            if datetime.strptime(venc_check, "%Y-%m-%d").date() < datetime.now().date(): plano_valido = False
-                    
+                            if datetime.strptime(venc_check, "%Y-%m-%d").date() < datetime.now().date():
+                                plano_valido = False
                     if plano_valido:
-                        nome_usuario_restaurar = usuario.get('nome') or usuario.get('email', 'Usuário')
-                        st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_restaurar})
-                    else: st.query_params.clear()
-                else: st.query_params.clear()
-    except Exception: pass
+                        st.session_state.update({
+                            'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'],
+                            'usuario_id': usuario['id'], 'nome_usuario': usuario.get('nome') or 'Usuário',
+                            'token_sessao': tk_param
+                        })
+    except Exception:
+        pass
 
 def enviar_email_confirmacao(destinatario, nome_destinatario, token):
     link_confirmacao = f"{URL_BASE_SISTEMA}/?confirmar_email={token}"
@@ -481,8 +495,7 @@ def montar_url_embed_rota_google_maps(origem, destino, waypoints=None):
 
 if 'logado' not in st.session_state:
     st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': '', 'token_sessao': None})
-
-# Note que apagamos a linha "restaurar_sessao_por_token()" que ficava aqui embaixo.
+    restaurar_sessao_por_token() # Adicione esta linha!
 
 def fazer_logout():
     st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': ''})
@@ -519,22 +532,22 @@ if not st.session_state['logado']:
                         mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
                         st.session_state['bloqueio_usuario_id'] = usuario['id']
                     else:
-                        # Gera um token novo e registra a entrada no banco
-                        novo_token = secrets.token_urlsafe(24)
-                        data_exp = (datetime.now() + relativedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
-                        supabase.table("sessoes_ativas").insert({"usuario_id": usuario['id'], "token": novo_token, "data_expiracao": data_exp}).execute()
+                        # Gera um token novo e registra no banco
+                    novo_token = secrets.token_urlsafe(24)
+                    data_exp = (datetime.now() + relativedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+                    supabase.table("sessoes_ativas").insert({"usuario_id": usuario['id'], "token": novo_token, "data_expiracao": data_exp}).execute()
 
-                        nome_usuario_login = usuario.get('nome') or usuario.get('email', 'Usuário')
-                        
-                        # Salvamos o token na MEMÓRIA (session_state) e NUNCA MAIS na URL
-                        st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login, 'token_sessao': novo_token})
-                        
-                        if 'bloqueio_usuario_id' in st.session_state:
-                            del st.session_state['bloqueio_usuario_id']
-                            
-                        # Limpa qualquer coisa que estiver escrita no link lá em cima
-                        st.query_params.clear()
-                        st.rerun()
+                    nome_usuario_login = usuario.get('nome') or usuario.get('email', 'Usuário')
+                    
+                    # Salva na memória da tela atual
+                    st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login, 'token_sessao': novo_token})
+                    
+                    # === GRAVA NO COOKIE (A MÁGICA) ===
+                    cookies["tk"] = novo_token
+                    cookies["uid"] = str(usuario['id'])
+                    cookies.save()
+                    
+                    st.rerun()
                 else: 
                     mostrar_popup("Senha incorreta.", tipo="erro")
             else: 
