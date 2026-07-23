@@ -6,3 +6,4 @@ reportlab
 supabase
 openpyxl
 requests
+streamlit-cookies-manager
