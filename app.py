@@ -619,6 +619,11 @@ else:
     if plano_atual_usuario != 'pro' and st.session_state['perfil'] != 'admin_geral':
         st.sidebar.markdown("---")
         st.sidebar.caption("Faça o upgrade para o **Plano PRO** para liberar Compras, Faturamento e Contratos em PDF!")
+        
+        # Novo botão que leva direto para a tela de Perfil
+        if st.sidebar.button("🚀 Fazer Upgrade Agora", use_container_width=True):
+            st.session_state['ver_perfil'] = True
+            st.rerun()
 
     # ==========================================
     # PÁGINA DE PERFIL (dados do usuário + Google Agenda)
@@ -682,6 +687,71 @@ else:
                 mostrar_popup("SENHA ALTERADA COM SUCESSO!")
 
         st.markdown("---")
+        st.subheader("💳 Minha Assinatura")
+        
+        plano_nome_tela = "PRO 🚀" if plano_atual_usuario == 'pro' else "BÁSICO 📦"
+        st.info(f"Seu plano atual é o **{plano_nome_tela}**.")
+
+        acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "Fazer Upgrade para PRO (R$ 180)", "Fazer Downgrade para Básico (R$ 100)", "Cancelar Assinatura"])
+
+        if acao_assinatura == "Fazer Upgrade para PRO (R$ 180)":
+            if plano_atual_usuario == 'pro':
+                st.success("Você já está no melhor plano do sistema!")
+            else:
+                st.warning("Ao gerar o link e efetuar o pagamento, as abas PRO e o Contrato em PDF serão liberados automaticamente.")
+                if st.button("Gerar Link de Pagamento (R$ 180)"):
+                    try:
+                        # Adiciona '_PRO' para o Mercado Pago não confundir com o primeiro pagamento que a pessoa fez
+                        ref_up = f"{st.session_state['usuario_id']}_PRO"
+                        pref_up = criar_preferencia_pagamento_mp(ref_up, dados_usuario_atual.get('email', ''), "Upgrade Plano PRO", 180.00)
+                        st.session_state['link_up_mp'] = pref_up.get('init_point')
+                        st.session_state['ref_up_mp'] = ref_up
+                    except Exception as e: st.error(f"Erro ao gerar link: {e}")
+                
+                if st.session_state.get('link_up_mp'):
+                    st.link_button("🔗 Ir para Pagamento do Upgrade", st.session_state['link_up_mp'])
+                    if st.button("🔄 Já paguei o Upgrade, verificar"):
+                        if verificar_pagamento_mp(st.session_state['ref_up_mp']):
+                            supabase.table("usuarios").update({"plano": "pro"}).eq("id", st.session_state['usuario_id']).execute()
+                            mostrar_popup("UPGRADE REALIZADO COM SUCESSO! 🎉")
+                            del st.session_state['link_up_mp']
+                            st.rerun()
+                        else:
+                            mostrar_popup("Pagamento não identificado ainda. O Mercado Pago pode levar alguns minutos.", tipo="erro")
+        
+        elif acao_assinatura == "Fazer Downgrade para Básico (R$ 100)":
+            if plano_atual_usuario == 'basico':
+                st.success("Seu plano já é o básico.")
+            else:
+                st.warning("Atenção: O downgrade bloqueará seu acesso ao Faturamento, Compras e Contratos em PDF imediatamente após a confirmação do pagamento.")
+                if st.button("Gerar Link de Pagamento (R$ 100)"):
+                    try:
+                        ref_down = f"{st.session_state['usuario_id']}_BASICO"
+                        pref_down = criar_preferencia_pagamento_mp(ref_down, dados_usuario_atual.get('email', ''), "Downgrade Plano Básico", 100.00)
+                        st.session_state['link_down_mp'] = pref_down.get('init_point')
+                        st.session_state['ref_down_mp'] = ref_down
+                    except Exception as e: st.error(f"Erro: {e}")
+                
+                if st.session_state.get('link_down_mp'):
+                    st.link_button("🔗 Ir para Pagamento do Downgrade", st.session_state['link_down_mp'])
+                    if st.button("🔄 Já paguei o Downgrade, verificar"):
+                        if verificar_pagamento_mp(st.session_state['ref_down_mp']):
+                            supabase.table("usuarios").update({"plano": "basico"}).eq("id", st.session_state['usuario_id']).execute()
+                            mostrar_popup("DOWNGRADE REALIZADO.")
+                            del st.session_state['link_down_mp']
+                            st.rerun()
+                        else:
+                            mostrar_popup("Pagamento não identificado ainda.", tipo="erro")
+
+        elif acao_assinatura == "Cancelar Assinatura":
+            st.error("⚠️ CUIDADO: Ao confirmar o cancelamento, seu acesso ao sistema será bloqueado imediatamente. Seus dados não serão apagados, mas você não poderá mais entrar na conta.")
+            col_canc1, col_canc2 = st.columns(2)
+            if col_canc1.button("🚨 Confirmar Cancelamento da Conta"):
+                supabase.table("usuarios").update({"ativo": False}).eq("id", st.session_state['usuario_id']).execute()
+                mostrar_popup("Conta cancelada. Desconectando do sistema...")
+                fazer_logout()
+                st.rerun()
+        
         st.subheader("📅 Google Agenda")
         if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
             st.warning("⚠️ Integração com Google Agenda ainda não configurada pelo administrador do sistema (faltam GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET nos secrets).")
