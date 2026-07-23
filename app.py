@@ -515,12 +515,15 @@ if not st.session_state['logado']:
             try: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome, plano").eq("email", email_login).execute()
             except: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, plano").eq("email", email_login).execute()
 
-            if resultado.data:
+            if not resultado.data:
+                mostrar_popup("E-mail não encontrado.", tipo="erro")
+            else:
                 usuario = resultado.data[0]
                 if not usuario['ativo']: 
                     mostrar_popup("Usuário bloqueado. Fale com o administrador.", tipo="erro")
-                elif usuario['senha_hash'] == senha_login:
-                    
+                elif usuario['senha_hash'] != senha_login:
+                    mostrar_popup("Senha incorreta.", tipo="erro")
+                else:
                     # === VERIFICAÇÃO DE LIMITE DE APARELHOS ===
                     plano_usuario = usuario.get('plano') or 'basico'
                     limite_aparelhos = 3 if plano_usuario == 'pro' else 1
@@ -531,24 +534,43 @@ if not st.session_state['logado']:
                     if qtd_logados >= limite_aparelhos:
                         mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
                         st.session_state['bloqueio_usuario_id'] = usuario['id']
-                        else:
-                            novo_token = secrets.token_urlsafe(24)
-                            data_exp = (datetime.now() + relativedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
-                            supabase.table("sessoes_ativas").insert({"usuario_id": usuario['id'], "token": novo_token, "data_expiracao": data_exp}).execute()
-    
-                            nome_usuario_login = usuario.get('nome') or usuario.get('email', 'Usuário')
+                    else:
+                        novo_token = secrets.token_urlsafe(24)
+                        data_exp = (datetime.now() + relativedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+                        supabase.table("sessoes_ativas").insert({"usuario_id": usuario['id'], "token": novo_token, "data_expiracao": data_exp}).execute()
+
+                        nome_usuario_login = usuario.get('nome') or usuario.get('email', 'Usuário')
+                        
+                        st.session_state.update({
+                            'logado': True, 
+                            'perfil': usuario['perfil'], 
+                            'empresa_id': usuario['empresa_id'], 
+                            'usuario_id': usuario['id'], 
+                            'nome_usuario': nome_usuario_login, 
+                            'token_sessao': novo_token
+                        })
+                        
+                        if 'bloqueio_usuario_id' in st.session_state:
+                            del st.session_state['bloqueio_usuario_id']
                             
-                            st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login, 'token_sessao': novo_token})
-                            
-                            if 'bloqueio_usuario_id' in st.session_state:
-                                del st.session_state['bloqueio_usuario_id']
-                                
-                            # === GRAVA NO COOKIE ===
-                            cookies["tk"] = novo_token
-                            cookies["uid"] = str(usuario['id'])
-                            cookies.save()
-                            
-                            st.rerun()
+                        # === GRAVA NO COOKIE ===
+                        cookies["tk"] = novo_token
+                        cookies["uid"] = str(usuario['id'])
+                        cookies.save()
+                        
+                        st.rerun()
+        except Exception as e: 
+            mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
+
+    # === BOTÃO SALVA-VIDAS (Fora do formulário) ===
+    if st.session_state.get('bloqueio_usuario_id'):
+        st.warning("⚠️ Você já possui aparelhos conectados no seu limite.")
+        if st.button("Desconectar aparelhos antigos à força"):
+            uid_bloqueado = st.session_state['bloqueio_usuario_id']
+            supabase.table("sessoes_ativas").delete().eq("usuario_id", uid_bloqueado).execute()
+            del st.session_state['bloqueio_usuario_id']
+            mostrar_popup("Aparelhos antigos desconectados! Faça login novamente.")
+            st.rerun()
                 else: 
                     mostrar_popup("Senha incorreta.", tipo="erro")
             else: 
