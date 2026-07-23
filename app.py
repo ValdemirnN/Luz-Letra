@@ -250,15 +250,14 @@ except Exception as e:
 # ==========================================
 
 def fazer_logout():
-    # Se existe um token no navegador, deleta do banco para liberar a vaga
-    token_atual = st.query_params.get("tk")
+    # Pega o token escondido na memória (e não mais da URL)
+    token_atual = st.session_state.get("token_sessao")
     if token_atual:
         try: supabase.table("sessoes_ativas").delete().eq("token", token_atual).execute()
         except: pass
         
-    st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': ''})
+    st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': '', 'token_sessao': None})
     st.query_params.clear()
-
 def restaurar_sessao_por_token():
     try:
         params = st.query_params
@@ -517,13 +516,9 @@ if not st.session_state['logado']:
                     qtd_logados = len(sessoes_ativas.data) if sessoes_ativas.data else 0
                     
                     if qtd_logados >= limite_aparelhos:
-                        mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido. Desconecte-se do outro para entrar.", tipo="erro")
-                        
-                        # BOTÃO SALVA-VIDAS: Derruba as sessões presas
-                        if st.button("⚠️ Desconectar todos os meus aparelhos à força"):
-                            supabase.table("sessoes_ativas").delete().eq("usuario_id", usuario['id']).execute()
-                            mostrar_popup("Aparelhos desconectados! Clique em Entrar novamente.")
-                            st.rerun()
+                        mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
+                        # Guarda o ID para liberar o botão de emergência abaixo
+                        st.session_state['bloqueio_usuario_id'] = usuario['id']
                     else:
                         # Gera um token novo e registra a entrada no banco
                         novo_token = secrets.token_urlsafe(24)
@@ -531,9 +526,33 @@ if not st.session_state['logado']:
                         supabase.table("sessoes_ativas").insert({"usuario_id": usuario['id'], "token": novo_token, "data_expiracao": data_exp}).execute()
 
                         nome_usuario_login = usuario.get('nome') or usuario.get('email', 'Usuário')
-                        st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login})
-                        st.query_params.update({"uid": str(usuario['id']), "tk": novo_token})
+                        
+                        # === A MÁGICA AQUI ===
+                        # Salvamos o token no session_state (escondido) e não usamos mais st.query_params.update
+                        st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login, 'token_sessao': novo_token})
+                        
+                        if 'bloqueio_usuario_id' in st.session_state:
+                            del st.session_state['bloqueio_usuario_id']
+                            
+                        # Limpa qualquer coisa que estiver na URL para impedir cópias
+                        st.query_params.clear()
                         st.rerun()
+                else: 
+                    mostrar_popup("Senha incorreta.", tipo="erro")
+            else: 
+                mostrar_popup("E-mail não encontrado.", tipo="erro")
+        except Exception as e: 
+            mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
+
+    # === BOTÃO SALVA-VIDAS === (Fica aparecendo logo abaixo do login se der bloqueio)
+    if st.session_state.get('bloqueio_usuario_id'):
+        st.warning("⚠️ Você já possui aparelhos conectados no seu limite.")
+        if st.button("Desconectar outros aparelhos à força"):
+            uid_bloqueado = st.session_state['bloqueio_usuario_id']
+            supabase.table("sessoes_ativas").delete().eq("usuario_id", uid_bloqueado).execute()
+            del st.session_state['bloqueio_usuario_id']
+            mostrar_popup("Aparelhos antigos desconectados! Faça login novamente.")
+            st.rerun()
                 else: 
                     mostrar_popup("Senha incorreta.", tipo="erro")
             else: 
@@ -626,6 +645,16 @@ else:
     if 'erro_google_msg' in st.session_state:
         mostrar_popup(st.session_state['erro_google_msg'], tipo="erro")
         del st.session_state['erro_google_msg']
+
+    # === NOVO: VIGIA DE SESSÃO CONTÍNUA ===
+    # Se o token não estiver mais no banco, significa que alguém apertou o "Botão Salva-Vidas" em outro PC
+    token_atual = st.session_state.get('token_sessao')
+    if token_atual:
+        sessao_valida = supabase.table("sessoes_ativas").select("id").eq("token", token_atual).execute()
+        if not sessao_valida.data:
+            mostrar_popup("Sua sessão foi desconectada por outro aparelho.", tipo="erro")
+            fazer_logout()
+            st.rerun()
 
     # Busca o usuário e puxa a coluna "plano" recém-criada
     try: check_user = supabase.table("usuarios").select("ativo, plano").eq("id", st.session_state['usuario_id']).execute()
