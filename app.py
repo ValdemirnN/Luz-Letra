@@ -512,8 +512,10 @@ if not st.session_state['logado']:
 
     if entrar:
         try:
-            try: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome, plano").eq("email", email_login).execute()
-            except: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, plano").eq("email", email_login).execute()
+            try: 
+                resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome, plano").eq("email", email_login).execute()
+            except: 
+                resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, plano").eq("email", email_login).execute()
 
             if not resultado.data:
                 mostrar_popup("E-mail não encontrado.", tipo="erro")
@@ -524,7 +526,6 @@ if not st.session_state['logado']:
                 elif usuario['senha_hash'] != senha_login:
                     mostrar_popup("Senha incorreta.", tipo="erro")
                 else:
-                    # === VERIFICAÇÃO DE LIMITE DE APARELHOS ===
                     plano_usuario = usuario.get('plano') or 'basico'
                     limite_aparelhos = 3 if plano_usuario == 'pro' else 1
                     
@@ -553,7 +554,6 @@ if not st.session_state['logado']:
                         if 'bloqueio_usuario_id' in st.session_state:
                             del st.session_state['bloqueio_usuario_id']
                             
-                        # === GRAVA NO COOKIE ===
                         cookies["tk"] = novo_token
                         cookies["uid"] = str(usuario['id'])
                         cookies.save()
@@ -562,7 +562,6 @@ if not st.session_state['logado']:
         except Exception as e: 
             mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
 
-    # === BOTÃO SALVA-VIDAS (Fora do formulário) ===
     if st.session_state.get('bloqueio_usuario_id'):
         st.warning("⚠️ Você já possui aparelhos conectados no seu limite.")
         if st.button("Desconectar aparelhos antigos à força"):
@@ -577,16 +576,6 @@ if not st.session_state['logado']:
                 mostrar_popup("E-mail não encontrado.", tipo="erro")
         except Exception as e: 
             mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
-
-    # === BOTÃO SALVA-VIDAS (Fora do formulário) ===
-    if st.session_state.get('bloqueio_usuario_id'):
-        st.warning("⚠️ Você já possui aparelhos conectados no seu limite.")
-        if st.button("Desconectar aparelhos antigos à força"):
-            uid_bloqueado = st.session_state['bloqueio_usuario_id']
-            supabase.table("sessoes_ativas").delete().eq("usuario_id", uid_bloqueado).execute()
-            del st.session_state['bloqueio_usuario_id']
-            mostrar_popup("Aparelhos antigos desconectados! Faça login novamente.")
-            st.rerun()
 
     st.markdown("---")
     with st.expander("🆕 Ainda não tem conta? Criar conta"):
