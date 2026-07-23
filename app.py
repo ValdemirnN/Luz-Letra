@@ -535,13 +535,19 @@ if not st.session_state['logado']:
                         novo_token = secrets.token_urlsafe(24)
                         data_exp = (datetime.now() + relativedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
                         supabase.table("sessoes_ativas").insert({"usuario_id": usuario['id'], "token": novo_token, "data_expiracao": data_exp}).execute()
+
                         nome_usuario_login = usuario.get('nome') or usuario.get('email', 'Usuário')
+                        
                         st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login, 'token_sessao': novo_token})
+                        
                         if 'bloqueio_usuario_id' in st.session_state:
                             del st.session_state['bloqueio_usuario_id']
+                            
+                        # === GRAVA NO COOKIE ===
                         cookies["tk"] = novo_token
                         cookies["uid"] = str(usuario['id'])
                         cookies.save()
+                        
                         st.rerun()
                 else: 
                     mostrar_popup("Senha incorreta.", tipo="erro")
