@@ -557,37 +557,16 @@ if not st.session_state['logado']:
                 mostrar_popup("E-mail não encontrado.", tipo="erro")
         except Exception as e: 
             mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
+
     # === BOTÃO SALVA-VIDAS (Fora do formulário) ===
     if st.session_state.get('bloqueio_usuario_id'):
         st.warning("⚠️ Você já possui aparelhos conectados no seu limite.")
-        if st.button("Desconectar antigos à força e Entrar"):
+        if st.button("Desconectar aparelhos antigos à força"):
             uid_bloqueado = st.session_state['bloqueio_usuario_id']
             supabase.table("sessoes_ativas").delete().eq("usuario_id", uid_bloqueado).execute()
             del st.session_state['bloqueio_usuario_id']
             mostrar_popup("Aparelhos antigos desconectados! Faça login novamente.")
             st.rerun()
-                else: 
-                    mostrar_popup("Senha incorreta.", tipo="erro")
-            else: 
-                mostrar_popup("E-mail não encontrado.", tipo="erro")
-        except Exception as e: 
-            mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
-
-    # === BOTÃO SALVA-VIDAS === (Fica aparecendo logo abaixo do login se der bloqueio)
-    if st.session_state.get('bloqueio_usuario_id'):
-        st.warning("⚠️ Você já possui aparelhos conectados no seu limite.")
-        if st.button("Desconectar outros aparelhos à força"):
-            uid_bloqueado = st.session_state['bloqueio_usuario_id']
-            supabase.table("sessoes_ativas").delete().eq("usuario_id", uid_bloqueado).execute()
-            del st.session_state['bloqueio_usuario_id']
-            mostrar_popup("Aparelhos antigos desconectados! Faça login novamente.")
-            st.rerun()
-                else: 
-                    mostrar_popup("Senha incorreta.", tipo="erro")
-            else: 
-                mostrar_popup("E-mail não encontrado.", tipo="erro")
-        except Exception as e: 
-            mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
 
     st.markdown("---")
     with st.expander("🆕 Ainda não tem conta? Criar conta"):
