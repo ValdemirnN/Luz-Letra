@@ -532,7 +532,6 @@ if not st.session_state['logado']:
                         mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
                         st.session_state['bloqueio_usuario_id'] = usuario['id']
                     else:
-                        # Tudo a partir daqui tem que ter mais espaço à esquerda que o 'else:'
                         novo_token = secrets.token_urlsafe(24)
                         data_exp = (datetime.now() + relativedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
                         supabase.table("sessoes_ativas").insert({"usuario_id": usuario['id'], "token": novo_token, "data_expiracao": data_exp}).execute()
@@ -549,7 +548,6 @@ if not st.session_state['logado']:
                         cookies["uid"] = str(usuario['id'])
                         cookies.save()
                         
-                        st.query_params.clear()
                         st.rerun()
                 else: 
                     mostrar_popup("Senha incorreta.", tipo="erro")
