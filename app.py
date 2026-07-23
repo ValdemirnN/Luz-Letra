@@ -532,22 +532,20 @@ if not st.session_state['logado']:
                         mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
                         st.session_state['bloqueio_usuario_id'] = usuario['id']
                     else:
-                        # Gera um token novo e registra no banco
-                    novo_token = secrets.token_urlsafe(24)
-                    data_exp = (datetime.now() + relativedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
-                    supabase.table("sessoes_ativas").insert({"usuario_id": usuario['id'], "token": novo_token, "data_expiracao": data_exp}).execute()
+                        # Repare que as linhas abaixo estão empurradas para a direita em relação ao "else:"
+                        novo_token = secrets.token_urlsafe(24)
+                        data_exp = (datetime.now() + relativedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+                        supabase.table("sessoes_ativas").insert({"usuario_id": usuario['id'], "token": novo_token, "data_expiracao": data_exp}).execute()
 
-                    nome_usuario_login = usuario.get('nome') or usuario.get('email', 'Usuário')
-                    
-                    # Salva na memória da tela atual
-                    st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login, 'token_sessao': novo_token})
-                    
-                    # === GRAVA NO COOKIE (A MÁGICA) ===
-                    cookies["tk"] = novo_token
-                    cookies["uid"] = str(usuario['id'])
-                    cookies.save()
-                    
-                    st.rerun()
+                        nome_usuario_login = usuario.get('nome') or usuario.get('email', 'Usuário')
+                        
+                        st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'], 'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login, 'token_sessao': novo_token})
+                        
+                        cookies["tk"] = novo_token
+                        cookies["uid"] = str(usuario['id'])
+                        cookies.save()
+                        
+                        st.rerun()
                 else: 
                     mostrar_popup("Senha incorreta.", tipo="erro")
             else: 
