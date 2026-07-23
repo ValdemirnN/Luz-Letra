@@ -312,10 +312,15 @@ def confirmar_email_por_link():
 
 confirmar_email_por_link()
 
-def criar_preferencia_pagamento_mp(usuario_id, email_cliente, descricao):
+def criar_preferencia_pagamento_mp(usuario_id, email_cliente, descricao, valor):
     url = "https://api.mercadopago.com/checkout/preferences"
     headers = {"Authorization": f"Bearer {MP_ACCESS_TOKEN}", "Content-Type": "application/json"}
-    payload = {"items": [{"title": descricao, "quantity": 1, "unit_price": float(VALOR_ASSINATURA_MENSAL), "currency_id": "BRL"}], "payer": {"email": email_cliente}, "external_reference": str(usuario_id), "back_urls": {"success": URL_BASE_SISTEMA, "failure": URL_BASE_SISTEMA, "pending": URL_BASE_SISTEMA}}
+    payload = {
+        "items": [{"title": descricao, "quantity": 1, "unit_price": float(valor), "currency_id": "BRL"}], 
+        "payer": {"email": email_cliente}, 
+        "external_reference": str(usuario_id), 
+        "back_urls": {"success": URL_BASE_SISTEMA, "failure": URL_BASE_SISTEMA, "pending": URL_BASE_SISTEMA}
+    }
     resposta = requests.post(url, json=payload, headers=headers, timeout=15)
     resposta.raise_for_status()
     return resposta.json()
@@ -523,17 +528,49 @@ if not st.session_state['logado']:
 
     if st.session_state.get('conta_criada_id'):
         st.markdown("---")
-        st.subheader("💳 Finalizar Pagamento")
+        st.subheader("💳 Finalizar Assinatura")
+        
+        # O CLIENTE ESCOLHE O PLANO AQUI
+        col_plano1, col_plano2 = st.columns(2)
+        with col_plano1:
+            st.info("📦 **PLANO BÁSICO - R$ 100,00/mês**\nAcesso ao Estoque, Agendamento e Dashboard Básico.")
+        with col_plano2:
+            st.success("🚀 **PLANO PRO - R$ 180,00/mês**\nAcesso COMPLETO (Faturamento, Compras, Orçamentos, PDF e Google Agenda).")
+            
+        plano_escolhido_tela = st.radio("Selecione o plano desejado:", ["Plano Básico (R$ 100)", "Plano Pro (R$ 180)"])
+        
+        # Define os valores baseados na escolha
+        valor_cobrado = 100.00 if "Básico" in plano_escolhido_tela else 180.00
+        nome_plano_bd = "basico" if "Básico" in plano_escolhido_tela else "pro"
+
+        st.markdown("---")
         metodo_escolhido = st.radio("Como quer pagar?", ["📱 Pix", "💳 Cartão de Crédito", "🤝 Pagar em mãos"])
+        
         if metodo_escolhido.startswith("🤝"):
             comprovante_pagamento = st.text_area("Descreva o comprovante")
             if st.button("📤 Enviar"):
                 if not comprovante_pagamento.strip(): mostrar_popup("Descreva o comprovante.", tipo="erro")
                 else:
-                    try: supabase.table("usuarios").update({"metodo_pagamento": "manual", "comprovante_pagamento": comprovante_pagamento}).eq("id", st.session_state['conta_criada_id']).execute()
-                    except: supabase.table("usuarios").update({"metodo_pagamento": "manual"}).eq("id", st.session_state['conta_criada_id']).execute()
+                    try: supabase.table("usuarios").update({"metodo_pagamento": "manual", "comprovante_pagamento": comprovante_pagamento, "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
+                    except: supabase.table("usuarios").update({"metodo_pagamento": "manual", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
                     mostrar_popup("Comprovante enviado! Aguarde aprovação.")
                     del st.session_state['conta_criada_id']
+        else:
+            if st.button("Gerar Link"):
+                try:
+                    preferencia = criar_preferencia_pagamento_mp(st.session_state['conta_criada_id'], st.session_state['conta_criada_email'], f"Assinatura Mensal - {plano_escolhido_tela}", valor_cobrado)
+                    st.session_state['link_pagamento_mp'] = preferencia.get('init_point')
+                    supabase.table("usuarios").update({"metodo_pagamento": "pix" if "Pix" in metodo_escolhido else "cartao", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
+                except Exception as e: mostrar_popup(f"Erro ao gerar link: {e}", tipo="erro")
+            
+            if st.session_state.get('link_pagamento_mp'):
+                st.link_button("🔗 Ir para Pagamento", st.session_state['link_pagamento_mp'])
+                if st.button("🔄 Já paguei, verificar"):
+                    if verificar_pagamento_mp(st.session_state['conta_criada_id']):
+                        ativar_conta_apos_pagamento(st.session_state['conta_criada_id'], "pix")
+                        mostrar_popup("Pagamento confirmado!")
+                        del st.session_state['conta_criada_id']
+                    else: mostrar_popup("Pagamento não identificado.", tipo="erro")
         else:
             if st.button("Gerar Link"):
                 try:
@@ -562,11 +599,16 @@ else:
         mostrar_popup(st.session_state['erro_google_msg'], tipo="erro")
         del st.session_state['erro_google_msg']
 
-    check_user = supabase.table("usuarios").select("ativo").eq("id", st.session_state['usuario_id']).execute()
+    # Busca o usuário e puxa a coluna "plano" recém-criada
+    try: check_user = supabase.table("usuarios").select("ativo, plano").eq("id", st.session_state['usuario_id']).execute()
+    except: check_user = supabase.table("usuarios").select("ativo").eq("id", st.session_state['usuario_id']).execute()
+    
     if check_user.data and not check_user.data[0]['ativo']:
         mostrar_popup("Sua sessão foi desconectada pelo Administrador.", tipo="erro")
         fazer_logout()
         st.rerun()
+
+    plano_atual_usuario = check_user.data[0].get('plano', 'basico') if check_user.data else 'basico'
 
     st.sidebar.image("logo.jpg", use_container_width=True)
     if 'ver_perfil' not in st.session_state: st.session_state['ver_perfil'] = False
@@ -576,12 +618,23 @@ else:
     st.sidebar.button("Sair / Desconectar", on_click=fazer_logout) 
     st.sidebar.markdown("---")
 
-    if st.session_state['perfil'] == 'admin_geral': opcoes_menu = ["👑 Gestão de Assinantes", "📊 Dashboard", "📅 Agendamento", "📦 Estoque", "🛒 Compras", "💰 Faturamento", "🧳 Orçamento"]
-    else: opcoes_menu = ["📊 Dashboard", "📅 Agendamento", "📦 Estoque", "🛒 Compras", "💰 Faturamento", "🧳 Orçamento"]
+    # Controle de Acesso Dinâmico baseado no Plano
+    if st.session_state['perfil'] == 'admin_geral': 
+        opcoes_menu = ["👑 Gestão de Assinantes", "📊 Dashboard", "📅 Agendamento", "📦 Estoque", "🛒 Compras", "💰 Faturamento", "🧳 Orçamento"]
+    elif plano_atual_usuario == 'pro':
+        st.sidebar.success("🚀 Plano PRO Ativo")
+        opcoes_menu = ["📊 Dashboard", "📅 Agendamento", "📦 Estoque", "🛒 Compras", "💰 Faturamento", "🧳 Orçamento"]
+    else:
+        st.sidebar.info("📦 Plano Básico Ativo")
+        opcoes_menu = ["📊 Dashboard", "📅 Agendamento", "📦 Estoque"]
 
     menu = st.sidebar.radio("Módulos do Sistema", opcoes_menu)
     emp_id = st.session_state.get('empresa_id')
     if not emp_id: st.stop()
+    
+    if plano_atual_usuario != 'pro' and st.session_state['perfil'] != 'admin_geral':
+        st.sidebar.markdown("---")
+        st.sidebar.caption("Faça o upgrade para o **Plano PRO** para liberar Compras, Faturamento e Contratos em PDF!")
 
     # ==========================================
     # PÁGINA DE PERFIL (dados do usuário + Google Agenda)
