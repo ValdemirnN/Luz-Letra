@@ -11,7 +11,7 @@ import streamlit as st
 
 from config import supabase
 from utils import mostrar_popup
-from auth import exigir_acesso_completo
+from auth import exigir_acesso_completo, MODULOS_EXTRAS_DISPONIVEIS
 
 
 PERFIS_CRIAVEIS = {"Operador (PDV apenas, por padrão)": "operador", "Gerente (acesso completo)": "gerente"}
@@ -30,7 +30,7 @@ def tela_equipe():
     tab_lista, tab_cad = st.tabs(["📋 Membros da Equipe", "➕ Cadastrar Membro"])
 
     with tab_cad:
-        st.caption("Por padrão, Operadores só acessam o PDV e só veem o histórico dos próprios caixas (sem ver diferenças de fechamento). Marque abaixo se esse Operador também pode acessar o Fiado.")
+        st.caption("Por padrão, Operadores só acessam o PDV e só veem o histórico dos próprios caixas (sem ver diferenças de fechamento). Marque abaixo quais outras páginas esse membro pode acessar.")
         with st.form("form_cadastro_equipe"):
             nome_membro = st.text_input("Nome")
             email_membro = st.text_input("E-mail (usado para login)")
@@ -41,9 +41,14 @@ def tela_equipe():
             lista_cargos = CARGOS_OPERADOR if perfil_escolhido == "operador" else CARGOS_GERENTE
             cargo_escolhido = st.selectbox("Cargo (rótulo de identificação)", lista_cargos)
 
-            acesso_fiado_extra = False
+            modulos_marcados = []
             if perfil_escolhido == "operador":
-                acesso_fiado_extra = st.checkbox("💳 Liberar acesso ao Fiado (Clientes) também")
+                st.markdown("**Páginas que esse Operador pode acessar (além do PDV):**")
+                for chave_modulo, label_modulo in MODULOS_EXTRAS_DISPONIVEIS:
+                    if st.checkbox(label_modulo, key=f"novo_membro_modulo_{chave_modulo}"):
+                        modulos_marcados.append(chave_modulo)
+            else:
+                st.info("Gerente já acessa todas as páginas do sistema automaticamente.")
 
             cadastrar = st.form_submit_button("Cadastrar Membro")
 
@@ -57,7 +62,6 @@ def tela_equipe():
                 if email_existente.data:
                     mostrar_popup("Já existe uma conta com esse e-mail.", tipo="erro")
                 else:
-                    permissoes_extras = ["fiado"] if acesso_fiado_extra else []
                     supabase.table("usuarios").insert({
                         "empresa_id": emp_id,
                         "nome": nome_membro.strip(),
@@ -65,7 +69,7 @@ def tela_equipe():
                         "senha_hash": senha_membro,
                         "perfil": perfil_escolhido,
                         "cargo": cargo_escolhido,
-                        "permissoes_extras": permissoes_extras,
+                        "permissoes_extras": modulos_marcados,
                         "ativo": True,
                         "email_confirmado": True,
                     }).execute()
@@ -95,16 +99,20 @@ def tela_equipe():
                         "Cargo", lista_cargos, index=idx_cargo, key=f"cargo_membro_{m['id']}"
                     )
                     permissoes_atuais = m.get('permissoes_extras') or []
-                    novo_acesso_fiado = st.checkbox(
-                        "💳 Pode acessar o Fiado (Clientes)",
-                        value="fiado" in permissoes_atuais,
-                        key=f"fiado_membro_{m['id']}"
-                    )
-                    if st.button("Salvar cargo/permissão", key=f"salvar_perm_{m['id']}"):
-                        novas_permissoes = ["fiado"] if novo_acesso_fiado else []
+                    st.write("**Páginas liberadas (além do PDV):**")
+                    novos_modulos_marcados = []
+                    for chave_modulo, label_modulo in MODULOS_EXTRAS_DISPONIVEIS:
+                        marcado = st.checkbox(
+                            label_modulo,
+                            value=chave_modulo in permissoes_atuais,
+                            key=f"modulo_membro_{m['id']}_{chave_modulo}"
+                        )
+                        if marcado:
+                            novos_modulos_marcados.append(chave_modulo)
+                    if st.button("Salvar cargo/permissões", key=f"salvar_perm_{m['id']}"):
                         supabase.table("usuarios").update({
                             "cargo": novo_cargo,
-                            "permissoes_extras": novas_permissoes
+                            "permissoes_extras": novos_modulos_marcados
                         }).eq("id", m['id']).execute()
                         mostrar_popup("Cargo e permissões atualizados!")
                         st.rerun()
