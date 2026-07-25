@@ -1201,7 +1201,6 @@ else:
         ).eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
         if not eventos_prod.data:
             return linhas_resultado
-
         itens_prod = supabase.table("itens_evento").select("evento_id, quantidade").eq("produto_id", produto_id).execute()
         mapa_qtd_evento = {i['evento_id']: i['quantidade'] for i in (itens_prod.data or [])}
         if not mapa_qtd_evento:
