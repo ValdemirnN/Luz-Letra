@@ -1,9 +1,7 @@
 streamlit
+supabase
 pandas
 plotly
 python-dateutil
-reportlab
-supabase
 openpyxl
 requests
-streamlit-cookies-manager
