@@ -1193,44 +1193,83 @@ else:
             st.warning(f"⚠️ Erro ao calcular disponibilidade: {e}")
             return {}, {}
 
-    def calcular_timeline_disponibilidade_produto(data_ref, produto_id, estoque_total):
-        eventos_dia = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
-        intervalos = []
+    def calcular_detalhamento_periodo_produto(data_inicio_periodo, data_fim_periodo, produto_id, estoque_total):
+    linhas_resultado = []
+    try:
+        eventos_prod = supabase.table("eventos").select(
+            "id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim"
+        ).eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
+        if not eventos_prod.data:
+            return linhas_resultado
 
-        if eventos_dia.data:
-            itens_produto = supabase.table("itens_evento").select("evento_id, quantidade").eq("produto_id", produto_id).execute()
-            mapa_qtd_evento = {i['evento_id']: i['quantidade'] for i in (itens_produto.data or [])}
+        itens_prod = supabase.table("itens_evento").select("evento_id, quantidade").eq("produto_id", produto_id).execute()
+        mapa_qtd_evento = {i['evento_id']: i['quantidade'] for i in (itens_prod.data or [])}
+        if not mapa_qtd_evento:
+            return linhas_resultado
 
-            dt_ini_dia = datetime.combine(data_ref, datetime.min.time())
-            dt_fim_dia = datetime.combine(data_ref, datetime.max.time())
+        def _parse_hora_segura(valor_hora):
+            if not valor_hora: return None
+            for fmt in ("%H:%M:%S", "%H:%M"):
+                try: return datetime.strptime(valor_hora[:8], fmt).time()
+                except Exception: continue
+            return None
 
-            def _parse_hora_segura_tl(valor_hora):
-                if not valor_hora: return None
-                for fmt in ("%H:%M:%S", "%H:%M"):
-                    try:
-                        return datetime.strptime(valor_hora[:8], fmt).time()
-                    except Exception:
-                        continue
-                return None
+        intervalos_produto = []
+        for ev in eventos_prod.data:
+            if ev['id'] not in mapa_qtd_evento: continue
+            if not ev.get('data_inicio') or not ev.get('data_fim_alocacao'): continue
+            try:
+                ev_data_ini = datetime.strptime(ev['data_inicio'].split("T")[0], "%Y-%m-%d").date()
+                ev_data_fim = datetime.strptime(ev['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
+            except Exception:
+                continue
+            ev_hora_ini = _parse_hora_segura(ev.get('hora_inicio')) or datetime.min.time()
+            ev_hora_fim = _parse_hora_segura(ev.get('hora_fim')) or datetime.max.time()
+            dt_ini_ev = datetime.combine(ev_data_ini, ev_hora_ini)
+            dt_fim_ev = datetime.combine(ev_data_fim, ev_hora_fim)
+            intervalos_produto.append((dt_ini_ev, dt_fim_ev, mapa_qtd_evento[ev['id']]))
 
-            for ev in eventos_dia.data:
-                if ev['id'] not in mapa_qtd_evento: continue
-                if not ev.get('data_inicio') or not ev.get('data_fim_alocacao'): continue
+        if not intervalos_produto:
+            return linhas_resultado
 
-                try:
-                    ev_data_ini = datetime.strptime(ev['data_inicio'].split("T")[0], "%Y-%m-%d").date()
-                    ev_data_fim = datetime.strptime(ev['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
-                except Exception:
-                    continue
+        dia_atual = data_inicio_periodo
+        while dia_atual <= data_fim_periodo:
+            dt_ini_dia = datetime.combine(dia_atual, datetime.min.time())
+            dt_fim_dia = datetime.combine(dia_atual, datetime.max.time())
 
-                ev_hora_ini = _parse_hora_segura_tl(ev.get('hora_inicio')) or datetime.min.time()
-                ev_hora_fim = _parse_hora_segura_tl(ev.get('hora_fim')) or datetime.max.time()
+            eventos_linha = []
+            for ini, fim, qtd in intervalos_produto:
+                inicio_recortado = max(ini, dt_ini_dia)
+                fim_recortado = min(fim, dt_fim_dia)
+                if inicio_recortado < fim_recortado:
+                    eventos_linha.append((inicio_recortado, qtd))
+                    eventos_linha.append((fim_recortado, -qtd))
 
-                dt_ini_ev = datetime.combine(ev_data_ini, ev_hora_ini)
-                dt_fim_ev = datetime.combine(ev_data_fim, ev_hora_fim)
+            if eventos_linha:
+                eventos_linha.sort(key=lambda x: (x[0], x[1]))
+                ocupacao_atual = 0
+                pontos = []
+                for momento, delta in eventos_linha:
+                    ocupacao_atual += delta
+                    pontos.append((momento, ocupacao_atual))
 
-                inicio_recortado = max(dt_ini_ev, dt_ini_dia)
-                fim_recortado = min(dt_fim_ev, dt_fim_dia)
+                for i in range(len(pontos) - 1):
+                    momento_ini, ocup = pontos[i]
+                    momento_fim = pontos[i + 1][0]
+                    if momento_ini == momento_fim: continue
+                    linhas_resultado.append({
+                        "Dia": dia_atual.strftime("%d/%m/%Y"),
+                        "Faixa de Horário": f"{momento_ini.strftime('%H:%M')} às {momento_fim.strftime('%H:%M')}",
+                        "Ocupado": ocup,
+                        "Disponível": max(0, estoque_total - ocup)
+                    })
+
+            dia_atual += relativedelta(days=1)
+
+        return linhas_resultado
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao calcular detalhamento: {e}")
+        return []
                 if inicio_recortado < fim_recortado:
                     intervalos.append((inicio_recortado, fim_recortado, mapa_qtd_evento[ev['id']]))
     def _criar_modal_exclusao():
