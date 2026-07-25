@@ -29,6 +29,17 @@ from utils import formatar_moeda, mostrar_popup
 
 PERFIS_ACESSO_COMPLETO = ("admin_geral", "dono", "gerente")
 
+# Módulos que podem ser liberados como "extra" pra um Operador, além do PDV
+# (que ele sempre tem por padrão). Chave = salva em permissoes_extras no banco,
+# Label = como aparece no menu lateral e nos checkboxes de cadastro/edição.
+MODULOS_EXTRAS_DISPONIVEIS = [
+    ("dashboard", "📊 Dashboard"),
+    ("estoque", "📦 Estoque"),
+    ("compras", "🛒 Compras"),
+    ("fiado", "💳 Fiado (Clientes)"),
+    ("financeiro", "💰 Financeiro"),
+]
+
 
 # ==============================================================
 # HELPERS DE PERMISSÃO (usados em todos os outros módulos)
