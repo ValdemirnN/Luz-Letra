@@ -14,7 +14,12 @@ from utils import mostrar_popup
 from auth import exigir_acesso_completo
 
 
-PERFIS_CRIAVEIS = {"Operador (PDV e Fiado apenas)": "operador", "Gerente (acesso completo)": "gerente"}
+PERFIS_CRIAVEIS = {"Operador (PDV apenas, por padrão)": "operador", "Gerente (acesso completo)": "gerente"}
+
+# Cargos são só um rótulo de identificação (aparece no cadastro/listagem).
+# Quem manda no que a pessoa acessa é o perfil + as permissões extras abaixo.
+CARGOS_OPERADOR = ["Caixa", "Secretário(a)", "Repositor(a)", "Estoquista"]
+CARGOS_GERENTE = ["Gerente"]
 
 
 def tela_equipe():
@@ -25,12 +30,21 @@ def tela_equipe():
     tab_lista, tab_cad = st.tabs(["📋 Membros da Equipe", "➕ Cadastrar Membro"])
 
     with tab_cad:
-        st.caption("Operadores só acessam PDV e Fiado, e só veem o histórico dos próprios caixas — sem ver diferenças de fechamento.")
+        st.caption("Por padrão, Operadores só acessam o PDV e só veem o histórico dos próprios caixas (sem ver diferenças de fechamento). Marque abaixo se esse Operador também pode acessar o Fiado.")
         with st.form("form_cadastro_equipe"):
             nome_membro = st.text_input("Nome")
             email_membro = st.text_input("E-mail (usado para login)")
             senha_membro = st.text_input("Senha inicial", type="password")
             perfil_escolhido_label = st.selectbox("Perfil", list(PERFIS_CRIAVEIS.keys()))
+            perfil_escolhido = PERFIS_CRIAVEIS[perfil_escolhido_label]
+
+            lista_cargos = CARGOS_OPERADOR if perfil_escolhido == "operador" else CARGOS_GERENTE
+            cargo_escolhido = st.selectbox("Cargo (rótulo de identificação)", lista_cargos)
+
+            acesso_fiado_extra = False
+            if perfil_escolhido == "operador":
+                acesso_fiado_extra = st.checkbox("💳 Liberar acesso ao Fiado (Clientes) também")
+
             cadastrar = st.form_submit_button("Cadastrar Membro")
 
         if cadastrar:
@@ -43,20 +57,23 @@ def tela_equipe():
                 if email_existente.data:
                     mostrar_popup("Já existe uma conta com esse e-mail.", tipo="erro")
                 else:
+                    permissoes_extras = ["fiado"] if acesso_fiado_extra else []
                     supabase.table("usuarios").insert({
                         "empresa_id": emp_id,
                         "nome": nome_membro.strip(),
                         "email": email_membro.strip(),
                         "senha_hash": senha_membro,
-                        "perfil": PERFIS_CRIAVEIS[perfil_escolhido_label],
+                        "perfil": perfil_escolhido,
+                        "cargo": cargo_escolhido,
+                        "permissoes_extras": permissoes_extras,
                         "ativo": True,
                         "email_confirmado": True,
                     }).execute()
-                    mostrar_popup(f"{nome_membro} cadastrado(a) com sucesso como {perfil_escolhido_label.split(' (')[0]}!")
+                    mostrar_popup(f"{nome_membro} cadastrado(a) com sucesso como {cargo_escolhido}!")
                     st.rerun()
 
     with tab_lista:
-        membros_resp = supabase.table("usuarios").select("id, nome, email, perfil, ativo") \
+        membros_resp = supabase.table("usuarios").select("id, nome, email, perfil, ativo, cargo, permissoes_extras") \
             .eq("empresa_id", emp_id).in_("perfil", ["operador", "gerente"]).order("nome").execute()
         membros = membros_resp.data or []
 
@@ -67,8 +84,31 @@ def tela_equipe():
         for m in membros:
             icone_perfil = "🧑‍💼" if m['perfil'] == 'gerente' else "🧾"
             status_txt = "🟢 Ativo" if m['ativo'] else "🔴 Bloqueado"
-            with st.expander(f"{icone_perfil} {m['nome']} — {m['perfil'].capitalize()} — {status_txt}"):
+            cargo_atual = m.get('cargo') or m['perfil'].capitalize()
+            with st.expander(f"{icone_perfil} {m['nome']} — {cargo_atual} — {status_txt}"):
                 st.write(f"**E-mail:** {m['email']}")
+
+                if m['perfil'] == 'operador':
+                    lista_cargos = CARGOS_OPERADOR
+                    idx_cargo = lista_cargos.index(cargo_atual) if cargo_atual in lista_cargos else 0
+                    novo_cargo = st.selectbox(
+                        "Cargo", lista_cargos, index=idx_cargo, key=f"cargo_membro_{m['id']}"
+                    )
+                    permissoes_atuais = m.get('permissoes_extras') or []
+                    novo_acesso_fiado = st.checkbox(
+                        "💳 Pode acessar o Fiado (Clientes)",
+                        value="fiado" in permissoes_atuais,
+                        key=f"fiado_membro_{m['id']}"
+                    )
+                    if st.button("Salvar cargo/permissão", key=f"salvar_perm_{m['id']}"):
+                        novas_permissoes = ["fiado"] if novo_acesso_fiado else []
+                        supabase.table("usuarios").update({
+                            "cargo": novo_cargo,
+                            "permissoes_extras": novas_permissoes
+                        }).eq("id", m['id']).execute()
+                        mostrar_popup("Cargo e permissões atualizados!")
+                        st.rerun()
+
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("Bloquear" if m['ativo'] else "Desbloquear", key=f"toggle_membro_{m['id']}"):
