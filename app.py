@@ -1104,173 +1104,83 @@ else:
     # "sai de uso", guardando o maior valor acumulado. Dois eventos que não
     # se cruzam no tempo nunca mais se somam entre si.
     # ==========================================================================
-    def calcular_disponibilidade_periodo(data_ini_periodo, data_fim_periodo, hora_ini=None, hora_fim=None, evento_id_excluir=None):
-        qtd_alugada = {}
-        detalhe_alugado = {}
+    def calcular_detalhamento_periodo_produto(data_inicio_periodo, data_fim_periodo, produto_id, estoque_total):
+        linhas_resultado = []
         try:
-            if hora_ini is None: hora_ini = datetime.min.time()
-            if hora_fim is None: hora_fim = datetime.max.time()
-            dt_ini_busca = datetime.combine(data_ini_periodo, hora_ini)
-            dt_fim_busca = datetime.combine(data_fim_periodo, hora_fim)
+            eventos_prod = supabase.table("eventos").select(
+                "id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim"
+            ).eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
+            if not eventos_prod.data:
+                return linhas_resultado
+            itens_prod = supabase.table("itens_evento").select("evento_id, quantidade").eq("produto_id", produto_id).execute()
+            mapa_qtd_evento = {i['evento_id']: i['quantidade'] for i in (itens_prod.data or [])}
+            if not mapa_qtd_evento:
+                return linhas_resultado
 
-            eventos_check = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
-            if not eventos_check.data:
-                return qtd_alugada, detalhe_alugado
+            def _parse_hora_segura(valor_hora):
+                if not valor_hora: return None
+                for fmt in ("%H:%M:%S", "%H:%M"):
+                    try: return datetime.strptime(valor_hora[:8], fmt).time()
+                    except Exception: continue
+                return None
 
-            intervalos_eventos = {}
-            for ev_c in eventos_check.data:
-                if evento_id_excluir and ev_c['id'] == evento_id_excluir: continue
-                if not ev_c.get('data_inicio') or not ev_c.get('data_fim_alocacao'): continue
-
+            intervalos_produto = []
+            for ev in eventos_prod.data:
+                if ev['id'] not in mapa_qtd_evento: continue
+                if not ev.get('data_inicio') or not ev.get('data_fim_alocacao'): continue
                 try:
-                    ev_data_inicio_c = datetime.strptime(ev_c['data_inicio'].split("T")[0], "%Y-%m-%d").date()
-                    ev_data_fim_c = datetime.strptime(ev_c['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
+                    ev_data_ini = datetime.strptime(ev['data_inicio'].split("T")[0], "%Y-%m-%d").date()
+                    ev_data_fim = datetime.strptime(ev['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
                 except Exception:
                     continue
+                ev_hora_ini = _parse_hora_segura(ev.get('hora_inicio')) or datetime.min.time()
+                ev_hora_fim = _parse_hora_segura(ev.get('hora_fim')) or datetime.max.time()
+                dt_ini_ev = datetime.combine(ev_data_ini, ev_hora_ini)
+                dt_fim_ev = datetime.combine(ev_data_fim, ev_hora_fim)
+                intervalos_produto.append((dt_ini_ev, dt_fim_ev, mapa_qtd_evento[ev['id']]))
 
-                def _parse_hora_segura(valor_hora):
-                    if not valor_hora: return None
-                    for fmt in ("%H:%M:%S", "%H:%M"):
-                        try:
-                            return datetime.strptime(valor_hora[:8], fmt).time()
-                        except Exception:
-                            continue
-                    return None
+            if not intervalos_produto:
+                return linhas_resultado
 
-                ev_hora_inicio = _parse_hora_segura(ev_c.get('hora_inicio')) or datetime.min.time()
-                ev_hora_fim = _parse_hora_segura(ev_c.get('hora_fim')) or datetime.max.time()
+            dia_atual = data_inicio_periodo
+            while dia_atual <= data_fim_periodo:
+                dt_ini_dia = datetime.combine(dia_atual, datetime.min.time())
+                dt_fim_dia = datetime.combine(dia_atual, datetime.max.time())
 
-                dt_inicio_ev = datetime.combine(ev_data_inicio_c, ev_hora_inicio)
-                dt_fim_ev = datetime.combine(ev_data_fim_c, ev_hora_fim)
-
-                if (dt_inicio_ev < dt_fim_busca) and (dt_fim_ev > dt_ini_busca):
-                    intervalos_eventos[ev_c['id']] = (dt_inicio_ev, dt_fim_ev)
-
-            if not intervalos_eventos:
-                return qtd_alugada, detalhe_alugado
-
-            itens_check = supabase.table("itens_evento").select("evento_id, produto_id, quantidade, observacao").in_("evento_id", list(intervalos_eventos.keys())).execute()
-            if not itens_check.data:
-                return qtd_alugada, detalhe_alugado
-
-            ocupacao_produto = {}
-            ocupacao_subitem = {}
-
-            for item_c in itens_check.data:
-                pid_c = item_c['produto_id']
-                ev_id_c = item_c['evento_id']
-                if ev_id_c not in intervalos_eventos: continue
-                dt_ini_ev, dt_fim_ev = intervalos_eventos[ev_id_c]
-
-                ocupacao_produto.setdefault(pid_c, []).append((dt_ini_ev, dt_fim_ev, item_c['quantidade']))
-
-                js_item_c = safe_json_load(item_c['observacao'])
-                if js_item_c:
-                    for k_c, v_c in js_item_c.items():
-                        ocupacao_subitem.setdefault((pid_c, k_c), []).append((dt_ini_ev, dt_fim_ev, v_c))
-
-            def _pico_maximo(intervalos):
                 eventos_linha = []
-                for ini, fim, qtd in intervalos:
-                    eventos_linha.append((ini, qtd))
-                    eventos_linha.append((fim, -qtd))
-                eventos_linha.sort(key=lambda x: (x[0], x[1]))
-                atual = 0
-                pico = 0
-                for _, delta in eventos_linha:
-                    atual += delta
-                    pico = max(pico, atual)
-                return pico
+                for ini, fim, qtd in intervalos_produto:
+                    inicio_recortado = max(ini, dt_ini_dia)
+                    fim_recortado = min(fim, dt_fim_dia)
+                    if inicio_recortado < fim_recortado:
+                        eventos_linha.append((inicio_recortado, qtd))
+                        eventos_linha.append((fim_recortado, -qtd))
 
-            for pid_c, intervalos in ocupacao_produto.items():
-                qtd_alugada[pid_c] = _pico_maximo(intervalos)
+                if eventos_linha:
+                    eventos_linha.sort(key=lambda x: (x[0], x[1]))
+                    ocupacao_atual = 0
+                    pontos = []
+                    for momento, delta in eventos_linha:
+                        ocupacao_atual += delta
+                        pontos.append((momento, ocupacao_atual))
 
-            for (pid_c, k_c), intervalos in ocupacao_subitem.items():
-                detalhe_alugado.setdefault(pid_c, {})[k_c] = _pico_maximo(intervalos)
+                    for i in range(len(pontos) - 1):
+                        momento_ini, ocup = pontos[i]
+                        momento_fim = pontos[i + 1][0]
+                        if momento_ini == momento_fim: continue
+                        linhas_resultado.append({
+                            "Dia": dia_atual.strftime("%d/%m/%Y"),
+                            "Faixa de Horário": f"{momento_ini.strftime('%H:%M')} às {momento_fim.strftime('%H:%M')}",
+                            "Ocupado": ocup,
+                            "Disponível": max(0, estoque_total - ocup)
+                        })
 
-            return qtd_alugada, detalhe_alugado
+                dia_atual += relativedelta(days=1)
+
+            return linhas_resultado
         except Exception as e:
-            st.warning(f"⚠️ Erro ao calcular disponibilidade: {e}")
-            return {}, {}
+            st.warning(f"⚠️ Erro ao calcular detalhamento: {e}")
+            return []
 
-    def calcular_detalhamento_periodo_produto(data_inicio_periodo, data_fim_periodo, produto_id, estoque_total):
-    linhas_resultado = []
-    try:
-        eventos_prod = supabase.table("eventos").select(
-            "id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim"
-        ).eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
-        if not eventos_prod.data:
-            return linhas_resultado
-        itens_prod = supabase.table("itens_evento").select("evento_id, quantidade").eq("produto_id", produto_id).execute()
-        mapa_qtd_evento = {i['evento_id']: i['quantidade'] for i in (itens_prod.data or [])}
-        if not mapa_qtd_evento:
-            return linhas_resultado
-
-        def _parse_hora_segura(valor_hora):
-            if not valor_hora: return None
-            for fmt in ("%H:%M:%S", "%H:%M"):
-                try: return datetime.strptime(valor_hora[:8], fmt).time()
-                except Exception: continue
-            return None
-
-        intervalos_produto = []
-        for ev in eventos_prod.data:
-            if ev['id'] not in mapa_qtd_evento: continue
-            if not ev.get('data_inicio') or not ev.get('data_fim_alocacao'): continue
-            try:
-                ev_data_ini = datetime.strptime(ev['data_inicio'].split("T")[0], "%Y-%m-%d").date()
-                ev_data_fim = datetime.strptime(ev['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
-            except Exception:
-                continue
-            ev_hora_ini = _parse_hora_segura(ev.get('hora_inicio')) or datetime.min.time()
-            ev_hora_fim = _parse_hora_segura(ev.get('hora_fim')) or datetime.max.time()
-            dt_ini_ev = datetime.combine(ev_data_ini, ev_hora_ini)
-            dt_fim_ev = datetime.combine(ev_data_fim, ev_hora_fim)
-            intervalos_produto.append((dt_ini_ev, dt_fim_ev, mapa_qtd_evento[ev['id']]))
-
-        if not intervalos_produto:
-            return linhas_resultado
-
-        dia_atual = data_inicio_periodo
-        while dia_atual <= data_fim_periodo:
-            dt_ini_dia = datetime.combine(dia_atual, datetime.min.time())
-            dt_fim_dia = datetime.combine(dia_atual, datetime.max.time())
-
-            eventos_linha = []
-            for ini, fim, qtd in intervalos_produto:
-                inicio_recortado = max(ini, dt_ini_dia)
-                fim_recortado = min(fim, dt_fim_dia)
-                if inicio_recortado < fim_recortado:
-                    eventos_linha.append((inicio_recortado, qtd))
-                    eventos_linha.append((fim_recortado, -qtd))
-
-            if eventos_linha:
-                eventos_linha.sort(key=lambda x: (x[0], x[1]))
-                ocupacao_atual = 0
-                pontos = []
-                for momento, delta in eventos_linha:
-                    ocupacao_atual += delta
-                    pontos.append((momento, ocupacao_atual))
-
-                for i in range(len(pontos) - 1):
-                    momento_ini, ocup = pontos[i]
-                    momento_fim = pontos[i + 1][0]
-                    if momento_ini == momento_fim: continue
-                    linhas_resultado.append({
-                        "Dia": dia_atual.strftime("%d/%m/%Y"),
-                        "Faixa de Horário": f"{momento_ini.strftime('%H:%M')} às {momento_fim.strftime('%H:%M')}",
-                        "Ocupado": ocup,
-                        "Disponível": max(0, estoque_total - ocup)
-                    })
-
-            dia_atual += relativedelta(days=1)
-
-        return linhas_resultado
-    except Exception as e:
-        st.warning(f"⚠️ Erro ao calcular detalhamento: {e}")
-        return []
-                if inicio_recortado < fim_recortado:
-                    intervalos.append((inicio_recortado, fim_recortado, mapa_qtd_evento[ev['id']]))
     def _criar_modal_exclusao():
         def modal(produto_info, tipo, total_remover=0, qtds_json=None, motivo=""):
             if tipo == "parcial":
@@ -1936,14 +1846,10 @@ else:
                             else:
                                 try:
                                     agrupado = {}
-                                    agrupado = {}
                                     for key, qtd in adicoes_selecionadas.items():
                                         p_id_str, sub = key.split("_", 1)
-                                        # Completando a linha cortada:
-                                        if int(p_id_str) not in agrupado: 
-                                            agrupado[int(p_id_str)] = {} 
-                                            
-                                        # Aqui entra o resto da sua lógica para dar UPDATE no Supabase...
+                                        if int(p_id_str) not in agrupado:
+                                            agrupado[int(p_id_str)] = {'total': 0, 'detalhes': {}}
                                         agrupado[int(p_id_str)]['total'] += qtd
                                         if sub != "NORMAL": agrupado[int(p_id_str)]['detalhes'][sub] = qtd
                                     
