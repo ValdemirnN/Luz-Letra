@@ -1898,9 +1898,14 @@ else:
                             else:
                                 try:
                                     agrupado = {}
+                                    agrupado = {}
                                     for key, qtd in adicoes_selecionadas.items():
                                         p_id_str, sub = key.split("_", 1)
-                                        if int(p_id_str) not in agrupado: agrupado[int(p_id_str)] = {'total': 0, 'detalhes': {}}
+                                        # Completando a linha cortada:
+                                        if int(p_id_str) not in agrupado: 
+                                            agrupado[int(p_id_str)] = {} 
+                                            
+                                        # Aqui entra o resto da sua lógica para dar UPDATE no Supabase...
                                         agrupado[int(p_id_str)]['total'] += qtd
                                         if sub != "NORMAL": agrupado[int(p_id_str)]['detalhes'][sub] = qtd
                                     
