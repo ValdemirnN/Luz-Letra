@@ -16,7 +16,10 @@ Perfis e o que cada um vê no menu:
 import streamlit as st
 
 import config  # noqa: F401  (aplica page_config + CSS ao ser importado)
-from auth import inicializar_sessao, tela_login_e_cadastro, fazer_logout, tem_acesso_completo, tem_permissao_extra
+from auth import (
+    inicializar_sessao, tela_login_e_cadastro, fazer_logout, tem_acesso_completo,
+    MODULOS_EXTRAS_DISPONIVEIS
+)
 from caixa import buscar_caixa_aberto, tela_abrir_caixa, tela_historico_caixas
 from pdv import tela_pdv
 from fiado import tela_fiado
@@ -49,9 +52,11 @@ st.sidebar.markdown("---")
 
 # ---- Menu segmentado por perfil ----
 if perfil == "operador":
+    permissoes_extras_usuario = st.session_state.get('permissoes_extras') or []
     opcoes_menu = ["🧾 PDV"]
-    if tem_permissao_extra("fiado"):
-        opcoes_menu.append("💳 Fiado (Clientes)")
+    for chave_modulo, label_modulo in MODULOS_EXTRAS_DISPONIVEIS:
+        if chave_modulo in permissoes_extras_usuario:
+            opcoes_menu.append(label_modulo)
 elif perfil == "admin_geral":
     opcoes_menu = ["👑 Gestão de Assinantes", "🧾 PDV", "📦 Estoque", "🛒 Compras",
                    "💳 Fiado (Clientes)", "💰 Financeiro", "📊 Dashboard", "👥 Equipe"]
