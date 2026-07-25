@@ -1104,6 +1104,95 @@ else:
     # "sai de uso", guardando o maior valor acumulado. Dois eventos que não
     # se cruzam no tempo nunca mais se somam entre si.
     # ==========================================================================
+    def calcular_disponibilidade_periodo(data_ini_periodo, data_fim_periodo, hora_ini=None, hora_fim=None, evento_id_excluir=None):
+        qtd_alugada = {}
+        detalhe_alugado = {}
+        try:
+            if hora_ini is None: hora_ini = datetime.min.time()
+            if hora_fim is None: hora_fim = datetime.max.time()
+            dt_ini_busca = datetime.combine(data_ini_periodo, hora_ini)
+            dt_fim_busca = datetime.combine(data_fim_periodo, hora_fim)
+
+            eventos_check = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, hora_inicio, hora_fim").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
+            if not eventos_check.data:
+                return qtd_alugada, detalhe_alugado
+
+            intervalos_eventos = {}
+            for ev_c in eventos_check.data:
+                if evento_id_excluir and ev_c['id'] == evento_id_excluir: continue
+                if not ev_c.get('data_inicio') or not ev_c.get('data_fim_alocacao'): continue
+
+                try:
+                    ev_data_inicio_c = datetime.strptime(ev_c['data_inicio'].split("T")[0], "%Y-%m-%d").date()
+                    ev_data_fim_c = datetime.strptime(ev_c['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
+                except Exception:
+                    continue
+
+                def _parse_hora_segura(valor_hora):
+                    if not valor_hora: return None
+                    for fmt in ("%H:%M:%S", "%H:%M"):
+                        try:
+                            return datetime.strptime(valor_hora[:8], fmt).time()
+                        except Exception:
+                            continue
+                    return None
+
+                ev_hora_inicio = _parse_hora_segura(ev_c.get('hora_inicio')) or datetime.min.time()
+                ev_hora_fim = _parse_hora_segura(ev_c.get('hora_fim')) or datetime.max.time()
+
+                dt_inicio_ev = datetime.combine(ev_data_inicio_c, ev_hora_inicio)
+                dt_fim_ev = datetime.combine(ev_data_fim_c, ev_hora_fim)
+
+                if (dt_inicio_ev < dt_fim_busca) and (dt_fim_ev > dt_ini_busca):
+                    intervalos_eventos[ev_c['id']] = (dt_inicio_ev, dt_fim_ev)
+
+            if not intervalos_eventos:
+                return qtd_alugada, detalhe_alugado
+
+            itens_check = supabase.table("itens_evento").select("evento_id, produto_id, quantidade, observacao").in_("evento_id", list(intervalos_eventos.keys())).execute()
+            if not itens_check.data:
+                return qtd_alugada, detalhe_alugado
+
+            ocupacao_produto = {}
+            ocupacao_subitem = {}
+
+            for item_c in itens_check.data:
+                pid_c = item_c['produto_id']
+                ev_id_c = item_c['evento_id']
+                if ev_id_c not in intervalos_eventos: continue
+                dt_ini_ev, dt_fim_ev = intervalos_eventos[ev_id_c]
+
+                ocupacao_produto.setdefault(pid_c, []).append((dt_ini_ev, dt_fim_ev, item_c['quantidade']))
+
+                js_item_c = safe_json_load(item_c['observacao'])
+                if js_item_c:
+                    for k_c, v_c in js_item_c.items():
+                        ocupacao_subitem.setdefault((pid_c, k_c), []).append((dt_ini_ev, dt_fim_ev, v_c))
+
+            def _pico_maximo(intervalos):
+                eventos_linha = []
+                for ini, fim, qtd in intervalos:
+                    eventos_linha.append((ini, qtd))
+                    eventos_linha.append((fim, -qtd))
+                eventos_linha.sort(key=lambda x: (x[0], x[1]))
+                atual = 0
+                pico = 0
+                for _, delta in eventos_linha:
+                    atual += delta
+                    pico = max(pico, atual)
+                return pico
+
+            for pid_c, intervalos in ocupacao_produto.items():
+                qtd_alugada[pid_c] = _pico_maximo(intervalos)
+
+            for (pid_c, k_c), intervalos in ocupacao_subitem.items():
+                detalhe_alugado.setdefault(pid_c, {})[k_c] = _pico_maximo(intervalos)
+
+            return qtd_alugada, detalhe_alugado
+        except Exception as e:
+            st.warning(f"⚠️ Erro ao calcular disponibilidade: {e}")
+            return {}, {}
+
     def calcular_detalhamento_periodo_produto(data_inicio_periodo, data_fim_periodo, produto_id, estoque_total):
         linhas_resultado = []
         try:
