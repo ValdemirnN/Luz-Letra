@@ -2322,21 +2322,6 @@ else:
                     col_c2.metric("Reservado/Locado", total_reservado_cat)
                     col_c3.metric(f"{icone_status} Livres no Período", total_livre)
                     st.dataframe(df_cat[colunas_mostrar], use_container_width=True, hide_index=True)
-                    st.markdown("---")
-
-                categorias = sorted(df_produtos['Categoria'].unique())
-                for cat in categorias:
-                    df_cat = df_produtos[df_produtos['Categoria'] == cat]
-                    total_fisico = int(df_cat['Estoque Total'].sum())
-                    total_reservado_cat = int(df_cat['Reservado na Data'].sum())
-                    total_livre = int(df_cat['Disponível Livre'].sum())
-                    icone_status = "🟢" if total_livre > 0 else "🔴"
-                    st.markdown(f"**{cat}**")
-                    col_c1, col_c2, col_c3 = st.columns(3)
-                    col_c1.metric("Físico Geral", total_fisico)
-                    col_c2.metric("Reservado/Locado", total_reservado_cat)
-                    col_c3.metric(f"{icone_status} Livres no Período", total_livre)
-                    st.dataframe(df_cat[colunas_mostrar], use_container_width=True, hide_index=True)
                 
                     # ===== Detalhamento por dia/horário, já dentro da própria categoria =====
                     produtos_cat_com_reserva = df_cat[df_cat['Reservado na Data'] > 0]
