@@ -2324,18 +2324,33 @@ else:
                     st.dataframe(df_cat[colunas_mostrar], use_container_width=True, hide_index=True)
                     st.markdown("---")
 
-                # ===== DETALHAMENTO AUTOMÁTICO POR DIA E HORÁRIO (só itens com reserva no período) =====
-                if data_fim_f > data_inicio_f or qtd_alugada:
-                    st.markdown("#### 🕐 Detalhamento por Dia e Horário (apenas itens com reserva)")
-                    produtos_com_reserva = df_produtos[df_produtos['Reservado na Data'] > 0]
-                    if produtos_com_reserva.empty:
-                        st.caption("Nenhum item reservado neste período.")
-                    else:
-                        for _, prod_row in produtos_com_reserva.iterrows():
-                            linhas_detalhe = calcular_detalhamento_periodo_produto(data_inicio_f, data_fim_f, prod_row['id'], prod_row['Estoque Total'])
+                categorias = sorted(df_produtos['Categoria'].unique())
+                for cat in categorias:
+                    df_cat = df_produtos[df_produtos['Categoria'] == cat]
+                    total_fisico = int(df_cat['Estoque Total'].sum())
+                    total_reservado_cat = int(df_cat['Reservado na Data'].sum())
+                    total_livre = int(df_cat['Disponível Livre'].sum())
+                    icone_status = "🟢" if total_livre > 0 else "🔴"
+                    st.markdown(f"**{cat}**")
+                    col_c1, col_c2, col_c3 = st.columns(3)
+                    col_c1.metric("Físico Geral", total_fisico)
+                    col_c2.metric("Reservado/Locado", total_reservado_cat)
+                    col_c3.metric(f"{icone_status} Livres no Período", total_livre)
+                    st.dataframe(df_cat[colunas_mostrar], use_container_width=True, hide_index=True)
+                
+                    # ===== Detalhamento por dia/horário, já dentro da própria categoria =====
+                    produtos_cat_com_reserva = df_cat[df_cat['Reservado na Data'] > 0]
+                    if not produtos_cat_com_reserva.empty:
+                        st.caption("🕐 Detalhamento por dia e horário (itens com reserva nesta categoria):")
+                        for _, prod_row in produtos_cat_com_reserva.iterrows():
+                            linhas_detalhe = calcular_detalhamento_periodo_produto(
+                                data_inicio_f, data_fim_f, prod_row['id'], prod_row['Estoque Total']
+                            )
                             if linhas_detalhe:
                                 with st.expander(f"{prod_row['Ícone']} {prod_row['nome']}", expanded=False):
                                     st.dataframe(pd.DataFrame(linhas_detalhe), use_container_width=True, hide_index=True)
+                
+                    st.markdown("---")
             else: st.info("Nenhum produto cadastrado no estoque ainda.")
 
         with st.expander("➕ Adicionar Novo Item ou Kit", expanded=False):
