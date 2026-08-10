@@ -290,7 +290,9 @@ def restaurar_sessao_por_token():
                 return
 
             # Puxa dados do usuário para entrar
-            resultado = supabase.table("usuarios").select("id, perfil, empresa_id, ativo, nome").eq("id", usuario_id_restaurar).execute()
+            resultado = supabase.table("usuarios").select(
+    "id, senha_hash, perfil, empresa_id, ativo, nome, plano"
+).eq("email", email_login).execute()
             if resultado.data:
                 usuario = resultado.data[0]
                 if usuario['ativo']:
@@ -527,13 +529,21 @@ if not st.session_state['logado']:
                     mostrar_popup("Senha incorreta.", tipo="erro")
                 else:
                     plano_usuario = usuario.get('plano') or 'basico'
-                    limite_aparelhos = 3 if plano_usuario == 'pro' else 1
-                    
-                    sessoes_ativas = supabase.table("sessoes_ativas").select("id").eq("usuario_id", usuario['id']).execute()
-                    qtd_logados = len(sessoes_ativas.data) if sessoes_ativas.data else 0
-                    
-                    if qtd_logados >= limite_aparelhos:
-                        mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
+perfil_usuario = usuario.get('perfil') or ''
+
+# Admin e pro sem limite
+if perfil_usuario == 'admin_geral':
+    limite_aparelhos = 999
+elif plano_usuario == 'pro':
+    limite_aparelhos = 3
+else:
+    limite_aparelhos = 1
+
+sessoes_ativas = supabase.table("sessoes_ativas").select("id").eq("usuario_id", usuario['id']).execute()
+qtd_logados = len(sessoes_ativas.data) if sessoes_ativas.data else 0
+
+if qtd_logados >= limite_aparelhos:
+    mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
                         st.session_state['bloqueio_usuario_id'] = usuario['id']
                     else:
                         novo_token = secrets.token_urlsafe(24)
