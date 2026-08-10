@@ -216,7 +216,7 @@ def aplicar_fundo_com_logo(caminho_logo="logo.jpg"):
 
 aplicar_fundo_com_logo()
 
-SUPABASE_URL = st.secrets.get("SUPABASE_URL", "https://eootqeatgqcnenngnexp.supabase.co")
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 
 # ==========================================
