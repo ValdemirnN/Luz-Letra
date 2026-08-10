@@ -1482,7 +1482,7 @@ else:
                     legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                     margin=dict(t=40, b=0, l=0, r=0)
                 )
-                st.plotly_chart(fig_evolucao, use_container_width=True, height=350)
+                st.plotly_chart(fig_evolucao, use_container_width=True, height=350, config={'displayModeBar': False})
             else:
                 st.info("Aguardando lançamentos financeiros para gerar a linha do tempo.")
 
@@ -1557,7 +1557,7 @@ else:
                 }
             ))
             fig_gauge.update_layout(template="plotly_dark", plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO, margin=dict(t=40, b=0, l=20, r=20), height=280)
-            st.plotly_chart(fig_gauge, use_container_width=True)
+            st.plotly_chart(fig_gauge, use_container_width=True, config={'displayModeBar': False})
 
         with col_g4:
             st.subheader("🏆 Ranking de Produtos")
@@ -1595,7 +1595,7 @@ else:
                             xaxis=dict(showgrid=False, showticklabels=False, title="", zeroline=False),
                             yaxis=dict(title="", showgrid=False, tickfont=dict(size=12, color='white')), margin=dict(t=10, b=0, l=0, r=0)
                         )
-                        st.plotly_chart(fig_top, use_container_width=True, height=230)
+                        st.plotly_chart(fig_top, use_container_width=True, height=230, config={'displayModeBar': False})
                 
                 # --- ABA 2: GRÁFICO POR RENTABILIDADE (O que dá mais dinheiro) ---
                 with tab_lucro:
@@ -1636,7 +1636,7 @@ else:
                                 xaxis=dict(showgrid=False, showticklabels=False, title="", zeroline=False),
                                 yaxis=dict(title="", showgrid=False, tickfont=dict(size=12, color='white')), margin=dict(t=10, b=0, l=0, r=0)
                             )
-                            st.plotly_chart(fig_lucro, use_container_width=True, height=230)
+                            st.plotly_chart(fig_lucro, use_container_width=True, height=230, config={'displayModeBar': False})
                         else:
                             st.info("Nenhuma receita gerada ainda.")
                     else:
