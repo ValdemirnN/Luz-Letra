@@ -2,7 +2,7 @@ name: Keep Alive Streamlit
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # A cada 6 horas
+    - cron: '*/15 * * * *'  # A cada 15 minutos
   workflow_dispatch:
 
 jobs:
