@@ -1,15 +1,41 @@
-name: Keep Streamlit App Awake
+name: Keep Alive Streamlit
 
 on:
   schedule:
-    # Roda a cada 6 horas (bem abaixo do limite de 12h de sleep)
-    - cron: '0 */6 * * *'
-  workflow_dispatch:  # permite rodar manualmente pelo GitHub também
+    - cron: '0 */6 * * *'  # A cada 6 horas
+  workflow_dispatch:
 
 jobs:
-  ping:
+  wake-up:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping app to keep it awake
+      - name: Install dependencies
         run: |
-          curl -s -o /dev/null -w "Status: %{http_code}\n" --max-time 30 --max-redirs 10 https://luzeletras.streamlit.app
+          pip install playwright
+          playwright install chromium
+
+      - name: Wake up Streamlit app
+        run: |
+          python - <<'EOF'
+          import asyncio
+          from playwright.async_api import async_playwright
+
+          async def main():
+              async with async_playwright() as p:
+                  browser = await p.chromium.launch()
+                  page = await browser.new_page()
+                  await page.goto("https://luzeletras.streamlit.app/", timeout=60000)
+                  
+                  # Tenta clicar no botão se o app estiver dormindo
+                  try:
+                      btn = page.locator("text=Yes, get this app back up!")
+                      await btn.click(timeout=10000)
+                      print("App estava dormindo — acordei!")
+                      await page.wait_for_timeout(15000)
+                  except:
+                      print("App já estava acordado.")
+                  
+                  await browser.close()
+
+          asyncio.run(main())
+          EOF
