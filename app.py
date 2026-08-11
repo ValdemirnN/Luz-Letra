@@ -787,7 +787,12 @@ else:
         plano_nome_tela = "PRO 🚀" if plano_atual_usuario == 'pro' else "BÁSICO 📦"
         st.info(f"Seu plano atual é o **{plano_nome_tela}**.")
 
-        acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "Fazer Upgrade para PRO (R$ 89,90)", "Fazer Downgrade para Básico (R$ 79,9)", "Cancelar Assinatura"])
+        acao_assinatura = st.radio("Gerenciar Assinatura:", [
+            "Manter meu plano atual", 
+            "Fazer Upgrade para PRO (R$ 89,90)", 
+            "Fazer Downgrade para Básico (R$ 79,90)",  # ← igual ao elif
+            "Cancelar Assinatura"
+        ])
 
         if acao_assinatura == "Fazer Upgrade para PRO (R$ 89,90)":
             if plano_atual_usuario == 'pro':
@@ -814,7 +819,7 @@ else:
                         else:
                             mostrar_popup("Pagamento não identificado ainda. O Mercado Pago pode levar alguns minutos.", tipo="erro")
         
-        elif acao_assinatura == "Fazer Downgrade para Básico (R$ 79,90)":
+        elif acao_assinatura == "Fazer Downgrade para Básico (R$ 79,90)":  # ← igual ao radio
             if plano_atual_usuario == 'basico':
                 st.success("Seu plano já é o básico.")
             else:
