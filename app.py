@@ -348,14 +348,23 @@ def criar_preferencia_pagamento_mp(usuario_id, email_cliente, descricao, valor):
     url = "https://api.mercadopago.com/checkout/preferences"
     headers = {"Authorization": f"Bearer {MP_ACCESS_TOKEN}", "Content-Type": "application/json"}
     payload = {
-        "items": [{"title": descricao, "quantity": 1, "unit_price": float(valor), "currency_id": "BRL"}], 
+        "items": [{
+            "title": descricao, 
+            "quantity": 1, 
+            "unit_price": float(valor), 
+            "currency_id": "BRL"
+        }], 
         "payer": {"email": email_cliente}, 
         "external_reference": str(usuario_id), 
-        "back_urls": {"success": URL_BASE_SISTEMA, "failure": URL_BASE_SISTEMA, "pending": URL_BASE_SISTEMA},
+        "back_urls": {
+            "success": URL_BASE_SISTEMA, 
+            "failure": URL_BASE_SISTEMA, 
+            "pending": URL_BASE_SISTEMA
+        },
+        "auto_return": "approved",
         "payment_methods": {
-            "excluded_payment_types": [],  # não exclui nada
-            "installments": 1,             # sem parcelamento
-            "default_payment_method_id": "pix"  # abre já no Pix por padrão
+            "excluded_payment_types": [],
+            "installments": 12
         }
     }
     resposta = requests.post(url, json=payload, headers=headers, timeout=15)
