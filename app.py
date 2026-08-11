@@ -226,7 +226,7 @@ GMAIL_REMETENTE = st.secrets.get("GMAIL_REMETENTE", "SEU_EMAIL_AQUI@gmail.com")
 GMAIL_SENHA_APP = st.secrets.get("GMAIL_SENHA_APP", "SUA_SENHA_DE_APP_DE_16_DIGITOS")
 MP_ACCESS_TOKEN = st.secrets.get("MP_ACCESS_TOKEN", "COLOQUE_SEU_ACCESS_TOKEN_DO_MERCADO_PAGO_AQUI")
 URL_BASE_SISTEMA = st.secrets.get("URL_BASE_SISTEMA", "http://localhost:8501")
-VALOR_ASSINATURA_MENSAL = 300.00
+VALOR_ASSINATURA_MENSAL = 79.90
 
 # ==========================================
 # CONFIGURAÇÕES GOOGLE (MAPS + AGENDA)
@@ -618,14 +618,14 @@ if qtd_logados >= limite_aparelhos:
         # O CLIENTE ESCOLHE O PLANO AQUI
         col_plano1, col_plano2 = st.columns(2)
         with col_plano1:
-            st.info("📦 **PLANO BÁSICO - R$ 100,00/mês**\nAcesso ao Estoque, Agendamento e Dashboard Básico.")
+            st.info("📦 **PLANO BÁSICO - R$ 79,90/mês**\nAcesso ao Estoque, Agendamento e Dashboard Básico.")
         with col_plano2:
-            st.success("🚀 **PLANO PRO - R$ 180,00/mês**\nAcesso COMPLETO (Faturamento, Compras, Orçamentos, PDF e Google Agenda).")
+            st.success("🚀 **PLANO PRO - R$ 89,90/mês**\nAcesso COMPLETO (Faturamento, Compras, Orçamentos, PDF e Google Agenda).")
             
-        plano_escolhido_tela = st.radio("Selecione o plano desejado:", ["Plano Básico (R$ 100)", "Plano Pro (R$ 180)"])
+        plano_escolhido_tela = st.radio("Selecione o plano desejado:", ["Plano Básico (R$ 79,90)", "Plano Pro (R$ 89,90)"])
         
         # Define os valores baseados na escolha
-        valor_cobrado = 100.00 if "Básico" in plano_escolhido_tela else 180.00
+        valor_cobrado = 79.90 if "Básico" in plano_escolhido_tela else 89.90
         nome_plano_bd = "basico" if "Básico" in plano_escolhido_tela else "pro"
 
         st.markdown("---")
@@ -787,18 +787,18 @@ else:
         plano_nome_tela = "PRO 🚀" if plano_atual_usuario == 'pro' else "BÁSICO 📦"
         st.info(f"Seu plano atual é o **{plano_nome_tela}**.")
 
-        acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "Fazer Upgrade para PRO (R$ 180)", "Fazer Downgrade para Básico (R$ 100)", "Cancelar Assinatura"])
+        acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "Fazer Upgrade para PRO (R$ 89,90)", "Fazer Downgrade para Básico (R$ 79,90)", "Cancelar Assinatura"])
 
-        if acao_assinatura == "Fazer Upgrade para PRO (R$ 180)":
+        if acao_assinatura == "Fazer Upgrade para PRO (R$ 89,90)":
             if plano_atual_usuario == 'pro':
                 st.success("Você já está no melhor plano do sistema!")
             else:
                 st.warning("Ao gerar o link e efetuar o pagamento, as abas PRO e o Contrato em PDF serão liberados automaticamente.")
-                if st.button("Gerar Link de Pagamento (R$ 180)"):
+                if st.button("Gerar Link de Pagamento (R$ 89,90)"):
                     try:
                         # Adiciona '_PRO' para o Mercado Pago não confundir com o primeiro pagamento que a pessoa fez
                         ref_up = f"{st.session_state['usuario_id']}_PRO"
-                        pref_up = criar_preferencia_pagamento_mp(ref_up, dados_usuario_atual.get('email', ''), "Upgrade Plano PRO", 180.00)
+                        pref_up = criar_preferencia_pagamento_mp(ref_up, dados_usuario_atual.get('email', ''), "Upgrade Plano PRO", 89.90)
                         st.session_state['link_up_mp'] = pref_up.get('init_point')
                         st.session_state['ref_up_mp'] = ref_up
                     except Exception as e: st.error(f"Erro ao gerar link: {e}")
@@ -814,15 +814,15 @@ else:
                         else:
                             mostrar_popup("Pagamento não identificado ainda. O Mercado Pago pode levar alguns minutos.", tipo="erro")
         
-        elif acao_assinatura == "Fazer Downgrade para Básico (R$ 100)":
+        elif acao_assinatura == "Fazer Downgrade para Básico (R$ 79,90)":
             if plano_atual_usuario == 'basico':
                 st.success("Seu plano já é o básico.")
             else:
                 st.warning("Atenção: O downgrade bloqueará seu acesso ao Faturamento, Compras e Contratos em PDF imediatamente após a confirmação do pagamento.")
-                if st.button("Gerar Link de Pagamento (R$ 100)"):
+                if st.button("Gerar Link de Pagamento (R$ 79,90)"):
                     try:
                         ref_down = f"{st.session_state['usuario_id']}_BASICO"
-                        pref_down = criar_preferencia_pagamento_mp(ref_down, dados_usuario_atual.get('email', ''), "Downgrade Plano Básico", 100.00)
+                        pref_down = criar_preferencia_pagamento_mp(ref_down, dados_usuario_atual.get('email', ''), "Downgrade Plano Básico", 79.90)
                         st.session_state['link_down_mp'] = pref_down.get('init_point')
                         st.session_state['ref_down_mp'] = ref_down
                     except Exception as e: st.error(f"Erro: {e}")
