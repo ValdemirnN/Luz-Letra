@@ -545,7 +545,8 @@ if not st.session_state['logado']:
                     if qtd_logados >= limite_aparelhos:
                         mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
                         st.session_state['bloqueio_usuario_id'] = usuario['id']
-                    else:                        novo_token = secrets.token_urlsafe(24)
+                    else:
+                        novo_token = secrets.token_urlsafe(24)
                         data_exp = (datetime.now() + relativedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
                         supabase.table("sessoes_ativas").insert({"usuario_id": usuario['id'], "token": novo_token, "data_expiracao": data_exp}).execute()
 
