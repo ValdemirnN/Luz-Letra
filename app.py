@@ -226,7 +226,7 @@ GMAIL_REMETENTE = st.secrets.get("GMAIL_REMETENTE", "SEU_EMAIL_AQUI@gmail.com")
 GMAIL_SENHA_APP = st.secrets.get("GMAIL_SENHA_APP", "SUA_SENHA_DE_APP_DE_16_DIGITOS")
 MP_ACCESS_TOKEN = st.secrets.get("MP_ACCESS_TOKEN", "COLOQUE_SEU_ACCESS_TOKEN_DO_MERCADO_PAGO_AQUI")
 URL_BASE_SISTEMA = st.secrets.get("URL_BASE_SISTEMA", "http://localhost:8501")
-VALOR_ASSINATURA_MENSAL = 79.90
+VALOR_ASSINATURA_MENSAL = 300.00
 
 # ==========================================
 # CONFIGURAÇÕES GOOGLE (MAPS + AGENDA)
@@ -625,7 +625,7 @@ if qtd_logados >= limite_aparelhos:
         plano_escolhido_tela = st.radio("Selecione o plano desejado:", ["Plano Básico (R$ 79,90)", "Plano Pro (R$ 89,90)"])
         
         # Define os valores baseados na escolha
-        valor_cobrado = 79.90 if "Básico" in plano_escolhido_tela else 89.90
+        valor_cobrado = 79.9 if "Básico" in plano_escolhido_tela else 89.90
         nome_plano_bd = "basico" if "Básico" in plano_escolhido_tela else "pro"
 
         st.markdown("---")
@@ -787,7 +787,7 @@ else:
         plano_nome_tela = "PRO 🚀" if plano_atual_usuario == 'pro' else "BÁSICO 📦"
         st.info(f"Seu plano atual é o **{plano_nome_tela}**.")
 
-        acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "Fazer Upgrade para PRO (R$ 89,90)", "Fazer Downgrade para Básico (R$ 79,90)", "Cancelar Assinatura"])
+        acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "Fazer Upgrade para PRO (R$ 89,90)", "Fazer Downgrade para Básico (R$ 79,9)", "Cancelar Assinatura"])
 
         if acao_assinatura == "Fazer Upgrade para PRO (R$ 89,90)":
             if plano_atual_usuario == 'pro':
