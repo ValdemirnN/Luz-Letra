@@ -684,9 +684,9 @@ if not st.session_state['logado']:
         nome_plano_bd = "basico" if "Básico" in plano_escolhido_tela else "pro"
 
         st.markdown("---")
-        CHAVE_PIX = "sua-chave-pix-aqui"   # ← coloque sua chave Pix
-NOME_PIX = "Seu Nome Aqui"          # ← seu nome completo
-CIDADE_PIX = "Sua Cidade"           # ← sua cidade
+        CHAVE_PIX = "702.221.494-85"   # ← coloque sua chave Pix
+NOME_PIX = "VALDEMIR NUNES NICACIO"          # ← seu nome completo
+CIDADE_PIX = "ASSU/RN"           # ← sua cidade
 
 metodo_escolhido = st.radio("Como quer pagar?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto", "🤝 Pagar em mãos"])
 
@@ -898,53 +898,127 @@ else:
         ])
 
         if acao_assinatura == "Fazer Upgrade para PRO (R$ 89,90)":
-            if plano_atual_usuario == 'pro':
-                st.success("Você já está no melhor plano do sistema!")
-            else:
-                st.warning("Ao gerar o link e efetuar o pagamento, as abas PRO e o Contrato em PDF serão liberados automaticamente.")
-                if st.button("Gerar Link de Pagamento (R$ 89,90)"):
-                    try:
-                        # Adiciona '_PRO' para o Mercado Pago não confundir com o primeiro pagamento que a pessoa fez
-                        ref_up = f"{st.session_state['usuario_id']}_PRO"
-                        pref_up = criar_preferencia_pagamento_mp(ref_up, dados_usuario_atual.get('email', ''), "Upgrade Plano PRO", 89.90)
-                        st.session_state['link_up_mp'] = pref_up.get('init_point')
-                        st.session_state['ref_up_mp'] = ref_up
-                    except Exception as e: st.error(f"Erro ao gerar link: {e}")
-                
-                if st.session_state.get('link_up_mp'):
-                    st.link_button("🔗 Ir para Pagamento do Upgrade", st.session_state['link_up_mp'])
-                    if st.button("🔄 Já paguei o Upgrade, verificar"):
-                        if verificar_pagamento_mp(st.session_state['ref_up_mp']):
-                            supabase.table("usuarios").update({"plano": "pro"}).eq("id", st.session_state['usuario_id']).execute()
-                            mostrar_popup("UPGRADE REALIZADO COM SUCESSO! 🎉")
-                            del st.session_state['link_up_mp']
-                            st.rerun()
-                        else:
-                            mostrar_popup("Pagamento não identificado ainda. O Mercado Pago pode levar alguns minutos.", tipo="erro")
+    if plano_atual_usuario == 'pro':
+        st.success("Você já está no melhor plano do sistema!")
+    else:
+        st.warning("Ao confirmar o pagamento, as abas PRO serão liberadas automaticamente.")
         
-        elif acao_assinatura == "Fazer Downgrade para Básico (R$ 79,90)":  # ← igual ao radio
-            if plano_atual_usuario == 'basico':
-                st.success("Seu plano já é o básico.")
-            else:
-                st.warning("Atenção: O downgrade bloqueará seu acesso ao Faturamento, Compras e Contratos em PDF imediatamente após a confirmação do pagamento.")
-                if st.button("Gerar Link de Pagamento (R$ 79,90)"):
-                    try:
-                        ref_down = f"{st.session_state['usuario_id']}_BASICO"
-                        pref_down = criar_preferencia_pagamento_mp(ref_down, dados_usuario_atual.get('email', ''), "Downgrade Plano Básico", 79.90)
-                        st.session_state['link_down_mp'] = pref_down.get('init_point')
-                        st.session_state['ref_down_mp'] = ref_down
-                    except Exception as e: st.error(f"Erro: {e}")
-                
-                if st.session_state.get('link_down_mp'):
-                    st.link_button("🔗 Ir para Pagamento do Downgrade", st.session_state['link_down_mp'])
-                    if st.button("🔄 Já paguei o Downgrade, verificar"):
-                        if verificar_pagamento_mp(st.session_state['ref_down_mp']):
-                            supabase.table("usuarios").update({"plano": "basico"}).eq("id", st.session_state['usuario_id']).execute()
-                            mostrar_popup("DOWNGRADE REALIZADO.")
-                            del st.session_state['link_down_mp']
-                            st.rerun()
-                        else:
-                            mostrar_popup("Pagamento não identificado ainda.", tipo="erro")
+        metodo_upgrade = st.radio("Como quer pagar o upgrade?", 
+                                   ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], 
+                                   key="metodo_upgrade")
+        
+        if metodo_upgrade == "💠 Pix (QR Code)":
+            try:
+                payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, 89.90, "Upgrade PRO")
+                qr_buffer = gerar_qrcode_pix(payload_pix)
+                col_qr1, col_qr2 = st.columns([1, 1])
+                with col_qr1:
+                    st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
+                with col_qr2:
+                    st.markdown("**Como pagar:**")
+                    st.markdown("1. Abra o app do seu banco")
+                    st.markdown("2. Vá em **Pix → Pagar → QR Code**")
+                    st.markdown("3. Escaneie o código ao lado")
+                    st.markdown("4. Confirme o valor **R$ 89,90**")
+                    st.markdown("---")
+                    st.markdown("**Ou copie a chave Pix:**")
+                    st.code(CHAVE_PIX)
+                    st.caption(f"Titular: {NOME_PIX}")
+                st.markdown("---")
+                comp_upgrade_pix = st.text_area("Cole aqui o comprovante do pagamento", key="comp_upgrade_pix")
+                if st.button("📤 Enviar Comprovante Pix", key="btn_comp_upgrade_pix"):
+                    if not comp_upgrade_pix.strip():
+                        mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
+                    else:
+                        supabase.table("usuarios").update({
+                            "metodo_pagamento": "pix_manual",
+                            "comprovante_pagamento": comp_upgrade_pix
+                        }).eq("id", st.session_state['usuario_id']).execute()
+                        mostrar_popup("Comprovante enviado! Ativaremos o PRO em breve.")
+            except Exception as e:
+                st.error(f"Erro ao gerar QR Code: {e}")
+        
+        else:  # Cartão/Boleto
+            if st.button("Gerar Link de Pagamento (R$ 89,90)", key="btn_upgrade_mp"):
+                try:
+                    ref_up = f"{st.session_state['usuario_id']}_PRO"
+                    pref_up = criar_preferencia_pagamento_mp(ref_up, dados_usuario_atual.get('email', ''), "Upgrade Plano PRO", 89.90)
+                    st.session_state['link_up_mp'] = pref_up.get('init_point')
+                    st.session_state['ref_up_mp'] = ref_up
+                except Exception as e:
+                    st.error(f"Erro ao gerar link: {e}")
+            if st.session_state.get('link_up_mp'):
+                st.link_button("🔗 Ir para Pagamento do Upgrade", st.session_state['link_up_mp'])
+                if st.button("🔄 Já paguei, verificar", key="btn_verif_upgrade"):
+                    if verificar_pagamento_mp(st.session_state['ref_up_mp']):
+                        supabase.table("usuarios").update({"plano": "pro"}).eq("id", st.session_state['usuario_id']).execute()
+                        mostrar_popup("UPGRADE REALIZADO COM SUCESSO! 🎉")
+                        del st.session_state['link_up_mp']
+                        st.rerun()
+                    else:
+                        mostrar_popup("Pagamento não identificado ainda.", tipo="erro")
+
+elif acao_assinatura == "Fazer Downgrade para Básico (R$ 79,90)":
+    if plano_atual_usuario == 'basico':
+        st.success("Seu plano já é o básico.")
+    else:
+        st.warning("Atenção: O downgrade bloqueará seu acesso ao Faturamento, Compras e PDF imediatamente.")
+        
+        metodo_downgrade = st.radio("Como quer pagar o downgrade?", 
+                                     ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], 
+                                     key="metodo_downgrade")
+        
+        if metodo_downgrade == "💠 Pix (QR Code)":
+            try:
+                payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, 79.90, "Plano Basico")
+                qr_buffer = gerar_qrcode_pix(payload_pix)
+                col_qr1, col_qr2 = st.columns([1, 1])
+                with col_qr1:
+                    st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
+                with col_qr2:
+                    st.markdown("**Como pagar:**")
+                    st.markdown("1. Abra o app do seu banco")
+                    st.markdown("2. Vá em **Pix → Pagar → QR Code**")
+                    st.markdown("3. Escaneie o código ao lado")
+                    st.markdown("4. Confirme o valor **R$ 79,90**")
+                    st.markdown("---")
+                    st.markdown("**Ou copie a chave Pix:**")
+                    st.code(CHAVE_PIX)
+                    st.caption(f"Titular: {NOME_PIX}")
+                st.markdown("---")
+                comp_down_pix = st.text_area("Cole aqui o comprovante do pagamento", key="comp_down_pix")
+                if st.button("📤 Enviar Comprovante Pix", key="btn_comp_down_pix"):
+                    if not comp_down_pix.strip():
+                        mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
+                    else:
+                        supabase.table("usuarios").update({
+                            "metodo_pagamento": "pix_manual",
+                            "comprovante_pagamento": comp_down_pix,
+                            "plano": "basico"
+                        }).eq("id", st.session_state['usuario_id']).execute()
+                        mostrar_popup("Comprovante enviado! Faremos o downgrade em breve.")
+            except Exception as e:
+                st.error(f"Erro ao gerar QR Code: {e}")
+        
+        else:  # Cartão/Boleto
+            if st.button("Gerar Link de Pagamento (R$ 79,90)", key="btn_down_mp"):
+                try:
+                    ref_down = f"{st.session_state['usuario_id']}_BASICO"
+                    pref_down = criar_preferencia_pagamento_mp(ref_down, dados_usuario_atual.get('email', ''), "Downgrade Plano Básico", 79.90)
+                    st.session_state['link_down_mp'] = pref_down.get('init_point')
+                    st.session_state['ref_down_mp'] = ref_down
+                except Exception as e:
+                    st.error(f"Erro: {e}")
+            if st.session_state.get('link_down_mp'):
+                st.link_button("🔗 Ir para Pagamento do Downgrade", st.session_state['link_down_mp'])
+                if st.button("🔄 Já paguei, verificar", key="btn_verif_down"):
+                    if verificar_pagamento_mp(st.session_state['ref_down_mp']):
+                        supabase.table("usuarios").update({"plano": "basico"}).eq("id", st.session_state['usuario_id']).execute()
+                        mostrar_popup("DOWNGRADE REALIZADO.")
+                        del st.session_state['link_down_mp']
+                        st.rerun()
+                    else:
+                        mostrar_popup("Pagamento não identificado ainda.", tipo="erro")
 
         elif acao_assinatura == "Cancelar Assinatura":
             st.error("⚠️ CUIDADO: Ao confirmar o cancelamento, seu acesso ao sistema será bloqueado imediatamente. Seus dados não serão apagados, mas você não poderá mais entrar na conta.")
