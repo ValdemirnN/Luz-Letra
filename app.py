@@ -535,14 +535,14 @@ if not st.session_state['logado']:
                     if perfil_usuario == 'admin_geral':
                         limite_aparelhos = 999
                     elif plano_usuario == 'pro':
-                        limite_aparelhos = 3
-                    else:
+                        limite_aparelhos = 5
+                    else:  # basico
                         limite_aparelhos = 1
 
                     sessoes_ativas = supabase.table("sessoes_ativas").select("id").eq("usuario_id", usuario['id']).execute()
                     qtd_logados = len(sessoes_ativas.data) if sessoes_ativas.data else 0
 
-                    if qtd_logados >= limite_aparelhos:
+                    if qtd_logados > limite_aparelhos:
                         mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
                         st.session_state['bloqueio_usuario_id'] = usuario['id']
                     else:
