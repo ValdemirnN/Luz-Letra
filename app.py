@@ -529,24 +529,23 @@ if not st.session_state['logado']:
                     mostrar_popup("Senha incorreta.", tipo="erro")
                 else:
                     plano_usuario = usuario.get('plano') or 'basico'
-perfil_usuario = usuario.get('perfil') or ''
+                    perfil_usuario = usuario.get('perfil') or ''
 
-# Admin e pro sem limite
-if perfil_usuario == 'admin_geral':
-    limite_aparelhos = 999
-elif plano_usuario == 'pro':
-    limite_aparelhos = 3
-else:
-    limite_aparelhos = 1
-
-sessoes_ativas = supabase.table("sessoes_ativas").select("id").eq("usuario_id", usuario['id']).execute()
-qtd_logados = len(sessoes_ativas.data) if sessoes_ativas.data else 0
-
-if qtd_logados >= limite_aparelhos:
-    mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
-                        st.session_state['bloqueio_usuario_id'] = usuario['id']
+                    # Admin e pro sem limite
+                    if perfil_usuario == 'admin_geral':
+                        limite_aparelhos = 999
+                    elif plano_usuario == 'pro':
+                        limite_aparelhos = 3
                     else:
-                        novo_token = secrets.token_urlsafe(24)
+                        limite_aparelhos = 1
+
+                    sessoes_ativas = supabase.table("sessoes_ativas").select("id").eq("usuario_id", usuario['id']).execute()
+                    qtd_logados = len(sessoes_ativas.data) if sessoes_ativas.data else 0
+
+                    if qtd_logados >= limite_aparelhos:
+                        mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
+                        st.session_state['bloqueio_usuario_id'] = usuario['id']
+                    else:                        novo_token = secrets.token_urlsafe(24)
                         data_exp = (datetime.now() + relativedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
                         supabase.table("sessoes_ativas").insert({"usuario_id": usuario['id'], "token": novo_token, "data_expiracao": data_exp}).execute()
 
