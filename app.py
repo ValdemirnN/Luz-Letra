@@ -13,6 +13,8 @@ from email.mime.text import MIMEText
 import requests
 import secrets
 import time
+import qrcode
+import io
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -149,6 +151,45 @@ def formatar_moeda(valor):
         return "0,00"
     return f"{float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
+# ← COLE AQUI AS DUAS FUNÇÕES NOVAS
+
+def gerar_payload_pix(chave, nome_beneficiario, cidade, valor, descricao="Assinatura"):
+    def formatar_campo(id, valor):
+        return f"{id}{len(valor):02d}{valor}"
+    chave_formatada = formatar_campo("01", chave)
+    descricao_formatada = formatar_campo("02", descricao[:25])
+    merchant_account = formatar_campo("26", chave_formatada + descricao_formatada)
+    valor_str = f"{valor:.2f}"
+    payload = (
+        formatar_campo("00", "01") +
+        merchant_account +
+        formatar_campo("52", "0000") +
+        formatar_campo("53", "986") +
+        formatar_campo("54", valor_str) +
+        formatar_campo("58", "BR") +
+        formatar_campo("59", nome_beneficiario[:25]) +
+        formatar_campo("60", cidade[:15]) +
+        formatar_campo("62", formatar_campo("05", "***"))
+    )
+    payload += "6304"
+    crc = 0xFFFF
+    for char in payload.encode('utf-8'):
+        crc ^= char << 8
+        for _ in range(8):
+            crc = (crc << 1) ^ 0x1021 if crc & 0x8000 else crc << 1
+        crc &= 0xFFFF
+    payload += f"{crc:04X}"
+    return payload
+
+def gerar_qrcode_pix(payload):
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=6, border=2)
+    qr.add_data(payload)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
 # ==========================================
 # SISTEMA DE POP-UP CENTRALIZADO
 # ==========================================
@@ -643,33 +684,81 @@ if not st.session_state['logado']:
         nome_plano_bd = "basico" if "Básico" in plano_escolhido_tela else "pro"
 
         st.markdown("---")
-        metodo_escolhido = st.radio("Como quer pagar?", ["📱 Pix", "💳 Cartão de Crédito", "🤝 Pagar em mãos"])
-        
-        if metodo_escolhido.startswith("🤝"):
-            comprovante_pagamento = st.text_area("Descreva o comprovante")
-            if st.button("📤 Enviar"):
-                if not comprovante_pagamento.strip(): mostrar_popup("Descreva o comprovante.", tipo="erro")
-                else:
-                    try: supabase.table("usuarios").update({"metodo_pagamento": "manual", "comprovante_pagamento": comprovante_pagamento, "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
-                    except: supabase.table("usuarios").update({"metodo_pagamento": "manual", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
-                    mostrar_popup("Comprovante enviado! Aguarde aprovação.")
-                    del st.session_state['conta_criada_id']
-        else:
-            if st.button("Gerar Link"):
+        CHAVE_PIX = "sua-chave-pix-aqui"   # ← coloque sua chave Pix
+NOME_PIX = "Seu Nome Aqui"          # ← seu nome completo
+CIDADE_PIX = "Sua Cidade"           # ← sua cidade
+
+metodo_escolhido = st.radio("Como quer pagar?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto", "🤝 Pagar em mãos"])
+
+if metodo_escolhido == "💠 Pix (QR Code)":
+    try:
+        payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, valor_cobrado, "Luz e Letras")
+        qr_buffer = gerar_qrcode_pix(payload_pix)
+        col_qr1, col_qr2 = st.columns([1, 1])
+        with col_qr1:
+            st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
+        with col_qr2:
+            st.markdown("**Como pagar:**")
+            st.markdown("1. Abra o app do seu banco")
+            st.markdown("2. Vá em **Pix → Pagar → QR Code**")
+            st.markdown("3. Escaneie o código ao lado")
+            st.markdown(f"4. Confirme o valor **R$ {formatar_moeda(valor_cobrado)}**")
+            st.markdown("---")
+            st.markdown("**Ou copie a chave Pix:**")
+            st.code(CHAVE_PIX)
+            st.caption(f"Titular: {NOME_PIX}")
+        st.markdown("---")
+        comprovante_pix = st.text_area("Após pagar, cole aqui o comprovante ou número da transação")
+        if st.button("📤 Enviar Comprovante Pix"):
+            if not comprovante_pix.strip():
+                mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
+            else:
                 try:
-                    preferencia = criar_preferencia_pagamento_mp(st.session_state['conta_criada_id'], st.session_state['conta_criada_email'], f"Assinatura Mensal - {plano_escolhido_tela}", valor_cobrado)
-                    st.session_state['link_pagamento_mp'] = preferencia.get('init_point')
-                    supabase.table("usuarios").update({"metodo_pagamento": "pix" if "Pix" in metodo_escolhido else "cartao", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
-                except Exception as e: mostrar_popup(f"Erro ao gerar link: {e}", tipo="erro")
-            
-            if st.session_state.get('link_pagamento_mp'):
-                st.link_button("🔗 Ir para Pagamento", st.session_state['link_pagamento_mp'])
-                if st.button("🔄 Já paguei, verificar"):
-                    if verificar_pagamento_mp(st.session_state['conta_criada_id']):
-                        ativar_conta_apos_pagamento(st.session_state['conta_criada_id'], "pix")
-                        mostrar_popup("Pagamento confirmado!")
-                        del st.session_state['conta_criada_id']
-                    else: mostrar_popup("Pagamento não identificado.", tipo="erro")
+                    supabase.table("usuarios").update({
+                        "metodo_pagamento": "pix_manual",
+                        "comprovante_pagamento": comprovante_pix,
+                        "plano": nome_plano_bd
+                    }).eq("id", st.session_state['conta_criada_id']).execute()
+                except:
+                    supabase.table("usuarios").update({
+                        "metodo_pagamento": "pix_manual",
+                        "plano": nome_plano_bd
+                    }).eq("id", st.session_state['conta_criada_id']).execute()
+                mostrar_popup("Comprovante enviado! Ativaremos sua conta em breve.")
+                del st.session_state['conta_criada_id']
+    except Exception as e:
+        st.error(f"Erro ao gerar QR Code: {e}")
+
+elif metodo_escolhido == "💳 Cartão/Boleto":
+    if st.button("Gerar Link"):
+        try:
+            preferencia = criar_preferencia_pagamento_mp(st.session_state['conta_criada_id'], st.session_state['conta_criada_email'], f"Assinatura Mensal - {plano_escolhido_tela}", valor_cobrado)
+            st.session_state['link_pagamento_mp'] = preferencia.get('init_point')
+            supabase.table("usuarios").update({"metodo_pagamento": "cartao", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
+        except Exception as e:
+            mostrar_popup(f"Erro ao gerar link: {e}", tipo="erro")
+    if st.session_state.get('link_pagamento_mp'):
+        st.link_button("🔗 Ir para Pagamento", st.session_state['link_pagamento_mp'])
+        if st.button("🔄 Já paguei, verificar"):
+            if verificar_pagamento_mp(st.session_state['conta_criada_id']):
+                ativar_conta_apos_pagamento(st.session_state['conta_criada_id'], "cartao")
+                mostrar_popup("Pagamento confirmado!")
+                del st.session_state['conta_criada_id']
+            else:
+                mostrar_popup("Pagamento não identificado.", tipo="erro")
+
+elif metodo_escolhido == "🤝 Pagar em mãos":
+    comprovante_pagamento = st.text_area("Descreva o comprovante")
+    if st.button("📤 Enviar"):
+        if not comprovante_pagamento.strip():
+            mostrar_popup("Descreva o comprovante.", tipo="erro")
+        else:
+            try:
+                supabase.table("usuarios").update({"metodo_pagamento": "manual", "comprovante_pagamento": comprovante_pagamento, "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
+            except:
+                supabase.table("usuarios").update({"metodo_pagamento": "manual", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
+            mostrar_popup("Comprovante enviado! Aguarde aprovação.")
+            del st.session_state['conta_criada_id']
 # ==========================================
 # 4. ÁREA LOGADA (SISTEMA COMPLETO)
 # ==========================================
