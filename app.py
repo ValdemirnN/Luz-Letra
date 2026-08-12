@@ -14,7 +14,6 @@ import requests
 import secrets
 import time
 import qrcode
-import io
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -151,7 +150,6 @@ def formatar_moeda(valor):
         return "0,00"
     return f"{float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-# ← COLE AQUI AS DUAS FUNÇÕES NOVAS
 
 def gerar_payload_pix(chave, nome_beneficiario, cidade, valor, descricao="Assinatura"):
     def formatar_campo(id, valor):
@@ -161,15 +159,10 @@ def gerar_payload_pix(chave, nome_beneficiario, cidade, valor, descricao="Assina
     merchant_account = formatar_campo("26", chave_formatada + descricao_formatada)
     valor_str = f"{valor:.2f}"
     payload = (
-        formatar_campo("00", "01") +
-        merchant_account +
-        formatar_campo("52", "0000") +
-        formatar_campo("53", "986") +
-        formatar_campo("54", valor_str) +
-        formatar_campo("58", "BR") +
-        formatar_campo("59", nome_beneficiario[:25]) +
-        formatar_campo("60", cidade[:15]) +
-        formatar_campo("62", formatar_campo("05", "***"))
+        formatar_campo("00", "01") + merchant_account + formatar_campo("52", "0000") +
+        formatar_campo("53", "986") + formatar_campo("54", valor_str) +
+        formatar_campo("58", "BR") + formatar_campo("59", nome_beneficiario[:25]) +
+        formatar_campo("60", cidade[:15]) + formatar_campo("62", formatar_campo("05", "***"))
     )
     payload += "6304"
     crc = 0xFFFF
@@ -190,6 +183,7 @@ def gerar_qrcode_pix(payload):
     img.save(buffer, format="PNG")
     buffer.seek(0)
     return buffer
+
 # ==========================================
 # SISTEMA DE POP-UP CENTRALIZADO
 # ==========================================
@@ -332,8 +326,8 @@ def restaurar_sessao_por_token():
 
             # Puxa dados do usuário para entrar
             resultado = supabase.table("usuarios").select(
-    "id, senha_hash, perfil, empresa_id, ativo, nome, plano"
-).eq("email", email_login).execute()
+                "id, senha_hash, perfil, empresa_id, ativo, nome, plano"
+            ).eq("id", usuario_id_restaurar).execute()
             if resultado.data:
                 usuario = resultado.data[0]
                 if usuario['ativo']:
@@ -389,24 +383,10 @@ def criar_preferencia_pagamento_mp(usuario_id, email_cliente, descricao, valor):
     url = "https://api.mercadopago.com/checkout/preferences"
     headers = {"Authorization": f"Bearer {MP_ACCESS_TOKEN}", "Content-Type": "application/json"}
     payload = {
-        "items": [{
-            "title": descricao, 
-            "quantity": 1, 
-            "unit_price": float(valor), 
-            "currency_id": "BRL"
-        }], 
+        "items": [{"title": descricao, "quantity": 1, "unit_price": float(valor), "currency_id": "BRL"}], 
         "payer": {"email": email_cliente}, 
         "external_reference": str(usuario_id), 
-        "back_urls": {
-            "success": URL_BASE_SISTEMA, 
-            "failure": URL_BASE_SISTEMA, 
-            "pending": URL_BASE_SISTEMA
-        },
-        "auto_return": "approved",
-        "payment_methods": {
-            "excluded_payment_types": [],
-            "installments": 12
-        }
+        "back_urls": {"success": URL_BASE_SISTEMA, "failure": URL_BASE_SISTEMA, "pending": URL_BASE_SISTEMA}
     }
     resposta = requests.post(url, json=payload, headers=headers, timeout=15)
     resposta.raise_for_status()
@@ -585,18 +565,14 @@ if not st.session_state['logado']:
                 else:
                     plano_usuario = usuario.get('plano') or 'basico'
                     perfil_usuario = usuario.get('perfil') or ''
-
-                    # Admin e pro sem limite
                     if perfil_usuario == 'admin_geral':
                         limite_aparelhos = 999
                     elif plano_usuario == 'pro':
                         limite_aparelhos = 5
-                    else:  # basico
+                    else:
                         limite_aparelhos = 1
-
                     sessoes_ativas = supabase.table("sessoes_ativas").select("id").eq("usuario_id", usuario['id']).execute()
                     qtd_logados = len(sessoes_ativas.data) if sessoes_ativas.data else 0
-
                     if qtd_logados > limite_aparelhos:
                         mostrar_popup(f"Limite de {limite_aparelhos} aparelho(s) atingido.", tipo="erro")
                         st.session_state['bloqueio_usuario_id'] = usuario['id']
@@ -687,16 +663,13 @@ if not st.session_state['logado']:
         CHAVE_PIX = "702.221.494-85"
         NOME_PIX = "VALDEMIR NUNES NICACIO"
         CIDADE_PIX = "ASSU/RN"
-
         metodo_escolhido = st.radio("Como quer pagar?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto", "🤝 Pagar em mãos"])
-
         if metodo_escolhido == "💠 Pix (QR Code)":
             try:
                 payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, valor_cobrado, "Luz e Letras")
                 qr_buffer = gerar_qrcode_pix(payload_pix)
                 col_qr1, col_qr2 = st.columns([1, 1])
-                with col_qr1:
-                    st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
+                with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
                 with col_qr2:
                     st.markdown("**Como pagar:**")
                     st.markdown("1. Abra o app do seu banco")
@@ -710,33 +683,20 @@ if not st.session_state['logado']:
                 st.markdown("---")
                 comprovante_pix = st.text_area("Após pagar, cole aqui o comprovante ou número da transação")
                 if st.button("📤 Enviar Comprovante Pix"):
-                    if not comprovante_pix.strip():
-                        mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
+                    if not comprovante_pix.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
                     else:
-                        try:
-                            supabase.table("usuarios").update({
-                                "metodo_pagamento": "pix_manual",
-                                "comprovante_pagamento": comprovante_pix,
-                                "plano": nome_plano_bd
-                            }).eq("id", st.session_state['conta_criada_id']).execute()
-                        except:
-                            supabase.table("usuarios").update({
-                                "metodo_pagamento": "pix_manual",
-                                "plano": nome_plano_bd
-                            }).eq("id", st.session_state['conta_criada_id']).execute()
+                        try: supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comprovante_pix, "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
+                        except: supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
                         mostrar_popup("Comprovante enviado! Ativaremos sua conta em breve.")
                         del st.session_state['conta_criada_id']
-            except Exception as e:
-                st.error(f"Erro ao gerar QR Code: {e}")
-
+            except Exception as e: st.error(f"Erro ao gerar QR Code: {e}")
         elif metodo_escolhido == "💳 Cartão/Boleto":
             if st.button("Gerar Link"):
                 try:
                     preferencia = criar_preferencia_pagamento_mp(st.session_state['conta_criada_id'], st.session_state['conta_criada_email'], f"Assinatura Mensal - {plano_escolhido_tela}", valor_cobrado)
                     st.session_state['link_pagamento_mp'] = preferencia.get('init_point')
                     supabase.table("usuarios").update({"metodo_pagamento": "cartao", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
-                except Exception as e:
-                    mostrar_popup(f"Erro ao gerar link: {e}", tipo="erro")
+                except Exception as e: mostrar_popup(f"Erro ao gerar link: {e}", tipo="erro")
             if st.session_state.get('link_pagamento_mp'):
                 st.link_button("🔗 Ir para Pagamento", st.session_state['link_pagamento_mp'])
                 if st.button("🔄 Já paguei, verificar"):
@@ -744,19 +704,14 @@ if not st.session_state['logado']:
                         ativar_conta_apos_pagamento(st.session_state['conta_criada_id'], "cartao")
                         mostrar_popup("Pagamento confirmado!")
                         del st.session_state['conta_criada_id']
-                    else:
-                        mostrar_popup("Pagamento não identificado.", tipo="erro")
-
+                    else: mostrar_popup("Pagamento não identificado.", tipo="erro")
         elif metodo_escolhido == "🤝 Pagar em mãos":
             comprovante_pagamento = st.text_area("Descreva o comprovante")
             if st.button("📤 Enviar"):
-                if not comprovante_pagamento.strip():
-                    mostrar_popup("Descreva o comprovante.", tipo="erro")
+                if not comprovante_pagamento.strip(): mostrar_popup("Descreva o comprovante.", tipo="erro")
                 else:
-                    try:
-                        supabase.table("usuarios").update({"metodo_pagamento": "manual", "comprovante_pagamento": comprovante_pagamento, "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
-                    except:
-                        supabase.table("usuarios").update({"metodo_pagamento": "manual", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
+                    try: supabase.table("usuarios").update({"metodo_pagamento": "manual", "comprovante_pagamento": comprovante_pagamento, "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
+                    except: supabase.table("usuarios").update({"metodo_pagamento": "manual", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
                     mostrar_popup("Comprovante enviado! Aguarde aprovação.")
                     del st.session_state['conta_criada_id']
 # ==========================================
@@ -891,8 +846,8 @@ else:
         st.info(f"Seu plano atual é o **{plano_nome_tela}**.")
 
         acao_assinatura = st.radio("Gerenciar Assinatura:", [
-            "Manter meu plano atual", 
-            "Fazer Upgrade para PRO (R$ 89,90)", 
+            "Manter meu plano atual",
+            "Fazer Upgrade para PRO (R$ 89,90)",
             "Fazer Downgrade para Básico (R$ 79,90)",
             "Cancelar Assinatura"
         ])
@@ -903,45 +858,29 @@ else:
 
         if acao_assinatura == "Manter meu plano atual":
             st.info("Seu plano está mantido. Nenhuma alteração realizada.")
-
         elif acao_assinatura == "Fazer Upgrade para PRO (R$ 89,90)":
-            if plano_atual_usuario == 'pro':
-                st.success("Você já está no melhor plano do sistema!")
+            if plano_atual_usuario == 'pro': st.success("Você já está no melhor plano do sistema!")
             else:
                 st.warning("Ao confirmar o pagamento, as abas PRO serão liberadas automaticamente.")
-                metodo_upgrade = st.radio("Como quer pagar o upgrade?", 
-                                           ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], 
-                                           key="metodo_upgrade")
+                metodo_upgrade = st.radio("Como quer pagar o upgrade?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], key="metodo_upgrade")
                 if metodo_upgrade == "💠 Pix (QR Code)":
                     try:
                         payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, 89.90, "Upgrade PRO")
                         qr_buffer = gerar_qrcode_pix(payload_pix)
                         col_qr1, col_qr2 = st.columns([1, 1])
-                        with col_qr1:
-                            st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
+                        with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
                         with col_qr2:
-                            st.markdown("**Como pagar:**")
-                            st.markdown("1. Abra o app do seu banco")
-                            st.markdown("2. Vá em **Pix → Pagar → QR Code**")
-                            st.markdown("3. Escaneie o código ao lado")
-                            st.markdown("4. Confirme o valor **R$ 89,90**")
-                            st.markdown("---")
-                            st.markdown("**Ou copie a chave Pix:**")
+                            st.markdown("**Como pagar:**\n1. Abra o app do seu banco\n2. Vá em **Pix → Pagar → QR Code**\n3. Escaneie o código ao lado\n4. Confirme o valor **R$ 89,90**\n---\n**Ou copie a chave Pix:**")
                             st.code(CHAVE_PIX)
                             st.caption(f"Titular: {NOME_PIX}")
                         st.markdown("---")
                         comp_upgrade_pix = st.text_area("Cole aqui o comprovante do pagamento", key="comp_upgrade_pix")
                         if st.button("📤 Enviar Comprovante Pix", key="btn_comp_upgrade_pix"):
-                            if not comp_upgrade_pix.strip():
-                                mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
+                            if not comp_upgrade_pix.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
                             else:
-                                supabase.table("usuarios").update({
-                                    "metodo_pagamento": "pix_manual",
-                                    "comprovante_pagamento": comp_upgrade_pix
-                                }).eq("id", st.session_state['usuario_id']).execute()
+                                supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_upgrade_pix}).eq("id", st.session_state['usuario_id']).execute()
                                 mostrar_popup("Comprovante enviado! Ativaremos o PRO em breve.")
-                    except Exception as e:
-                        st.error(f"Erro ao gerar QR Code: {e}")
+                    except Exception as e: st.error(f"Erro ao gerar QR Code: {e}")
                 else:
                     if st.button("Gerar Link de Pagamento (R$ 89,90)", key="btn_upgrade_mp"):
                         try:
@@ -949,8 +888,7 @@ else:
                             pref_up = criar_preferencia_pagamento_mp(ref_up, dados_usuario_atual.get('email', ''), "Upgrade Plano PRO", 89.90)
                             st.session_state['link_up_mp'] = pref_up.get('init_point')
                             st.session_state['ref_up_mp'] = ref_up
-                        except Exception as e:
-                            st.error(f"Erro ao gerar link: {e}")
+                        except Exception as e: st.error(f"Erro ao gerar link: {e}")
                     if st.session_state.get('link_up_mp'):
                         st.link_button("🔗 Ir para Pagamento do Upgrade", st.session_state['link_up_mp'])
                         if st.button("🔄 Já paguei, verificar", key="btn_verif_upgrade"):
@@ -959,48 +897,30 @@ else:
                                 mostrar_popup("UPGRADE REALIZADO COM SUCESSO! 🎉")
                                 del st.session_state['link_up_mp']
                                 st.rerun()
-                            else:
-                                mostrar_popup("Pagamento não identificado ainda.", tipo="erro")
-
+                            else: mostrar_popup("Pagamento não identificado ainda.", tipo="erro")
         elif acao_assinatura == "Fazer Downgrade para Básico (R$ 79,90)":
-            if plano_atual_usuario == 'basico':
-                st.success("Seu plano já é o básico.")
+            if plano_atual_usuario == 'basico': st.success("Seu plano já é o básico.")
             else:
                 st.warning("Atenção: O downgrade bloqueará seu acesso ao Faturamento, Compras e PDF imediatamente.")
-                metodo_downgrade = st.radio("Como quer pagar o downgrade?", 
-                                             ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], 
-                                             key="metodo_downgrade")
+                metodo_downgrade = st.radio("Como quer pagar o downgrade?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], key="metodo_downgrade")
                 if metodo_downgrade == "💠 Pix (QR Code)":
                     try:
                         payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, 79.90, "Plano Basico")
                         qr_buffer = gerar_qrcode_pix(payload_pix)
                         col_qr1, col_qr2 = st.columns([1, 1])
-                        with col_qr1:
-                            st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
+                        with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
                         with col_qr2:
-                            st.markdown("**Como pagar:**")
-                            st.markdown("1. Abra o app do seu banco")
-                            st.markdown("2. Vá em **Pix → Pagar → QR Code**")
-                            st.markdown("3. Escaneie o código ao lado")
-                            st.markdown("4. Confirme o valor **R$ 79,90**")
-                            st.markdown("---")
-                            st.markdown("**Ou copie a chave Pix:**")
+                            st.markdown("**Como pagar:**\n1. Abra o app do seu banco\n2. Vá em **Pix → Pagar → QR Code**\n3. Escaneie o código ao lado\n4. Confirme o valor **R$ 79,90**\n---\n**Ou copie a chave Pix:**")
                             st.code(CHAVE_PIX)
                             st.caption(f"Titular: {NOME_PIX}")
                         st.markdown("---")
                         comp_down_pix = st.text_area("Cole aqui o comprovante do pagamento", key="comp_down_pix")
                         if st.button("📤 Enviar Comprovante Pix", key="btn_comp_down_pix"):
-                            if not comp_down_pix.strip():
-                                mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
+                            if not comp_down_pix.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
                             else:
-                                supabase.table("usuarios").update({
-                                    "metodo_pagamento": "pix_manual",
-                                    "comprovante_pagamento": comp_down_pix,
-                                    "plano": "basico"
-                                }).eq("id", st.session_state['usuario_id']).execute()
+                                supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_down_pix, "plano": "basico"}).eq("id", st.session_state['usuario_id']).execute()
                                 mostrar_popup("Comprovante enviado! Faremos o downgrade em breve.")
-                    except Exception as e:
-                        st.error(f"Erro ao gerar QR Code: {e}")
+                    except Exception as e: st.error(f"Erro ao gerar QR Code: {e}")
                 else:
                     if st.button("Gerar Link de Pagamento (R$ 79,90)", key="btn_down_mp"):
                         try:
@@ -1008,8 +928,7 @@ else:
                             pref_down = criar_preferencia_pagamento_mp(ref_down, dados_usuario_atual.get('email', ''), "Downgrade Plano Básico", 79.90)
                             st.session_state['link_down_mp'] = pref_down.get('init_point')
                             st.session_state['ref_down_mp'] = ref_down
-                        except Exception as e:
-                            st.error(f"Erro: {e}")
+                        except Exception as e: st.error(f"Erro: {e}")
                     if st.session_state.get('link_down_mp'):
                         st.link_button("🔗 Ir para Pagamento do Downgrade", st.session_state['link_down_mp'])
                         if st.button("🔄 Já paguei, verificar", key="btn_verif_down"):
@@ -1018,16 +937,15 @@ else:
                                 mostrar_popup("DOWNGRADE REALIZADO.")
                                 del st.session_state['link_down_mp']
                                 st.rerun()
-                            else:
-                                mostrar_popup("Pagamento não identificado ainda.", tipo="erro")
-
+                            else: mostrar_popup("Pagamento não identificado ainda.", tipo="erro")
         elif acao_assinatura == "Cancelar Assinatura":
             st.error("⚠️ CUIDADO: Ao confirmar o cancelamento, seu acesso será bloqueado imediatamente.")
             if st.button("🚨 Confirmar Cancelamento da Conta"):
                 supabase.table("usuarios").update({"ativo": False}).eq("id", st.session_state['usuario_id']).execute()
                 mostrar_popup("Conta cancelada. Desconectando do sistema...")
                 fazer_logout()
-                st.rerun()        
+                st.rerun()
+        
         st.subheader("📅 Google Agenda")
         if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
             st.warning("⚠️ Integração com Google Agenda ainda não configurada pelo administrador do sistema (faltam GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET nos secrets).")
@@ -1513,7 +1431,7 @@ else:
                 comprovante_u = u.get('comprovante_pagamento')
                 nome_u = u.get('nome') or u['email']
                 icone_email = "✅" if email_confirmado_u else "❌"
-                aguardando_manual = (metodo_pag_u == "manual") and (not u['ativo'])
+                aguardando_manual = (metodo_pag_u in ["manual", "pix_manual"]) and (not u['ativo'])
 
                 titulo_expander = f"🏢 {nome_fantasia} - {nome_u} ({u['email']}) | Validade: {venc} | E-mail: {icone_email}"
                 if aguardando_manual: titulo_expander = "🔔 " + titulo_expander + " | ⏳ Aguardando confirmação manual"
@@ -1747,7 +1665,7 @@ else:
             # CRIANDO ABAS PARA NÃO POLUIR A TELA
             tab_qtd, tab_lucro = st.tabs(["Por Quantidade", "Por Rentabilidade (R$)"])
             
-            try: itens_dash = supabase.table("itens_evento").select("evento_id, produto_id, quantidade").eq("empresa_id", emp_id).execute()
+            try: itens_dash = supabase.table("itens_evento").select("evento_id, produto_id, quantidade, valor_cobrado").eq("empresa_id", emp_id).execute()
             except: itens_dash = type('obj', (object,), {'data': []})
 
             if itens_dash.data and prods_ref_data:
@@ -1780,26 +1698,17 @@ else:
                 
                 # --- ABA 2: GRÁFICO POR RENTABILIDADE (O que dá mais dinheiro) ---
                 with tab_lucro:
-                    mapa_valor_evento = {e['id']: float(e.get('valor_total') or 0) for e in (eventos_dash.data or [])}
-                    
-                    # 1. Conta quantos itens totais tem em cada evento para saber o "peso"
-                    itens_por_evento = {}
-                    for item in itens_dash.data:
-                        eid = item['evento_id']
-                        itens_por_evento[eid] = itens_por_evento.get(eid, 0) + item['quantidade']
-
-                    # 2. Divide a receita proporcionalmente para os produtos do evento
+                    # ==========================================================================
+                    # ✅ CORREÇÃO (rentabilidade real): antes o valor de cada produto era um
+                    # rateio do valor total do evento pela QUANTIDADE de peças, o que distorcia
+                    # o ranking (peças baratas em grande quantidade dominavam o gráfico).
+                    # Agora usamos o valor_cobrado, salvo por item/evento (aba "💲 Valores"),
+                    # que reflete o preço real cobrado por aquele item naquele evento.
+                    # ==========================================================================
                     receita_por_produto = {}
                     for item in itens_dash.data:
-                        eid = item['evento_id']
                         pid = item['produto_id']
-                        qtd = item['quantidade']
-                        
-                        valor_evento = mapa_valor_evento.get(eid, 0)
-                        total_itens_ev = itens_por_evento.get(eid, 1) # evita divisão por zero
-                        
-                        peso_receita = (qtd / total_itens_ev) * valor_evento
-                        receita_por_produto[pid] = receita_por_produto.get(pid, 0) + peso_receita
+                        receita_por_produto[pid] = receita_por_produto.get(pid, 0) + float(item.get('valor_cobrado') or 0)
 
                     if receita_por_produto:
                         df_lucro = pd.DataFrame([{"Produto": mapa_nomes.get(pid, f"Prod {pid}"), "Receita": valor} for pid, valor in receita_por_produto.items() if valor > 0])
@@ -1856,8 +1765,9 @@ else:
     elif menu == "📅 Agendamento":
         st.title("📅 Gestão de Agendamentos")
         
-        produtos_disp = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao").eq("empresa_id", emp_id).execute()
+        produtos_disp = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao, valor_locacao").eq("empresa_id", emp_id).execute()
         dict_produtos = {p['id']: p for p in produtos_disp.data} if produtos_disp.data else {}
+        mapa_valor_ref = {p['id']: float(p.get('valor_locacao') or 0) for p in produtos_disp.data} if produtos_disp.data else {}
 
         # 1. PUXANDO DADOS E CLIENTES
         eventos_cadastrados = supabase.table("eventos").select("*").eq("empresa_id", emp_id).order("data_inicio", desc=False).execute()
@@ -1962,8 +1872,8 @@ else:
                 hora_fim_fmt = ev.get('hora_fim')[:5] if ev.get('hora_fim') else "23:59"
 
                 with st.expander(f"🎉 {titulo_ev} — {nome_cliente_ev} | {data_ini_br} ({hora_ini_fmt}) até {data_fim_br} ({hora_fim_fmt}) | Status: {status_ev}"):
-                    itens_ev = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao").eq("evento_id", ev['id']).execute()
-                    tab_detalhes, tab_add, tab_rem, tab_editar, tab_hist = st.tabs(["📋 Detalhes & Recibo", "➕ Adicionar Itens", "➖ Remover Itens", "✏️ Editar Evento", "🕒 Histórico"])
+                    itens_ev = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao, valor_cobrado").eq("evento_id", ev['id']).execute()
+                    tab_detalhes, tab_add, tab_rem, tab_valores, tab_editar, tab_hist = st.tabs(["📋 Detalhes & Recibo", "➕ Adicionar Itens", "➖ Remover Itens", "💲 Valores", "✏️ Editar Evento", "🕒 Histórico"])
 
                     with tab_detalhes:
                         col_a, col_b = st.columns(2)
@@ -2092,7 +2002,8 @@ else:
                                 mostrar_popup("Conecte sua Google Agenda em 'Perfil' primeiro.", tipo="erro")
                     
                     with tab_add:
-                        produtos_disp_edit = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao").eq("empresa_id", emp_id).execute()
+                        produtos_disp_edit = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao, valor_locacao").eq("empresa_id", emp_id).execute()
+                        mapa_valor_ref_add = {p['id']: float(p.get('valor_locacao') or 0) for p in produtos_disp_edit.data} if produtos_disp_edit.data else {}
                         adicoes_selecionadas = {}
                         ev_data_inicio_add = datetime.strptime(ev['data_inicio'].split("T")[0], "%Y-%m-%d").date() if ev.get('data_inicio') else datetime.now().date()
                         ev_data_fim_add = datetime.strptime(ev['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date() if ev.get('data_fim_alocacao') else ev_data_inicio_add
@@ -2137,12 +2048,14 @@ else:
                                     resumo_itens = []
                                     for p_id, info in agrupado.items():
                                         qtd_total = info['total']
+                                        valor_sugerido_add = qtd_total * mapa_valor_ref_add.get(p_id, 0)
                                         obs_json_add = json.dumps(info['detalhes']) if info['detalhes'] else ""
-                                        item_existente = supabase.table("itens_evento").select("id, quantidade, observacao").eq("evento_id", ev['id']).eq("produto_id", p_id).execute()
+                                        item_existente = supabase.table("itens_evento").select("id, quantidade, observacao, valor_cobrado").eq("evento_id", ev['id']).eq("produto_id", p_id).execute()
 
                                         if item_existente.data:
                                             item_atual = item_existente.data[0]
                                             nova_qtd_item = item_atual['quantidade'] + qtd_total
+                                            novo_valor_item = float(item_atual.get('valor_cobrado') or 0) + valor_sugerido_add
                                             obs_atual_item = safe_json_load(item_atual.get('observacao'))
                                             if obs_atual_item and info['detalhes']:
                                                 for k, v in info['detalhes'].items():
@@ -2152,9 +2065,9 @@ else:
                                                 nova_obs_item = obs_json_add
                                             else:
                                                 nova_obs_item = item_atual.get('observacao', '')
-                                            supabase.table("itens_evento").update({"quantidade": nova_qtd_item, "observacao": nova_obs_item}).eq("id", item_atual['id']).execute()
+                                            supabase.table("itens_evento").update({"quantidade": nova_qtd_item, "observacao": nova_obs_item, "valor_cobrado": novo_valor_item}).eq("id", item_atual['id']).execute()
                                         else:
-                                            supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": ev['id'], "produto_id": p_id, "quantidade": qtd_total, "observacao": obs_json_add}).execute()
+                                            supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": ev['id'], "produto_id": p_id, "quantidade": qtd_total, "observacao": obs_json_add, "valor_cobrado": valor_sugerido_add}).execute()
                                         resumo_itens.append(f"{qtd_total}x Produto {p_id}")
 
                                     texto_hist_alt = f"✏️ ALTERAÇÃO: Adicionou {', '.join(resumo_itens)}. Motivo: {motivo_alteracao}"
@@ -2203,7 +2116,11 @@ else:
                                     for item_id, info_rem in agrupado_rem.items():
                                         item_atual_rem = dict_itens_ev[item_id]
                                         qtd_remover = info_rem['total']
-                                        nova_qtd_item_rem = item_atual_rem['quantidade'] - qtd_remover
+                                        qtd_antiga_rem = item_atual_rem['quantidade']
+                                        valor_antigo_rem = float(item_atual_rem.get('valor_cobrado') or 0)
+                                        valor_unit_medio_rem = (valor_antigo_rem / qtd_antiga_rem) if qtd_antiga_rem > 0 else 0
+                                        nova_qtd_item_rem = qtd_antiga_rem - qtd_remover
+                                        novo_valor_item_rem = max(0, valor_antigo_rem - (valor_unit_medio_rem * qtd_remover))
                                         obs_item_atual = safe_json_load(item_atual_rem.get('observacao'))
                                         if obs_item_atual and info_rem['detalhes']:
                                             for k, v in info_rem['detalhes'].items(): obs_item_atual[k] = max(0, obs_item_atual.get(k, 0) - v)
@@ -2211,7 +2128,7 @@ else:
                                         else: nova_obs_item_rem = item_atual_rem.get('observacao', '')
 
                                         if nova_qtd_item_rem <= 0: supabase.table("itens_evento").delete().eq("id", item_id).execute()
-                                        else: supabase.table("itens_evento").update({"quantidade": nova_qtd_item_rem, "observacao": nova_obs_item_rem}).eq("id", item_id).execute()
+                                        else: supabase.table("itens_evento").update({"quantidade": nova_qtd_item_rem, "observacao": nova_obs_item_rem, "valor_cobrado": novo_valor_item_rem}).eq("id", item_id).execute()
                                         resumo_remocao.append(f"{qtd_remover}x Removidos")
 
                                     texto_hist_rem = f"🔻 REMOÇÃO: Retirou {', '.join(resumo_remocao)}. Motivo: {motivo_remocao}"
@@ -2219,6 +2136,27 @@ else:
                                     mostrar_popup("REMOÇÃO CONCLUÍDA COM SUCESSO!")
                                     st.rerun()
                         else: st.caption("Nenhum item alocado.")
+
+                    with tab_valores:
+                        st.caption("Ajuste o valor final cobrado por item neste evento (pode dar desconto em relação ao valor de referência do produto).")
+                        if itens_ev.data:
+                            for it in itens_ev.data:
+                                nome_prod_v = dict_produtos.get(it['produto_id'], {}).get('nome', f"Produto #{it['produto_id']}")
+                                valor_ref_item = it['quantidade'] * mapa_valor_ref.get(it['produto_id'], 0)
+                                valor_atual_v = float(it.get('valor_cobrado') or 0)
+                                col_v1, col_v2 = st.columns([2, 1])
+                                with col_v1:
+                                    st.write(f"**{nome_prod_v}** — {it['quantidade']}x")
+                                    st.caption(f"Valor de referência: R$ {formatar_moeda(valor_ref_item)}")
+                                with col_v2:
+                                    novo_valor_item_v = st.number_input("Valor cobrado (R$)", min_value=0.0, value=valor_atual_v, format="%.2f", key=f"val_item_{it['id']}")
+                                    if st.button("💾 Salvar", key=f"btn_val_item_{it['id']}"):
+                                        supabase.table("itens_evento").update({"valor_cobrado": novo_valor_item_v}).eq("id", it['id']).execute()
+                                        mostrar_popup("VALOR ATUALIZADO COM SUCESSO!")
+                                        st.rerun()
+                                st.markdown("---")
+                        else:
+                            st.caption("Nenhum item alocado.")
 
                     with tab_editar:
                         def _parse_data_edit(data_iso):
@@ -2429,7 +2367,8 @@ else:
                                 data_hora = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
                                 for p_id, info in alocacoes_agrupadas.items():
                                     obs_json_evento = json.dumps(info['detalhes']) if info['detalhes'] else ""
-                                    supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "produto_id": p_id, "quantidade": info['total'], "observacao": obs_json_evento}).execute()
+                                    valor_sugerido = info['total'] * mapa_valor_ref.get(p_id, 0)
+                                    supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "produto_id": p_id, "quantidade": info['total'], "observacao": obs_json_evento, "valor_cobrado": valor_sugerido}).execute()
                                     supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": evento_id_gerado, "descricao": f"🟢 ALOCAÇÃO INICIAL: Adicionou {info['total']}x Produto {p_id}.", "data_registro": data_hora}).execute()
 
                                 mostrar_popup("CADASTRO DE EVENTO CONCLUÍDO COM SUCESSO!")
@@ -2439,7 +2378,7 @@ else:
 
     elif menu == "📦 Estoque":
         st.title("Controle de Estoque Inteligente")
-        produtos_lista = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao").eq("empresa_id", emp_id).order("nome").execute()
+        produtos_lista = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao, valor_locacao").eq("empresa_id", emp_id).order("nome").execute()
         
         with st.expander("🔍 Verificar Disponibilidade Rotativa", expanded=True):
             col_d1, col_d2 = st.columns(2)
@@ -2535,14 +2474,18 @@ else:
                 if tipo_cadastro == "Produto Normal":
                     nome_prod = st.text_input("Nome do Item (Ex: CADEIRA DE FERRO)")
                     qtd_prod = st.number_input("Quantidade Total Físico", min_value=0, value=None)
+                    valor_locacao_prod = st.number_input("Valor de Locação por Unidade (R$)", min_value=0.0, value=None, format="%.2f",
+                        help="Preço de referência cobrado por peça. Usado para sugerir o valor no orçamento e calcular a rentabilidade.")
                     obs_prod = st.text_input("Observação Simples (Opcional)")
                     if st.form_submit_button("Salvar Produto Normal"):
                         if nome_prod.strip():
-                            supabase.table("produtos").insert({"empresa_id": emp_id, "nome": nome_prod.upper(), "quantidade_estoque": (qtd_prod or 0), "observacao": obs_prod}).execute()
+                            supabase.table("produtos").insert({"empresa_id": emp_id, "nome": nome_prod.upper(), "quantidade_estoque": (qtd_prod or 0), "valor_locacao": (valor_locacao_prod or 0), "observacao": obs_prod}).execute()
                             mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
                             st.rerun()    
                 elif tipo_cadastro == "🔠 Kit Letras (A-Z)":
                     nome_prod = st.text_input("Nome do Kit", value="LETRAS ILUMINADAS")
+                    valor_locacao_letras = st.number_input("Valor de Locação por Peça (R$)", min_value=0.0, value=None, format="%.2f",
+                        help="Preço de referência por letra. Usado para sugerir o valor no orçamento e calcular a rentabilidade.")
                     # Lista com emojis padronizados para cada letra
                     letras = [f"🔠 {l}" for l in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
                     cols_l = st.columns(6)
@@ -2557,12 +2500,14 @@ else:
                             mostrar_popup("Coloque pelo menos 1 letra!", tipo="erro")
                         else:
                             obs_json = json.dumps({k: (v or 0) for k, v in qtd_letras.items() if (v or 0) > 0})
-                            supabase.table("produtos").insert({"empresa_id": emp_id, "nome": nome_prod.upper(), "quantidade_estoque": total_letras, "observacao": obs_json}).execute()
+                            supabase.table("produtos").insert({"empresa_id": emp_id, "nome": nome_prod.upper(), "quantidade_estoque": total_letras, "valor_locacao": (valor_locacao_letras or 0), "observacao": obs_json}).execute()
                             mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
                             st.rerun()
 
                 elif tipo_cadastro == "🔢 Kit Números (0 a 9)":
                     nome_prod = st.text_input("Nome do Kit", value="NÚMEROS ILUMINADOS")
+                    valor_locacao_numeros = st.number_input("Valor de Locação por Peça (R$)", min_value=0.0, value=None, format="%.2f",
+                        help="Preço de referência por número. Usado para sugerir o valor no orçamento e calcular a rentabilidade.")
                     # Emojis nativos em formato de bloco para números de 0 a 9
                     numeros = ["0️⃣", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"]
                     cols_n = st.columns(10)
@@ -2577,9 +2522,23 @@ else:
                             mostrar_popup("Coloque pelo menos 1 número!", tipo="erro")
                         else:
                             obs_json = json.dumps({k: (v or 0) for k, v in qtd_numeros.items() if (v or 0) > 0})
-                            supabase.table("produtos").insert({"empresa_id": emp_id, "nome": nome_prod.upper(), "quantidade_estoque": total_numeros, "observacao": obs_json}).execute()
+                            supabase.table("produtos").insert({"empresa_id": emp_id, "nome": nome_prod.upper(), "quantidade_estoque": total_numeros, "valor_locacao": (valor_locacao_numeros or 0), "observacao": obs_json}).execute()
                             mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
                             st.rerun()
+
+        with st.expander("💲 Editar Valor de Locação de um Produto", expanded=False):
+            if produtos_lista.data:
+                opcoes_val = {p['nome']: p for p in produtos_lista.data}
+                prod_val_nome = st.selectbox("Produto", list(opcoes_val.keys()), key="sel_editar_valor")
+                prod_val = opcoes_val[prod_val_nome]
+                novo_valor_ref = st.number_input("Valor de Locação por Unidade (R$)", min_value=0.0,
+                    value=float(prod_val.get('valor_locacao') or 0), format="%.2f", key="input_editar_valor")
+                if st.button("💾 Salvar Valor de Referência", key="btn_editar_valor_ref"):
+                    supabase.table("produtos").update({"valor_locacao": novo_valor_ref}).eq("id", prod_val['id']).execute()
+                    mostrar_popup("VALOR ATUALIZADO COM SUCESSO!")
+                    st.rerun()
+            else:
+                st.info("Nenhum produto cadastrado ainda.")
 
         with st.expander("🗑️ Excluir ou Reduzir Produto do Estoque", expanded=False):
             if produtos_lista.data:
