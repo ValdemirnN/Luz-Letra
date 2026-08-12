@@ -2538,7 +2538,7 @@ else:
                             mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
                             st.rerun()
 
-        with st.expander("💲 Editar Valor de Locação de um Produto", expanded=False):
+       with st.expander("💲 Editar Valor de Locação de um Produto", expanded=False):
     if produtos_lista.data:
         opcoes_val = {p['nome']: p for p in produtos_lista.data}
         prod_val_nome = st.selectbox("Produto", list(opcoes_val.keys()), key="sel_editar_valor")
@@ -2546,7 +2546,6 @@ else:
         
         valor_atual_salvo = float(prod_val.get('valor_locacao') or 0)
         
-        # Mostra o valor atual salvo como referência
         if valor_atual_salvo > 0:
             st.caption(f"💾 Valor atual salvo: **R$ {formatar_moeda(valor_atual_salvo)}**")
         else:
@@ -2555,7 +2554,7 @@ else:
         novo_valor_ref = st.number_input(
             "Novo Valor de Locação por Unidade (R$)",
             min_value=0.0,
-            value=None,           # campo começa vazio — sem precisar apagar
+            value=None,
             placeholder="Ex: 15,00",
             format="%.2f",
             key="input_editar_valor"
