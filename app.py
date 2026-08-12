@@ -2538,7 +2538,7 @@ else:
                             mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
                             st.rerun()
 
-           with st.expander("💲 Editar Valor de Locação de um Produto", expanded=False):
+           with st.expander("💲 Editar Valor de Locação de um Produto", expanded=False)
                 if produtos_lista.data:
                     opcoes_val = {p['nome']: p for p in produtos_lista.data}
                     prod_val_nome = st.selectbox("Produto", list(opcoes_val.keys()), key="sel_editar_valor")
