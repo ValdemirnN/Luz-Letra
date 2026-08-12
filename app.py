@@ -2539,35 +2539,35 @@ else:
                             st.rerun()
 
        with st.expander("💲 Editar Valor de Locação de um Produto", expanded=False):
-        if produtos_lista.data:
-            opcoes_val = {p['nome']: p for p in produtos_lista.data}
-            prod_val_nome = st.selectbox("Produto", list(opcoes_val.keys()), key="sel_editar_valor")
-            prod_val = opcoes_val[prod_val_nome]
-            
-            valor_atual_salvo = float(prod_val.get('valor_locacao') or 0)
-            
-            if valor_atual_salvo > 0:
-                st.caption(f"💾 Valor atual salvo: **R$ {formatar_moeda(valor_atual_salvo)}**")
-            else:
-                st.caption("Nenhum valor cadastrado ainda.")
-            
-            novo_valor_ref = st.number_input(
-                "Novo Valor de Locação por Unidade (R$)",
-                min_value=0.0,
-                value=None,
-                placeholder="Ex: 15,00",
-                format="%.2f",
-                key="input_editar_valor"
-            )
-            if st.button("💾 Salvar Valor de Referência", key="btn_editar_valor_ref"):
-                if novo_valor_ref is None:
-                    mostrar_popup("Digite um valor antes de salvar.", tipo="erro")
+            if produtos_lista.data:
+                opcoes_val = {p['nome']: p for p in produtos_lista.data}
+                prod_val_nome = st.selectbox("Produto", list(opcoes_val.keys()), key="sel_editar_valor")
+                prod_val = opcoes_val[prod_val_nome]
+
+                valor_atual_salvo = float(prod_val.get('valor_locacao') or 0)
+
+                if valor_atual_salvo > 0:
+                    st.caption(f"💾 Valor atual salvo: **R$ {formatar_moeda(valor_atual_salvo)}**")
                 else:
-                    supabase.table("produtos").update({"valor_locacao": novo_valor_ref}).eq("id", prod_val['id']).execute()
-                    mostrar_popup("VALOR ATUALIZADO COM SUCESSO!")
-                    st.rerun()
-        else:
-            st.info("Nenhum produto cadastrado ainda.")
+                    st.caption("Nenhum valor cadastrado ainda.")
+
+                novo_valor_ref = st.number_input(
+                    "Novo Valor de Locação por Unidade (R$)",
+                    min_value=0.0,
+                    value=None,
+                    placeholder="Ex: 15,00",
+                    format="%.2f",
+                    key="input_editar_valor"
+                )
+                if st.button("💾 Salvar Valor de Referência", key="btn_editar_valor_ref"):
+                    if novo_valor_ref is None:
+                        mostrar_popup("Digite um valor antes de salvar.", tipo="erro")
+                    else:
+                        supabase.table("produtos").update({"valor_locacao": novo_valor_ref}).eq("id", prod_val['id']).execute()
+                        mostrar_popup("VALOR ATUALIZADO COM SUCESSO!")
+                        st.rerun()
+            else:
+                st.info("Nenhum produto cadastrado ainda.")
 
         with st.expander("🗑️ Excluir ou Reduzir Produto do Estoque", expanded=False):
             if produtos_lista.data:
