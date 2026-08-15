@@ -2021,39 +2021,140 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                     data_ini_h = _fmt_h(ev_h.get('data_inicio') or '')
                     data_fim_h = _fmt_h(ev_h.get('data_fim_alocacao') or '')
                     valor_h = float(ev_h.get('valor_total') or 0)
-                    icone_h = "✅" if status_h == "Concluído" else "❌"
+                    icone_h = "✅" if status_h == "Concluído" else ("❌" if status_h == "Cancelado" else "🟡")
                     with st.expander(f"{icone_h} {titulo_h} — {nome_cli_h} | {data_ini_h} → {data_fim_h} | R$ {formatar_moeda(valor_h)} | {status_h}"):
-                        col_h1, col_h2 = st.columns(2)
-                        with col_h1:
-                            st.write(f"**Cliente:** {nome_cli_h}")
-                            st.write(f"**Contato:** {cliente_h.get('contato','-')}")
-                            st.write(f"**Período:** {data_ini_h} até {data_fim_h}")
-                            st.write(f"**Valor:** R$ {formatar_moeda(valor_h)}")
-                            st.write(f"**Local/Obs:** {ev_h.get('observacao') or '-'}")
-                        with col_h2:
-                            st.write(f"**Status:** {status_h}")
-                            pag_h = "✅ Confirmado" if ev_h.get('pagamento_confirmado') else "⏳ Pendente"
-                            st.write(f"**Pagamento:** {pag_h}")
-                            if ev_h.get('metodo_confirmacao_pagamento'): st.write(f"**Método:** {ev_h['metodo_confirmacao_pagamento']}")
-                            if ev_h.get('data_confirmacao_pagamento'): st.write(f"**Confirmado em:** {ev_h['data_confirmacao_pagamento']}")
-                        itens_h = supabase.table("itens_evento").select("produto_id, quantidade, observacao").eq("evento_id", ev_h['id']).execute()
-                        if itens_h.data:
-                            st.markdown("**Itens alocados:**")
-                            for it_h in itens_h.data:
-                                nome_p_h = dict_produtos.get(it_h['produto_id'],{}).get('nome',f"Produto #{it_h['produto_id']}")
-                                det_h = ""
-                                js_h = safe_json_load(it_h.get('observacao'))
-                                if js_h: det_h = " — " + ", ".join([f"{k}: {v}x" for k,v in js_h.items()])
-                                st.write(f"  • {it_h['quantidade']}x {nome_p_h}{det_h}")
-                        hist_alt = supabase.table("historico_eventos").select("descricao, data_registro").eq("evento_id", ev_h['id']).order("data_registro", desc=True).execute()
-                        if hist_alt.data:
-                            with st.expander("🕒 Log de Alterações"):
+                        itens_h = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao, valor_cobrado").eq("evento_id", ev_h['id']).execute()
+                        contato_h = cliente_h.get('contato') or '-'
+
+                        tab_det_h, tab_status_h, tab_pag_h, tab_edit_h, tab_log_h = st.tabs([
+                            "📋 Detalhes", "🔄 Alterar Status", "💳 Pagamento", "✏️ Editar Dados", "🕒 Log"
+                        ])
+
+                        # --- ABA DETALHES ---
+                        with tab_det_h:
+                            col_h1, col_h2 = st.columns(2)
+                            with col_h1:
+                                st.write(f"**Cliente:** {nome_cli_h}")
+                                st.write(f"**Contato:** {contato_h}")
+                                st.write(f"**Período:** {data_ini_h} até {data_fim_h}")
+                                st.write(f"**Valor:** R$ {formatar_moeda(valor_h)}")
+                                st.write(f"**Local/Obs:** {ev_h.get('observacao') or '-'}")
+                            with col_h2:
+                                st.write(f"**Status:** {status_h}")
+                                pag_h = "✅ Confirmado" if ev_h.get('pagamento_confirmado') else "⏳ Pendente"
+                                st.write(f"**Pagamento:** {pag_h}")
+                                if ev_h.get('metodo_confirmacao_pagamento'): st.write(f"**Método:** {ev_h['metodo_confirmacao_pagamento']}")
+                                if ev_h.get('data_confirmacao_pagamento'): st.write(f"**Confirmado em:** {ev_h['data_confirmacao_pagamento']}")
+                            if itens_h.data:
+                                st.markdown("**Itens alocados:**")
+                                for it_h in itens_h.data:
+                                    nome_p_h = dict_produtos.get(it_h['produto_id'],{}).get('nome',f"Produto #{it_h['produto_id']}")
+                                    det_h = ""
+                                    js_h = safe_json_load(it_h.get('observacao'))
+                                    if js_h: det_h = " — " + ", ".join([f"{k}: {v}x" for k,v in js_h.items()])
+                                    st.write(f"  • {it_h['quantidade']}x {nome_p_h}{det_h}")
+                            if REPORTLAB_DISPONIVEL:
+                                nome_usuario_pdf_h = st.session_state.get('nome_usuario') or 'Usuário'
+                                buffer_pdf_h = gerar_recibo_evento_pdf(ev_h, itens_h.data or [], dict_produtos, nome_cli_h, contato_h, nome_usuario_pdf_h)
+                                st.download_button("📄 Baixar Recibo (PDF)", data=buffer_pdf_h, file_name=f"recibo_historico_{ev_h['id']}.pdf", mime="application/pdf", key=f"pdf_hist_{ev_h['id']}")
+
+                        # --- ABA ALTERAR STATUS ---
+                        with tab_status_h:
+                            st.caption("Corrija o status deste evento caso tenha ficado em aberto por engano.")
+                            opcoes_status_h = ["Agendado","Em Andamento","Concluído","Cancelado"]
+                            idx_status_h = opcoes_status_h.index(status_h) if status_h in opcoes_status_h else 0
+                            novo_status_h = st.selectbox("Novo Status", opcoes_status_h, index=idx_status_h, key=f"hist_status_sel_{ev_h['id']}")
+                            just_status_h = st.text_input("Justificativa (obrigatório)", key=f"hist_just_status_{ev_h['id']}")
+                            if st.button("✅ Salvar Status", key=f"hist_btn_status_{ev_h['id']}"):
+                                if not just_status_h.strip():
+                                    mostrar_popup("Informe a justificativa.", tipo="erro")
+                                else:
+                                    supabase.table("eventos").update({"status": novo_status_h}).eq("id", ev_h['id']).execute()
+                                    supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev_h['id'], "descricao": f"🔄 STATUS ALTERADO para '{novo_status_h}' via Histórico. Motivo: {just_status_h}", "data_registro": datetime.now().strftime("%d/%m/%Y às %H:%M:%S")}).execute()
+                                    mostrar_popup("STATUS ATUALIZADO COM SUCESSO!")
+                                    st.rerun()
+
+                        # --- ABA PAGAMENTO ---
+                        with tab_pag_h:
+                            if ev_h.get('pagamento_confirmado'):
+                                st.success(f"✅ Pagamento confirmado via **{ev_h.get('metodo_confirmacao_pagamento','-')}** em {ev_h.get('data_confirmacao_pagamento','-')}")
+                                if ev_h.get('comprovante_pagamento_url'):
+                                    url_comp_h = gerar_url_assinada_documento(ev_h['comprovante_pagamento_url'])
+                                    if url_comp_h: st.link_button("📎 Ver Comprovante", url_comp_h)
+                                if st.button("🗑️ Remover confirmação de pagamento", key=f"hist_del_pag_{ev_h['id']}"):
+                                    remover_documento_evento(ev_h.get('comprovante_pagamento_url'))
+                                    supabase.table("eventos").update({"pagamento_confirmado": False, "metodo_confirmacao_pagamento": None, "comprovante_pagamento_url": None, "data_confirmacao_pagamento": None}).eq("id", ev_h['id']).execute()
+                                    mostrar_popup("CONFIRMAÇÃO REMOVIDA!")
+                                    st.rerun()
+                            else:
+                                st.warning("⏳ Pagamento ainda não confirmado.")
+                                metodo_pag_h = st.radio("Como confirmar?", ["📎 Anexar comprovante","✅ Confirmar sem comprovante"], key=f"hist_metodo_pag_{ev_h['id']}")
+                                if metodo_pag_h.startswith("📎"):
+                                    arq_comp_h = st.file_uploader("Envie o comprovante", type=["png","jpg","jpeg","pdf"], key=f"hist_upload_comp_{ev_h['id']}")
+                                    if st.button("💾 Confirmar com Comprovante", key=f"hist_btn_comp_{ev_h['id']}"):
+                                        if not arq_comp_h: mostrar_popup("Selecione o arquivo.", tipo="erro")
+                                        else:
+                                            try:
+                                                cam_h = upload_documento_evento(ev_h['id'], arq_comp_h, "comprovante")
+                                                supabase.table("eventos").update({"pagamento_confirmado": True, "metodo_confirmacao_pagamento": "Comprovante anexado", "comprovante_pagamento_url": cam_h, "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")}).eq("id", ev_h['id']).execute()
+                                                mostrar_popup("PAGAMENTO CONFIRMADO!")
+                                                st.rerun()
+                                            except Exception as e: mostrar_popup(f"Erro: {e}", tipo="erro")
+                                else:
+                                    if st.button("✅ Confirmar Pagamento", key=f"hist_btn_pag_sem_{ev_h['id']}"):
+                                        supabase.table("eventos").update({"pagamento_confirmado": True, "metodo_confirmacao_pagamento": "Confirmado manualmente", "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")}).eq("id", ev_h['id']).execute()
+                                        mostrar_popup("PAGAMENTO CONFIRMADO!")
+                                        st.rerun()
+
+                        # --- ABA EDITAR DADOS ---
+                        with tab_edit_h:
+                            st.caption("Corrija datas, valor, local ou dados do cliente.")
+                            def _pd(d):
+                                if not d: return datetime.now().date()
+                                try: return datetime.strptime(d.split("T")[0], "%Y-%m-%d").date()
+                                except: return datetime.now().date()
+                            def _pt(t):
+                                if not t: return datetime.min.time()
+                                try: return datetime.strptime(t[:5], "%H:%M").time()
+                                except: return datetime.min.time()
+                            col_he1, col_he2, col_he3, col_he4 = st.columns(4)
+                            with col_he1: nd_ini_h = st.date_input("Data Início", value=_pd(ev_h.get('data_inicio')), format="DD/MM/YYYY", key=f"hedit_ini_{ev_h['id']}")
+                            with col_he2: nd_fim_h = st.date_input("Data Fim", value=_pd(ev_h.get('data_fim_alocacao')), format="DD/MM/YYYY", key=f"hedit_fim_{ev_h['id']}")
+                            with col_he3: nh_ini_h = st.time_input("Hora Início", value=_pt(ev_h.get('hora_inicio')), key=f"hedit_hini_{ev_h['id']}")
+                            with col_he4: nh_fim_h = st.time_input("Hora Fim", value=_pt(ev_h.get('hora_fim')), key=f"hedit_hfim_{ev_h['id']}")
+                            nval_h = st.number_input("Valor (R$)", min_value=0.0, step=50.0, value=float(ev_h.get('valor_total') or 0), format="%.2f", key=f"hedit_val_{ev_h['id']}")
+                            nobs_h = st.text_area("Local/Observações", value=ev_h.get('observacao') or "", key=f"hedit_obs_{ev_h['id']}")
+                            col_hec1, col_hec2 = st.columns(2)
+                            with col_hec1: nnome_cli_h = st.text_input("Nome do Cliente", value=nome_cli_h, key=f"hedit_nome_{ev_h['id']}")
+                            with col_hec2: ncont_cli_h = st.text_input("Contato", value=contato_h if contato_h != "-" else "", key=f"hedit_cont_{ev_h['id']}")
+                            njust_h = st.text_input("Justificativa (obrigatório)", key=f"hedit_just_{ev_h['id']}")
+                            col_hbtn1, col_hbtn2 = st.columns(2)
+                            with col_hbtn1:
+                                if st.button("💾 Salvar Alterações", key=f"hedit_btn_{ev_h['id']}"):
+                                    if not njust_h.strip(): mostrar_popup("Informe a justificativa.", tipo="erro")
+                                    else:
+                                        supabase.table("eventos").update({"data_inicio": str(nd_ini_h), "data_fim": str(nd_fim_h), "data_fim_alocacao": str(nd_fim_h), "hora_inicio": str(nh_ini_h), "hora_fim": str(nh_fim_h), "valor_total": nval_h, "observacao": nobs_h}).eq("id", ev_h['id']).execute()
+                                        if ev_h.get('cliente_id'): supabase.table("clientes_eventos").update({"nome": nnome_cli_h, "contato": ncont_cli_h}).eq("id", ev_h['cliente_id']).execute()
+                                        supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev_h['id'], "descricao": f"✏️ EDIÇÃO via Histórico. Justificativa: {njust_h}", "data_registro": datetime.now().strftime("%d/%m/%Y às %H:%M:%S")}).execute()
+                                        mostrar_popup("ALTERAÇÃO SALVA COM SUCESSO!")
+                                        st.rerun()
+                            with col_hbtn2:
+                                if st.button("🗑️ Excluir Evento", key=f"hedit_del_{ev_h['id']}"):
+                                    try:
+                                        supabase.table("itens_evento").delete().eq("evento_id", ev_h['id']).execute()
+                                        supabase.table("historico_eventos").delete().eq("evento_id", ev_h['id']).execute()
+                                        supabase.table("eventos").delete().eq("id", ev_h['id']).execute()
+                                        mostrar_popup("EVENTO EXCLUÍDO!")
+                                        st.rerun()
+                                    except Exception as e: mostrar_popup(f"Erro ao excluir: {e}", tipo="erro")
+
+                        # --- ABA LOG ---
+                        with tab_log_h:
+                            hist_alt = supabase.table("historico_eventos").select("descricao, data_registro").eq("evento_id", ev_h['id']).order("data_registro", desc=True).execute()
+                            if hist_alt.data:
                                 for h_alt in hist_alt.data: st.write(f"🕒 **{h_alt['data_registro']}** — {h_alt['descricao']}")
-                        if REPORTLAB_DISPONIVEL:
-                            nome_usuario_pdf_h = st.session_state.get('nome_usuario') or 'Usuário'
-                            contato_h = cliente_h.get('contato') or '-'
-                            buffer_pdf_h = gerar_recibo_evento_pdf(ev_h, itens_h.data or [], dict_produtos, nome_cli_h, contato_h, nome_usuario_pdf_h)
-                            st.download_button("📄 Baixar Recibo (PDF)", data=buffer_pdf_h, file_name=f"recibo_historico_{ev_h['id']}.pdf", mime="application/pdf", key=f"pdf_hist_{ev_h['id']}")
+                            else: st.caption("Nenhuma alteração registrada.")
+
             else: st.info("Nenhum evento histórico encontrado com esses filtros.")
 
         st.markdown("---")
