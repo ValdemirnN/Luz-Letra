@@ -1530,10 +1530,19 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
             st.subheader("🏆 Ranking de Produtos")
             st.caption("O que mais sai e o que dá mais lucro.")
             tab_qtd, tab_lucro = st.tabs(["Por Quantidade","Por Rentabilidade (R$)"])
-            try: itens_dash = supabase.table("itens_evento").select("evento_id, produto_id, quantidade, valor_cobrado").eq("empresa_id", emp_id).execute()
-            except: itens_dash = type('obj',(object,),{'data':[]})
+            try:
+                # Busca itens com valor_cobrado E o valor_total do evento para fallback
+                itens_dash = supabase.table("itens_evento").select(
+                    "evento_id, produto_id, quantidade, valor_cobrado, eventos(valor_total)"
+                ).eq("empresa_id", emp_id).execute()
+            except:
+                try: itens_dash = supabase.table("itens_evento").select("evento_id, produto_id, quantidade, valor_cobrado").eq("empresa_id", emp_id).execute()
+                except: itens_dash = type('obj',(object,),{'data':[]})
+
             if itens_dash.data and prods_ref_data:
                 mapa_nomes = {p['id']: p['nome'] for p in prods_ref_data}
+                mapa_valor_locacao = {p['id']: float(p.get('valor_locacao') or 0) for p in prods_ref_data}
+
                 with tab_qtd:
                     uso_produtos = {}
                     for item in itens_dash.data:
@@ -1551,24 +1560,54 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                             xaxis=dict(showgrid=False,showticklabels=False,title="",zeroline=False),
                             yaxis=dict(title="",showgrid=False,tickfont=dict(size=12,color='white')), margin=dict(t=10,b=0,l=0,r=0))
                         st.plotly_chart(fig_top, use_container_width=True, height=230, config={'displayModeBar': False})
+
                 with tab_lucro:
+                    # Agrupa itens por evento para calcular total de peças por evento
+                    itens_por_evento = {}
+                    for item in itens_dash.data:
+                        ev_id = item['evento_id']
+                        itens_por_evento.setdefault(ev_id, []).append(item)
+
                     receita_por_produto = {}
                     for item in itens_dash.data:
                         pid = item['produto_id']
-                        receita_por_produto[pid] = receita_por_produto.get(pid, 0) + float(item.get('valor_cobrado') or 0)
-                    if receita_por_produto:
-                        df_lucro = pd.DataFrame([{"Produto": mapa_nomes.get(pid, f"Prod {pid}"), "Receita": valor} for pid, valor in receita_por_produto.items() if valor > 0])
-                        if not df_lucro.empty:
-                            df_lucro = df_lucro.sort_values(by="Receita", ascending=True).tail(5)
-                            df_lucro['Label'] = df_lucro['Receita'].apply(lambda x: f"R$ {x:,.2f}".replace(",","X").replace(".",",").replace("X","."))
-                            fig_lucro = px.bar(df_lucro, x="Receita", y="Produto", orientation='h', template="plotly_dark", text="Label", color_discrete_sequence=["#2E7D32"])
-                            fig_lucro.update_traces(textposition='inside', textfont_size=12, textfont_color="white")
-                            fig_lucro.update_layout(showlegend=False, plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO,
-                                xaxis=dict(showgrid=False,showticklabels=False,title="",zeroline=False),
-                                yaxis=dict(title="",showgrid=False,tickfont=dict(size=12,color='white')), margin=dict(t=10,b=0,l=0,r=0))
-                            st.plotly_chart(fig_lucro, use_container_width=True, height=230, config={'displayModeBar': False})
-                        else: st.info("Nenhuma receita gerada ainda.")
-                    else: st.info("Nenhuma receita gerada ainda.")
+                        valor_item = float(item.get('valor_cobrado') or 0)
+
+                        # Fallback 1: usa valor_locacao * quantidade se valor_cobrado=0
+                        if valor_item == 0:
+                            valor_item = mapa_valor_locacao.get(pid, 0) * item['quantidade']
+
+                        # Fallback 2: rateia o valor_total do evento pela proporção de peças
+                        if valor_item == 0:
+                            try:
+                                ev_id = item['evento_id']
+                                valor_total_ev = float((item.get('eventos') or {}).get('valor_total') or 0)
+                                if valor_total_ev > 0:
+                                    total_pecas_ev = sum(i['quantidade'] for i in itens_por_evento.get(ev_id, []))
+                                    if total_pecas_ev > 0:
+                                        valor_item = valor_total_ev * (item['quantidade'] / total_pecas_ev)
+                            except Exception:
+                                pass
+
+                        receita_por_produto[pid] = receita_por_produto.get(pid, 0) + valor_item
+
+                    dados_lucro = [{"Produto": mapa_nomes.get(pid, f"Prod {pid}"), "Receita": v}
+                                   for pid, v in receita_por_produto.items() if v > 0]
+                    if dados_lucro:
+                        df_lucro = pd.DataFrame(dados_lucro)
+                        df_lucro = df_lucro.sort_values(by="Receita", ascending=True).tail(5)
+                        df_lucro['Label'] = df_lucro['Receita'].apply(
+                            lambda x: f"R$ {x:,.2f}".replace(",","X").replace(".",",").replace("X",".")
+                        )
+                        fig_lucro = px.bar(df_lucro, x="Receita", y="Produto", orientation='h',
+                            template="plotly_dark", text="Label", color_discrete_sequence=["#2E7D32"])
+                        fig_lucro.update_traces(textposition='inside', textfont_size=12, textfont_color="white")
+                        fig_lucro.update_layout(showlegend=False, plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO,
+                            xaxis=dict(showgrid=False,showticklabels=False,title="",zeroline=False),
+                            yaxis=dict(title="",showgrid=False,tickfont=dict(size=12,color='white')), margin=dict(t=10,b=0,l=0,r=0))
+                        st.plotly_chart(fig_lucro, use_container_width=True, height=230, config={'displayModeBar': False})
+                    else:
+                        st.info("Nenhuma receita encontrada. Cadastre o valor de locação dos produtos no Estoque.")
             else: st.info("Dados insuficientes para ranking.")
         with col_g5:
             st.subheader("🗓️ Próximos Eventos")
