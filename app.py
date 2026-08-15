@@ -1990,12 +1990,20 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
         # HISTÓRICO DE EVENTOS PASSADOS
         # ==========================================
         st.markdown("---")
-        with st.expander("🕒 Histórico de Eventos Anteriores (Concluídos e Cancelados)", expanded=False):
-            st.caption("Eventos já finalizados.")
+        with st.expander("🕒 Histórico de Todos os Eventos", expanded=False):
+            st.caption("Todos os eventos cadastrados — inclusive os que ficaram com status em aberto (Agendado/Em Andamento sem conclusão).")
             col_hf1, col_hf2 = st.columns(2)
             with col_hf1: hist_busca = st.text_input("Buscar no histórico", placeholder="Nome do cliente ou evento...", key="hist_busca_ev")
-            with col_hf2: hist_status_sel = st.multiselect("Status", ["Concluído","Cancelado"], default=["Concluído","Cancelado"], key="hist_status_ev")
-            eventos_historico = [ev for ev in lista_todos_eventos if ev.get('status') in (hist_status_sel or ["Concluído","Cancelado"])]
+            with col_hf2: hist_status_sel = st.multiselect(
+                "Status",
+                ["Concluído", "Cancelado", "Agendado", "Em Andamento"],
+                default=["Concluído", "Cancelado", "Agendado", "Em Andamento"],
+                key="hist_status_ev"
+            )
+            # Mostra TODOS os eventos que batem com o filtro de status,
+            # independente de data — assim eventos esquecidos/abertos aparecem
+            todos_status_validos = hist_status_sel or ["Concluído", "Cancelado", "Agendado", "Em Andamento"]
+            eventos_historico = [ev for ev in lista_todos_eventos if ev.get('status') in todos_status_validos]
             if hist_busca.strip():
                 termo_h = hist_busca.lower()
                 eventos_historico = [ev for ev in eventos_historico if termo_h in (ev.get('descricao') or '').lower() or termo_h in (mapa_clientes.get(ev.get('cliente_id'),{}).get('nome','') or '').lower()]
