@@ -938,25 +938,7 @@ else:
             except: return None
         return None
 
-    BUCKET_DOCUMENTOS = "documentos-eventos"
-
-    def upload_documento_evento(evento_id, arquivo, tipo_doc):
-        extensao = arquivo.name.split(".")[-1]
-        caminho_storage = f"evento_{evento_id}/{tipo_doc}_{int(time.time())}.{extensao}"
-        supabase.storage.from_(BUCKET_DOCUMENTOS).upload(caminho_storage, arquivo.getvalue(), file_options={"content-type": arquivo.type})
-        return caminho_storage
-
-    def gerar_url_assinada_documento(caminho_storage, validade_segundos=3600):
-        if not caminho_storage: return None
-        try:
-            resultado = supabase.storage.from_(BUCKET_DOCUMENTOS).create_signed_url(caminho_storage, validade_segundos)
-            return resultado.get("signedURL") or resultado.get("signedUrl")
-        except Exception: return None
-
-    def remover_documento_evento(caminho_storage):
-        if not caminho_storage: return
-        try: supabase.storage.from_(BUCKET_DOCUMENTOS).remove([caminho_storage])
-        except Exception: pass
+    # Upload/armazenamento de documentos removido — não utilizado
 
     def formatar_telefone_br(numero):
         if not numero: return numero
@@ -1726,59 +1708,17 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         st.markdown("---")
                         if ev.get('pagamento_confirmado'):
                             st.success(f"✅ Pagamento confirmado via **{ev.get('metodo_confirmacao_pagamento','-')}** em {ev.get('data_confirmacao_pagamento','-')}")
-                            col_pag_v, col_pag_r = st.columns([3,1])
-                            with col_pag_v:
-                                if ev.get('comprovante_pagamento_url'):
-                                    url_comprovante = gerar_url_assinada_documento(ev['comprovante_pagamento_url'])
-                                    if url_comprovante: st.link_button("📎 Ver Comprovante de Pagamento", url_comprovante)
-                            with col_pag_r:
-                                if st.button("🗑️ Remover", key=f"del_comp_{ev['id']}"):
-                                    remover_documento_evento(ev.get('comprovante_pagamento_url'))
-                                    supabase.table("eventos").update({"pagamento_confirmado": False, "metodo_confirmacao_pagamento": None, "comprovante_pagamento_url": None, "data_confirmacao_pagamento": None}).eq("id", ev['id']).execute()
-                                    mostrar_popup("COMPROVANTE REMOVIDO COM SUCESSO!")
-                                    st.rerun()
+                            if st.button("🗑️ Desfazer Confirmação", key=f"del_pag_{ev['id']}"):
+                                supabase.table("eventos").update({"pagamento_confirmado": False, "metodo_confirmacao_pagamento": None, "data_confirmacao_pagamento": None}).eq("id", ev['id']).execute()
+                                mostrar_popup("CONFIRMAÇÃO REMOVIDA!")
+                                st.rerun()
                         else:
-                            metodo_confirmacao = st.radio("Como confirmar o pagamento?", ["📎 Anexar comprovante","✅ Confirmar sem comprovante (ex: pago em mãos)"], key=f"metodo_pag_{ev['id']}")
-                            if metodo_confirmacao.startswith("📎"):
-                                arquivo_comprovante = st.file_uploader("Envie o comprovante (imagem ou PDF)", type=["png","jpg","jpeg","pdf"], key=f"upload_comp_{ev['id']}")
-                                if st.button("💾 Confirmar Pagamento com Comprovante", key=f"btn_conf_pag_comp_{ev['id']}"):
-                                    if not arquivo_comprovante: mostrar_popup("Selecione o arquivo do comprovante.", tipo="erro")
-                                    else:
-                                        try:
-                                            caminho_salvo = upload_documento_evento(ev['id'], arquivo_comprovante, "comprovante")
-                                            supabase.table("eventos").update({"pagamento_confirmado": True, "metodo_confirmacao_pagamento": "Comprovante anexado", "comprovante_pagamento_url": caminho_salvo, "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")}).eq("id", ev['id']).execute()
-                                            mostrar_popup("PAGAMENTO CONFIRMADO COM SUCESSO!")
-                                            st.rerun()
-                                        except Exception as e: mostrar_popup(f"Erro ao salvar comprovante: {e}", tipo="erro")
-                            else:
-                                if st.button("✅ Confirmar Pagamento", key=f"btn_conf_pag_sem_{ev['id']}"):
-                                    supabase.table("eventos").update({"pagamento_confirmado": True, "metodo_confirmacao_pagamento": "Confirmado manualmente", "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")}).eq("id", ev['id']).execute()
-                                    mostrar_popup("PAGAMENTO CONFIRMADO COM SUCESSO!")
-                                    st.rerun()
-
-                        st.markdown("---")
-                        st.subheader("📝 Contrato Assinado")
-                        if ev.get('contrato_assinado_url'):
-                            col_cont_v, col_cont_r = st.columns([3,1])
-                            with col_cont_v:
-                                url_contrato = gerar_url_assinada_documento(ev['contrato_assinado_url'])
-                                if url_contrato: st.link_button("📎 Ver Contrato Assinado", url_contrato)
-                            with col_cont_r:
-                                if st.button("🗑️ Remover", key=f"del_contrato_{ev['id']}"):
-                                    remover_documento_evento(ev.get('contrato_assinado_url'))
-                                    supabase.table("eventos").update({"contrato_assinado_url": None}).eq("id", ev['id']).execute()
-                                    mostrar_popup("CONTRATO REMOVIDO COM SUCESSO!")
-                                    st.rerun()
-                        arquivo_contrato_assinado = st.file_uploader("Envie o contrato assinado (PDF ou foto)", type=["pdf","png","jpg","jpeg"], key=f"upload_contrato_{ev['id']}")
-                        if st.button("💾 Salvar Contrato Assinado", key=f"btn_contrato_{ev['id']}"):
-                            if not arquivo_contrato_assinado: mostrar_popup("Selecione o arquivo do contrato assinado.", tipo="erro")
-                            else:
-                                try:
-                                    caminho_contrato = upload_documento_evento(ev['id'], arquivo_contrato_assinado, "contrato_assinado")
-                                    supabase.table("eventos").update({"contrato_assinado_url": caminho_contrato}).eq("id", ev['id']).execute()
-                                    mostrar_popup("CONTRATO ASSINADO SALVO COM SUCESSO!")
-                                    st.rerun()
-                                except Exception as e: mostrar_popup(f"Erro ao salvar contrato: {e}", tipo="erro")
+                            st.warning("⏳ Pagamento ainda não confirmado.")
+                            metodo_confirmacao = st.selectbox("Como foi feito o pagamento?", ["Pix","Dinheiro","Cartão","Boleto","Outro"], key=f"metodo_pag_{ev['id']}")
+                            if st.button("✅ Confirmar Pagamento", key=f"btn_conf_pag_{ev['id']}"):
+                                supabase.table("eventos").update({"pagamento_confirmado": True, "metodo_confirmacao_pagamento": metodo_confirmacao, "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")}).eq("id", ev['id']).execute()
+                                mostrar_popup("PAGAMENTO CONFIRMADO COM SUCESSO!")
+                                st.rerun()
 
                         if ev.get('google_event_id'): st.caption("📅 Este evento já está sincronizado com a sua Google Agenda.")
                         if st.button("📅 Sincronizar com Google Agenda", key=f"sync_google_{ev['id']}"):
@@ -2076,33 +2016,17 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         with tab_pag_h:
                             if ev_h.get('pagamento_confirmado'):
                                 st.success(f"✅ Pagamento confirmado via **{ev_h.get('metodo_confirmacao_pagamento','-')}** em {ev_h.get('data_confirmacao_pagamento','-')}")
-                                if ev_h.get('comprovante_pagamento_url'):
-                                    url_comp_h = gerar_url_assinada_documento(ev_h['comprovante_pagamento_url'])
-                                    if url_comp_h: st.link_button("📎 Ver Comprovante", url_comp_h)
-                                if st.button("🗑️ Remover confirmação de pagamento", key=f"hist_del_pag_{ev_h['id']}"):
-                                    remover_documento_evento(ev_h.get('comprovante_pagamento_url'))
-                                    supabase.table("eventos").update({"pagamento_confirmado": False, "metodo_confirmacao_pagamento": None, "comprovante_pagamento_url": None, "data_confirmacao_pagamento": None}).eq("id", ev_h['id']).execute()
+                                if st.button("🗑️ Desfazer Confirmação", key=f"hist_del_pag_{ev_h['id']}"):
+                                    supabase.table("eventos").update({"pagamento_confirmado": False, "metodo_confirmacao_pagamento": None, "data_confirmacao_pagamento": None}).eq("id", ev_h['id']).execute()
                                     mostrar_popup("CONFIRMAÇÃO REMOVIDA!")
                                     st.rerun()
                             else:
                                 st.warning("⏳ Pagamento ainda não confirmado.")
-                                metodo_pag_h = st.radio("Como confirmar?", ["📎 Anexar comprovante","✅ Confirmar sem comprovante"], key=f"hist_metodo_pag_{ev_h['id']}")
-                                if metodo_pag_h.startswith("📎"):
-                                    arq_comp_h = st.file_uploader("Envie o comprovante", type=["png","jpg","jpeg","pdf"], key=f"hist_upload_comp_{ev_h['id']}")
-                                    if st.button("💾 Confirmar com Comprovante", key=f"hist_btn_comp_{ev_h['id']}"):
-                                        if not arq_comp_h: mostrar_popup("Selecione o arquivo.", tipo="erro")
-                                        else:
-                                            try:
-                                                cam_h = upload_documento_evento(ev_h['id'], arq_comp_h, "comprovante")
-                                                supabase.table("eventos").update({"pagamento_confirmado": True, "metodo_confirmacao_pagamento": "Comprovante anexado", "comprovante_pagamento_url": cam_h, "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")}).eq("id", ev_h['id']).execute()
-                                                mostrar_popup("PAGAMENTO CONFIRMADO!")
-                                                st.rerun()
-                                            except Exception as e: mostrar_popup(f"Erro: {e}", tipo="erro")
-                                else:
-                                    if st.button("✅ Confirmar Pagamento", key=f"hist_btn_pag_sem_{ev_h['id']}"):
-                                        supabase.table("eventos").update({"pagamento_confirmado": True, "metodo_confirmacao_pagamento": "Confirmado manualmente", "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")}).eq("id", ev_h['id']).execute()
-                                        mostrar_popup("PAGAMENTO CONFIRMADO!")
-                                        st.rerun()
+                                metodo_pag_h = st.selectbox("Como foi feito o pagamento?", ["Pix","Dinheiro","Cartão","Boleto","Outro"], key=f"hist_metodo_pag_{ev_h['id']}")
+                                if st.button("✅ Confirmar Pagamento", key=f"hist_btn_pag_{ev_h['id']}"):
+                                    supabase.table("eventos").update({"pagamento_confirmado": True, "metodo_confirmacao_pagamento": metodo_pag_h, "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")}).eq("id", ev_h['id']).execute()
+                                    mostrar_popup("PAGAMENTO CONFIRMADO!")
+                                    st.rerun()
 
                         # --- ABA EDITAR DADOS ---
                         with tab_edit_h:
