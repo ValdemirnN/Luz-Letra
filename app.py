@@ -1561,7 +1561,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                             yaxis=dict(title="",showgrid=False,tickfont=dict(size=12,color='white')), margin=dict(t=10,b=0,l=0,r=0))
                         st.plotly_chart(fig_top, use_container_width=True, height=230, config={'displayModeBar': False})
 
-               with tab_lucro:
+with tab_lucro:
                     mapa_valor_evento = {}
                     try:
                         evs_resp = supabase.table("eventos").select("id, valor_total").eq("empresa_id", emp_id).execute()
