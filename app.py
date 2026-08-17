@@ -1621,7 +1621,8 @@ with tab_lucro:
                     else:
                         st.info("Nenhuma receita encontrada. Cadastre o valor de locação dos "
                                 "produtos no Estoque.")
-    else: st.info("Dados insuficientes para ranking.")
+            else:
+                st.info("Dados insuficientes para ranking.")
         with col_g5:
             st.subheader("🗓️ Próximos Eventos")
             st.caption("Seus compromissos iminentes.")
