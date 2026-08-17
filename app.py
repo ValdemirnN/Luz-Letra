@@ -1561,70 +1561,70 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                             yaxis=dict(title="",showgrid=False,tickfont=dict(size=12,color='white')), margin=dict(t=10,b=0,l=0,r=0))
                         st.plotly_chart(fig_top, use_container_width=True, height=230, config={'displayModeBar': False})
 
-                with tab_lucro:
-                    # Busca eventos separadamente para garantir valor_total
-                    mapa_valor_evento = {}
-                    try:
-                        evs_resp = supabase.table("eventos").select("id, valor_total").eq("empresa_id", emp_id).execute()
-                        for ev in (evs_resp.data or []):
-                            mapa_valor_evento[ev['id']] = float(ev.get('valor_total') or 0)
-                    except Exception:
-                        pass
+            with tab_lucro:
+                # Busca eventos separadamente para garantir valor_total
+                mapa_valor_evento = {}
+                try:
+                    evs_resp = supabase.table("eventos").select("id, valor_total").eq("empresa_id", emp_id).execute()
+                    for ev in (evs_resp.data or []):
+                        mapa_valor_evento[ev['id']] = float(ev.get('valor_total') or 0)
+                except Exception:
+                    pass
                 
-                    # Agrupa itens por evento para calcular proporção
-                    itens_por_evento = {}
-                    for item in itens_dash.data:
+                # Agrupa itens por evento para calcular proporção
+                itens_por_evento = {}
+                for item in itens_dash.data:
+                    ev_id = item['evento_id']
+                    itens_por_evento.setdefault(ev_id, []).append(item)
+                
+                receita_por_produto = {}
+                for item in itens_dash.data:
+                    pid = item['produto_id']
+                    valor_item = float(item.get('valor_cobrado') or 0)
+                
+                    # Fallback 1: valor_locacao * quantidade
+                    if valor_item == 0:
+                        valor_item = mapa_valor_locacao.get(pid, 0) * item['quantidade']
+                
+                    # Fallback 2: rateio proporcional pelo valor_total do evento
+                    if valor_item == 0:
                         ev_id = item['evento_id']
-                        itens_por_evento.setdefault(ev_id, []).append(item)
+                        valor_total_ev = mapa_valor_evento.get(ev_id, 0)
+                        if valor_total_ev > 0:
+                            total_pecas_ev = sum(
+                                i['quantidade'] for i in itens_por_evento.get(ev_id, [])
+                            )
+                            if total_pecas_ev > 0:
+                                valor_item = valor_total_ev * (item['quantidade'] / total_pecas_ev)
                 
-                    receita_por_produto = {}
-                    for item in itens_dash.data:
-                        pid = item['produto_id']
-                        valor_item = float(item.get('valor_cobrado') or 0)
+                    receita_por_produto[pid] = receita_por_produto.get(pid, 0) + valor_item
                 
-                        # Fallback 1: valor_locacao * quantidade
-                        if valor_item == 0:
-                            valor_item = mapa_valor_locacao.get(pid, 0) * item['quantidade']
-                
-                        # Fallback 2: rateio proporcional pelo valor_total do evento
-                        if valor_item == 0:
-                            ev_id = item['evento_id']
-                            valor_total_ev = mapa_valor_evento.get(ev_id, 0)
-                            if valor_total_ev > 0:
-                                total_pecas_ev = sum(
-                                    i['quantidade'] for i in itens_por_evento.get(ev_id, [])
-                                )
-                                if total_pecas_ev > 0:
-                                    valor_item = valor_total_ev * (item['quantidade'] / total_pecas_ev)
-                
-                        receita_por_produto[pid] = receita_por_produto.get(pid, 0) + valor_item
-                
-                    dados_lucro = [
-                        {"Produto": mapa_nomes.get(pid, f"Prod {pid}"), "Receita": v}
-                        for pid, v in receita_por_produto.items() if v > 0
-                    ]
-                    if dados_lucro:
-                        df_lucro = pd.DataFrame(dados_lucro)
-                        df_lucro = df_lucro.sort_values(by="Receita", ascending=True).tail(5)
-                        df_lucro['Label'] = df_lucro['Receita'].apply(
-                            lambda x: f"R$ {x:,.2f}".replace(",","X").replace(".",",").replace("X",".")
-                        )
-                        fig_lucro = px.bar(df_lucro, x="Receita", y="Produto", orientation='h',
-                            template="plotly_dark", text="Label", color_discrete_sequence=["#2E7D32"])
-                        fig_lucro.update_traces(textposition='inside', textfont_size=12, textfont_color="white")
-                        fig_lucro.update_layout(
-                            showlegend=False,
-                            plot_bgcolor=COR_FUNDO_GRAFICO,
-                            paper_bgcolor=COR_FUNDO_GRAFICO,
-                            xaxis=dict(showgrid=False, showticklabels=False, title="", zeroline=False),
-                            yaxis=dict(title="", showgrid=False, tickfont=dict(size=12, color='white')),
-                            margin=dict(t=10, b=0, l=0, r=0)
-                        )
-                        st.plotly_chart(fig_lucro, use_container_width=True, height=230,
-                                        config={'displayModeBar': False})
-                    else:
-                        st.info("Nenhuma receita encontrada. Cadastre o valor de locação dos "
-                                "produtos no Estoque.")
+                dados_lucro = [
+                    {"Produto": mapa_nomes.get(pid, f"Prod {pid}"), "Receita": v}
+                    for pid, v in receita_por_produto.items() if v > 0
+                ]
+                if dados_lucro:
+                    df_lucro = pd.DataFrame(dados_lucro)
+                    df_lucro = df_lucro.sort_values(by="Receita", ascending=True).tail(5)
+                    df_lucro['Label'] = df_lucro['Receita'].apply(
+                        lambda x: f"R$ {x:,.2f}".replace(",","X").replace(".",",").replace("X",".")
+                    )
+                    fig_lucro = px.bar(df_lucro, x="Receita", y="Produto", orientation='h',
+                        template="plotly_dark", text="Label", color_discrete_sequence=["#2E7D32"])
+                    fig_lucro.update_traces(textposition='inside', textfont_size=12, textfont_color="white")
+                    fig_lucro.update_layout(
+                        showlegend=False,
+                        plot_bgcolor=COR_FUNDO_GRAFICO,
+                        paper_bgcolor=COR_FUNDO_GRAFICO,
+                        xaxis=dict(showgrid=False, showticklabels=False, title="", zeroline=False),
+                        yaxis=dict(title="", showgrid=False, tickfont=dict(size=12, color='white')),
+                        margin=dict(t=10, b=0, l=0, r=0)
+                    )
+                    st.plotly_chart(fig_lucro, use_container_width=True, height=230,
+                                    config={'displayModeBar': False})
+                else:
+                    st.info("Nenhuma receita encontrada. Cadastre o valor de locação dos "
+                            "produtos no Estoque.")
     else: st.info("Dados insuficientes para ranking.")
         with col_g5:
             st.subheader("🗓️ Próximos Eventos")
