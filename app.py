@@ -1623,7 +1623,7 @@ with tab_lucro:
                                 "produtos no Estoque.")
             else:
                 st.info("Dados insuficientes para ranking.")
-        with col_g5:
+                with col_g5:
             st.subheader("🗓️ Próximos Eventos")
             st.caption("Seus compromissos iminentes.")
             if eventos_dash.data:
