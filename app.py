@@ -820,12 +820,41 @@ else:
         st.subheader("💳 Minha Assinatura")
         plano_nome_tela = "PRO 🚀" if plano_atual_usuario == 'pro' else "BÁSICO 📦"
         st.info(f"Seu plano atual é o **{plano_nome_tela}**.")
-        acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "Fazer Upgrade para PRO (R$ 89,90)", "Fazer Downgrade para Básico (R$ 79,90)", "Cancelar Assinatura"])
+        acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "🔄 Renovar meu plano atual", "Fazer Upgrade para PRO (R$ 89,90)", "Fazer Downgrade para Básico (R$ 79,90)", "Cancelar Assinatura"])
         CHAVE_PIX = "702.221.494-85"
         NOME_PIX = "VALDEMIR NUNES NICACIO"
         CIDADE_PIX = "ASSU/RN"
         if acao_assinatura == "Manter meu plano atual":
             st.info("Seu plano está mantido. Nenhuma alteração realizada.")
+        elif acao_assinatura == "🔄 Renovar meu plano atual":
+            valor_renovar = 89.90 if plano_atual_usuario == 'pro' else 79.90
+            nome_plano_renovar = plano_atual_usuario
+            st.info(f"Renovação do plano **{plano_atual_usuario.upper()}** — R$ {formatar_moeda(valor_renovar)}/mês")
+            metodo_renovacao = st.radio("Como quer pagar?", ["💠 Pix (QR Code)", "🤝 Pagar em mãos"], key="metodo_renovacao")
+            if metodo_renovacao == "💠 Pix (QR Code)":
+                try:
+                    payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, valor_renovar, "Renovacao")
+                    qr_buffer = gerar_qrcode_pix(payload_pix)
+                    col_qr1, col_qr2 = st.columns([1,1])
+                    with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
+                    with col_qr2:
+                        st.markdown(f"**Chave PIX:** `{CHAVE_PIX}`")
+                        st.markdown(f"**Titular:** {NOME_PIX}")
+                        st.markdown(f"**Valor:** R$ {formatar_moeda(valor_renovar)}")
+                    comp_renovacao = st.text_area("Cole o comprovante aqui após pagar", key="comp_renovacao_pix")
+                    if st.button("📤 Enviar Comprovante", key="btn_comp_renovacao"):
+                        if not comp_renovacao.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
+                        else:
+                            supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_renovacao, "plano": nome_plano_renovar}).eq("id", st.session_state['usuario_id']).execute()
+                            mostrar_popup("Comprovante enviado! Renovaremos seu plano em breve.")
+                except Exception as e: st.error(f"Erro ao gerar QR Code: {e}")
+            else:
+                comp_maos_ren = st.text_area("Descreva o comprovante / acordo", key="comp_maos_renovacao")
+                if st.button("📤 Enviar", key="btn_maos_renovacao"):
+                    if not comp_maos_ren.strip(): mostrar_popup("Descreva o comprovante.", tipo="erro")
+                    else:
+                        supabase.table("usuarios").update({"metodo_pagamento": "manual", "comprovante_pagamento": comp_maos_ren, "plano": nome_plano_renovar}).eq("id", st.session_state['usuario_id']).execute()
+                        mostrar_popup("Enviado! Aguarde aprovação do administrador.")
         elif acao_assinatura == "Fazer Upgrade para PRO (R$ 89,90)":
             if plano_atual_usuario == 'pro': st.success("Você já está no melhor plano do sistema!")
             else:
