@@ -941,20 +941,20 @@ else:
                 mostrar_popup("Conta cancelada. Desconectando do sistema...")
                 fazer_logout()
                 st.rerun()
-
+                
         with st.expander("📅 Google Agenda", expanded=False):
-        if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
-            st.warning("⚠️ Integração com Google Agenda ainda não configurada pelo administrador.")
-        elif dados_usuario_atual.get('google_refresh_token'):
-            st.success(f"✅ Conectado como **{dados_usuario_atual.get('google_email_conectado') or 'conta Google'}**.")
-            if st.button("🔌 Desconectar Google Agenda"):
-                supabase.table("usuarios").update({"google_refresh_token": None, "google_email_conectado": None}).eq("id", st.session_state['usuario_id']).execute()
-                mostrar_popup("GOOGLE AGENDA DESCONECTADA.")
-                st.rerun()
-        else:
-            st.info("Conecte sua Google Agenda para receber lembretes automáticos dos eventos cadastrados.")
-            url_auth_google = gerar_url_autorizacao_google(st.session_state['usuario_id'])
-            st.link_button("🔗 Conectar Google Agenda", url_auth_google)
+            if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+                st.warning("⚠️ Integração com Google Agenda ainda não configurada pelo administrador.")
+            elif dados_usuario_atual.get('google_refresh_token'):
+                st.success(f"✅ Conectado como **{dados_usuario_atual.get('google_email_conectado') or 'conta Google'}**.")
+                if st.button("🔌 Desconectar Google Agenda"):
+                    supabase.table("usuarios").update({"google_refresh_token": None, "google_email_conectado": None}).eq("id", st.session_state['usuario_id']).execute()
+                    mostrar_popup("GOOGLE AGENDA DESCONECTADA.")
+                    st.rerun()
+            else:
+                st.info("Conecte sua Google Agenda para receber lembretes automáticos dos eventos cadastrados.")
+                url_auth_google = gerar_url_autorizacao_google(st.session_state['usuario_id'])
+                st.link_button("🔗 Conectar Google Agenda", url_auth_google)
         st.stop()
 
 
