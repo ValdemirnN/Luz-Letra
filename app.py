@@ -1571,6 +1571,12 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         st.plotly_chart(fig_top, use_container_width=True, height=230, config={'displayModeBar': False})
 
                 with tab_lucro:
+                    # ===== DEBUG TEMPORÁRIO =====
+                    st.write("🔍 Total de itens:", len(itens_dash.data))
+                    st.write("🔍 Amostra de itens:", itens_dash.data[:3] if itens_dash.data else "vazio")
+                    st.write("🔍 mapa_valor_locacao:", dict(list(mapa_valor_locacao.items())[:5]))
+                    st.write("🔍 eventos_dash_map:", dict(list(eventos_dash_map.items())[:3]))
+                    # ===== FIM DEBUG =====
                     itens_por_evento = {}
                     for item in itens_dash.data:
                         ev_id = item['evento_id']
