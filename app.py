@@ -1537,14 +1537,23 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
             except Exception:
                 itens_dash = type('obj', (object,), {'data': []})
 
+            # Monta o mapa de eventos com valor_total E soma de itens calculada
             eventos_dash_map = {}
             try:
                 ev_ids = list({i['evento_id'] for i in (itens_dash.data or [])})
                 if ev_ids:
                     ev_resp = supabase.table("eventos").select(
-                        "id, valor_total, quantidade_total"
+                        "id, valor_total"
                     ).in_("id", ev_ids).execute()
-                    eventos_dash_map = {e['id']: e for e in (ev_resp.data or [])}
+                    # Calcula quantidade_total somando os itens que já temos
+                    qtd_por_evento = {}
+                    for i in (itens_dash.data or []):
+                        qtd_por_evento[i['evento_id']] = qtd_por_evento.get(i['evento_id'], 0) + i['quantidade']
+                    for e in (ev_resp.data or []):
+                        eventos_dash_map[e['id']] = {
+                            'valor_total': e.get('valor_total') or 0,
+                            'quantidade_total': qtd_por_evento.get(e['id'], 0)
+                        }
             except Exception:
                 pass
 
