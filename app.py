@@ -1530,26 +1530,23 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
             st.subheader("🏆 Ranking de Produtos")
             st.caption("O que mais sai e o que dá mais lucro.")
             tab_qtd, tab_lucro = st.tabs(["Por Quantidade","Por Rentabilidade (R$)"])
-        try:
-            itens_dash = supabase.table("itens_evento").select(
-                "evento_id, produto_id, quantidade, valor_cobrado"
-            ).eq("empresa_id", emp_id).execute()
-        except Exception:
-            itens_dash = type('obj', (object,), {'data': []})
-        
-        eventos_dash_map = {}
-        try:
-            ev_ids = list({i['evento_id'] for i in (itens_dash.data or [])})
-            if ev_ids:
-                ev_resp = supabase.table("eventos").select(
-                    "id, valor_total, quantidade_total"
-                ).in_("id", ev_ids).execute()
-                eventos_dash_map = {e['id']: e for e in (ev_resp.data or [])}
-        except Exception:
-            pass
-            except:
-                try: "evento_id, produto_id, quantidade, valor_cobrado").eq("empresa_id", emp_id).execute()
-                except: itens_dash = type('obj',(object,),{'data':[]})
+            try:
+                itens_dash = supabase.table("itens_evento").select(
+                    "evento_id, produto_id, quantidade, valor_cobrado"
+                ).eq("empresa_id", emp_id).execute()
+            except Exception:
+                itens_dash = type('obj', (object,), {'data': []})
+
+            eventos_dash_map = {}
+            try:
+                ev_ids = list({i['evento_id'] for i in (itens_dash.data or [])})
+                if ev_ids:
+                    ev_resp = supabase.table("eventos").select(
+                        "id, valor_total, quantidade_total"
+                    ).in_("id", ev_ids).execute()
+                    eventos_dash_map = {e['id']: e for e in (ev_resp.data or [])}
+            except Exception:
+                pass
 
             if itens_dash.data and prods_ref_data:
                 mapa_nomes = {p['id']: p['nome'] for p in prods_ref_data}
@@ -1574,34 +1571,31 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         st.plotly_chart(fig_top, use_container_width=True, height=230, config={'displayModeBar': False})
 
                 with tab_lucro:
-                    # Agrupa itens por evento para calcular total de peças por evento
                     itens_por_evento = {}
                     for item in itens_dash.data:
                         ev_id = item['evento_id']
                         itens_por_evento.setdefault(ev_id, []).append(item)
 
                     receita_por_produto = {}
-for item in itens_dash.data:
-    pid = item['produto_id']
-    valor_item = float(item.get('valor_cobrado') or 0)
+                    for item in itens_dash.data:
+                        pid = item['produto_id']
+                        valor_item = float(item.get('valor_cobrado') or 0)
 
-    # Fallback 1: usa valor_locacao cadastrado * quantidade
-    if valor_item == 0:
-        valor_item = mapa_valor_locacao.get(pid, 0) * item['quantidade']
+                        if valor_item == 0:
+                            valor_item = mapa_valor_locacao.get(pid, 0) * item['quantidade']
 
-    # Fallback 2: calcula preco_unitario = valor_total / quantidade_total do evento
-    if valor_item == 0:
-        try:
-            ev_id = item['evento_id']
-            evento_ref = eventos_dash_map.get(ev_id, {})
-            valor_geral = float(evento_ref.get('valor_total') or 0)
-            quantidade_geral = int(evento_ref.get('quantidade_total') or 0)
-            preco_unitario = float(valor_geral) / quantidade_geral if quantidade_geral > 0 else 0.0
-            valor_item = preco_unitario * item['quantidade']
-        except Exception:
-            pass
+                        if valor_item == 0:
+                            try:
+                                ev_id = item['evento_id']
+                                evento_ref = eventos_dash_map.get(ev_id, {})
+                                valor_geral = float(evento_ref.get('valor_total') or 0)
+                                quantidade_geral = int(evento_ref.get('quantidade_total') or 0)
+                                preco_unitario = float(valor_geral) / quantidade_geral if quantidade_geral > 0 else 0.0
+                                valor_item = preco_unitario * item['quantidade']
+                            except Exception:
+                                pass
 
-    receita_por_produto[pid] = receita_por_produto.get(pid, 0) + valor_item
+                        receita_por_produto[pid] = receita_por_produto.get(pid, 0) + valor_item
 
                     dados_lucro = [{"Produto": mapa_nomes.get(pid, f"Prod {pid}"), "Receita": v}
                                    for pid, v in receita_por_produto.items() if v > 0]
@@ -1620,7 +1614,8 @@ for item in itens_dash.data:
                         st.plotly_chart(fig_lucro, use_container_width=True, height=230, config={'displayModeBar': False})
                     else:
                         st.info("Nenhuma receita encontrada. Cadastre o valor de locação dos produtos no Estoque.")
-            else: st.info("Dados insuficientes para ranking.")
+            else:
+                st.info("Dados insuficientes para ranking.")
         with col_g5:
             st.subheader("🗓️ Próximos Eventos")
             st.caption("Seus compromissos iminentes.")
