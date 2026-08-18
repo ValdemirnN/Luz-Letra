@@ -129,51 +129,39 @@ def mostrar_popup(mensagem, tipo="sucesso", tempo=1.5):
     if tipo == "erro":
         st.error(f"⚠️ {mensagem}")
     else:
-        alerta = st.empty()
-        alerta.markdown(f"""
-        <style>
-        .popup-overlay {{ position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background-color: rgba(0,0,0,0.7); z-index: 999999;
-            display: flex; align-items: center; justify-content: center; }}
-        .popup-box {{ background-color: #1B5E20; color: white; padding: 40px 60px;
-            border-radius: 12px; font-size: 24px; font-weight: bold; text-align: center;
-            box-shadow: 0px 8px 30px rgba(0,0,0,0.8); animation: fadeInScale 0.3s ease-out forwards; }}
-        @keyframes fadeInScale {{ 0% {{ opacity: 0; transform: scale(0.7); }} 100% {{ opacity: 1; transform: scale(1); }} }}
-        </style>
-        <div class="popup-overlay"><div class="popup-box"><span style="font-size:40px;">🎉</span><br><br>{mensagem}</div></div>
-        """, unsafe_allow_html=True)
-        time.sleep(tempo)
-        alerta.empty()
+        st.toast(f"🎉 {mensagem}", icon="✅")
 
 def aplicar_fundo_com_logo(caminho_logo="logo.jpg"):
     try:
-        # CORREÇÃO 2: Só tenta aplicar o fundo se a imagem existir
         if os.path.exists(caminho_logo):
             with open(caminho_logo, "rb") as f:
                 logo_base64 = base64.b64encode(f.read()).decode()
             st.markdown(f"""
             <style>
-            .stApp {{ position: relative; }}
-            .stApp::before {{ content: ""; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            .stApp::before {{
+                content: "";
+                position: fixed;
+                top: 0; left: 0; right: 0; bottom: 0;
                 background-image: url("data:image/jpg;base64,{logo_base64}");
-                background-repeat: no-repeat; background-position: center;
-                background-size: min(45vw, 480px); opacity: 0.07; z-index: 0;
-                pointer-events: none; animation: brilhoPulsante 4s ease-in-out infinite; }}
-            @keyframes brilhoPulsante {{
-                0%   {{ opacity: 0.05; filter: drop-shadow(0 0 10px #FFD700); }}
-                50%  {{ opacity: 0.11; filter: drop-shadow(0 0 35px #FFD700); }}
-                100% {{ opacity: 0.05; filter: drop-shadow(0 0 10px #FFD700); }}
+                background-repeat: no-repeat;
+                background-position: center;
+                background-size: min(45vw, 480px);
+                opacity: 0.06;
+                z-index: 0;
+                pointer-events: none;
             }}
-            .stApp > * {{ position: relative; z-index: 1; }}
-            [data-testid="stSidebar"] img {{ animation: brilhoSidebar 3s ease-in-out infinite; border-radius: 12px; }}
-            @keyframes brilhoSidebar {{
-                0%   {{ filter: drop-shadow(0 0 6px rgba(255,215,0,0.35)); }}
-                50%  {{ filter: drop-shadow(0 0 18px rgba(255,215,0,0.75)); }}
-                100% {{ filter: drop-shadow(0 0 6px rgba(255,215,0,0.35)); }}
+            .stApp > * {{
+                position: relative;
+                z-index: 1;
+            }}
+            [data-testid="stSidebar"] img {{
+                border-radius: 12px;
+                filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.45));
             }}
             </style>
             """, unsafe_allow_html=True)
-    except Exception: pass
+    except Exception:
+        pass
 
 aplicar_fundo_com_logo()
 
