@@ -776,8 +776,8 @@ else:
         dados_usuario_resp = supabase.table("usuarios").select("id, nome, email, google_refresh_token, google_email_conectado").eq("id", st.session_state['usuario_id']).execute()
         dados_usuario_atual = dados_usuario_resp.data[0] if dados_usuario_resp.data else {}
 
-        st.subheader("📇 Meus Dados Cadastrados")
-        with st.form("form_editar_perfil"):
+        with st.expander("📇 Meus Dados Cadastrados", expanded=False):
+         with st.form("form_editar_perfil"):
             novo_nome_perfil = st.text_input("Nome", value=dados_usuario_atual.get('nome') or "")
             novo_email_perfil = st.text_input("E-mail", value=dados_usuario_atual.get('email') or "")
             st.caption("Alterar o e-mail muda o login que você usa para entrar no sistema.")
@@ -799,9 +799,9 @@ else:
                         mostrar_popup("PERFIL ATUALIZADO COM SUCESSO!")
                         st.rerun()
 
-        st.markdown("---")
-        st.subheader("🔑 Alterar Senha")
-        with st.form("form_trocar_senha_perfil"):
+                st.markdown("---")
+        with st.expander("🔑 Alterar Senha", expanded=False):
+         with st.form("form_trocar_senha_perfil"):
             senha_atual_troca = st.text_input("Senha Atual", type="password", key="senha_atual_troca_perfil")
             senha_nova_troca = st.text_input("Nova Senha", type="password", key="senha_nova_troca_perfil")
             senha_nova_troca_confirma = st.text_input("Confirme a Nova Senha", type="password", key="senha_nova_confirma_perfil")
@@ -817,7 +817,7 @@ else:
                 mostrar_popup("SENHA ALTERADA COM SUCESSO!")
 
         st.markdown("---")
-        st.subheader("💳 Minha Assinatura")
+        with st.expander("💳 Minha Assinatura", expanded=False):
         plano_nome_tela = "PRO 🚀" if plano_atual_usuario == 'pro' else "BÁSICO 📦"
         st.info(f"Seu plano atual é o **{plano_nome_tela}**.")
         acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "🔄 Renovar meu plano atual", "Fazer Upgrade para PRO (R$ 89,90)", "Fazer Downgrade para Básico (R$ 79,90)", "Cancelar Assinatura"])
@@ -942,7 +942,7 @@ else:
                 fazer_logout()
                 st.rerun()
 
-        st.subheader("📅 Google Agenda")
+        with st.expander("📅 Google Agenda", expanded=False):
         if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
             st.warning("⚠️ Integração com Google Agenda ainda não configurada pelo administrador.")
         elif dados_usuario_atual.get('google_refresh_token'):
