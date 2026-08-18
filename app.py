@@ -1628,10 +1628,10 @@ with tab_lucro:
                         )
                         st.plotly_chart(fig_lucro, use_container_width=True, height=230,
                                         config={'displayModeBar': False})
-                    else:
+                  else:
                         st.info("Nenhuma receita encontrada. Cadastre o valor de locação dos "
                                 "produtos no Estoque.")
-        else:
+    else:
                 st.info("Dados insuficientes para ranking.")
                 with col_g5:
             st.subheader("🗓️ Próximos Eventos")
