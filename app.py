@@ -818,7 +818,7 @@ else:
 
         st.markdown("---")
         with st.expander("💳 Minha Assinatura", expanded=False):
-        plano_nome_tela = "PRO 🚀" if plano_atual_usuario == 'pro' else "BÁSICO 📦"
+            plano_nome_tela = "PRO 🚀" if plano_atual_usuario == 'pro' else "BÁSICO 📦"
         st.info(f"Seu plano atual é o **{plano_nome_tela}**.")
         acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "🔄 Renovar meu plano atual", "Fazer Upgrade para PRO (R$ 89,90)", "Fazer Downgrade para Básico (R$ 79,90)", "Cancelar Assinatura"])
         CHAVE_PIX = "702.221.494-85"
