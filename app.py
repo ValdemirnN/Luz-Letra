@@ -1272,7 +1272,7 @@ else:
                     nome_u = u.get('nome') or u['email']
                     plano_u = u.get('plano') or 'basico'
                     icone_email = "✅" if email_confirmado_u else "❌"
-                    supabase.table("usuarios").update({"comprovante_pagamento": None}).eq("id", u['id']).execute()
+                    aguardando_manual = (metodo_pag_u in ["manual", "pix_manual"]) and (not u['ativo'] or u.get('comprovante_pagamento'))
 
                     prefixo = "🔔 " if aguardando_manual else ""
                     titulo_exp = f"{prefixo}🏢 {nome_fantasia} — {nome_u} ({u['email']}) | Plano: {plano_u.upper()} | Validade: {venc} ({badge_venc}) | E-mail: {icone_email}"
