@@ -1272,7 +1272,7 @@ else:
                     nome_u = u.get('nome') or u['email']
                     plano_u = u.get('plano') or 'basico'
                     icone_email = "✅" if email_confirmado_u else "❌"
-                    aguardando_manual = (metodo_pag_u in ["manual", "pix_manual"]) and (not u['ativo'])
+                    supabase.table("usuarios").update({"comprovante_pagamento": None}).eq("id", u['id']).execute()
 
                     prefixo = "🔔 " if aguardando_manual else ""
                     titulo_exp = f"{prefixo}🏢 {nome_fantasia} — {nome_u} ({u['email']}) | Plano: {plano_u.upper()} | Validade: {venc} ({badge_venc}) | E-mail: {icone_email}"
@@ -1289,6 +1289,7 @@ else:
                                 venc_novo = ass_novo.data[0]['data_vencimento'].split("T")[0] if ass_novo.data else venc
                                 valor_plano_conf = 79.90 if plano_u == 'basico' else 89.90
                                 registrar_pagamento_historico(u['empresa_id'], u['id'], plano_u, valor_plano_conf, "manual", venc_ant, venc_novo, aprovado_por=st.session_state.get('nome_usuario','Admin'))
+                                supabase.table("usuarios").update({"comprovante_pagamento": None}).eq("id", u['id']).execute()
                                 mostrar_popup("Conta ativada com sucesso!")
                                 st.rerun()
 
