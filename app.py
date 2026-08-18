@@ -1537,7 +1537,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
             fig_gauge.update_layout(template="plotly_dark", plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO, margin=dict(t=40,b=0,l=20,r=20), height=280)
             st.plotly_chart(fig_gauge, use_container_width=True, config={'displayModeBar': False})
         with col_g4:
-    st.subheader("🏆 Ranking de Produtos")
+        st.subheader("🏆 Ranking de Produtos")
     st.caption("O que mais sai e o que dá mais lucro.")
     tab_qtd, tab_lucro = st.tabs(["Por Quantidade","Por Rentabilidade (R$)"])
     
