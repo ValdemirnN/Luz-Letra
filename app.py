@@ -1530,13 +1530,13 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
             st.subheader("🏆 Ranking de Produtos")
             st.caption("O que mais sai e o que dá mais lucro.")
             tab_qtd, tab_lucro = st.tabs(["Por Quantidade","Por Rentabilidade (R$)"])
-            try:
-                # Busca itens com valor_cobrado E o valor_total do evento para fallback
-                itens_dash = supabase.table("itens_evento").select(
-    "evento_id, produto_id, quantidade, valor_cobrado"
-).eq("empresa_id", emp_id).execute()
+try:
+    itens_dash = supabase.table("itens_evento").select(
+        "evento_id, produto_id, quantidade, valor_cobrado"
+    ).eq("empresa_id", emp_id).execute()
+except Exception:
+    itens_dash = type('obj', (object,), {'data': []})
 
-# Busca os eventos para ter valor_total e quantidade_total disponíveis
 eventos_dash_map = {}
 try:
     ev_ids = list({i['evento_id'] for i in (itens_dash.data or [])})
