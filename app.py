@@ -1530,23 +1530,23 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
             st.subheader("🏆 Ranking de Produtos")
             st.caption("O que mais sai e o que dá mais lucro.")
             tab_qtd, tab_lucro = st.tabs(["Por Quantidade","Por Rentabilidade (R$)"])
-try:
-    itens_dash = supabase.table("itens_evento").select(
-        "evento_id, produto_id, quantidade, valor_cobrado"
-    ).eq("empresa_id", emp_id).execute()
-except Exception:
-    itens_dash = type('obj', (object,), {'data': []})
-
-eventos_dash_map = {}
-try:
-    ev_ids = list({i['evento_id'] for i in (itens_dash.data or [])})
-    if ev_ids:
-        ev_resp = supabase.table("eventos").select(
-            "id, valor_total, quantidade_total"
-        ).in_("id", ev_ids).execute()
-        eventos_dash_map = {e['id']: e for e in (ev_resp.data or [])}
-except Exception:
-    pass
+        try:
+            itens_dash = supabase.table("itens_evento").select(
+                "evento_id, produto_id, quantidade, valor_cobrado"
+            ).eq("empresa_id", emp_id).execute()
+        except Exception:
+            itens_dash = type('obj', (object,), {'data': []})
+        
+        eventos_dash_map = {}
+        try:
+            ev_ids = list({i['evento_id'] for i in (itens_dash.data or [])})
+            if ev_ids:
+                ev_resp = supabase.table("eventos").select(
+                    "id, valor_total, quantidade_total"
+                ).in_("id", ev_ids).execute()
+                eventos_dash_map = {e['id']: e for e in (ev_resp.data or [])}
+        except Exception:
+            pass
             except:
                 try: "evento_id, produto_id, quantidade, valor_cobrado").eq("empresa_id", emp_id).execute()
                 except: itens_dash = type('obj',(object,),{'data':[]})
