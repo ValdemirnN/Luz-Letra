@@ -14,6 +14,7 @@ import requests
 import secrets
 import time
 import qrcode
+import os # Importação adicionada para verificar a existência de arquivos
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -26,7 +27,9 @@ try:
 except ImportError:
     REPORTLAB_DISPONIVEL = False
 
-st.set_page_config(page_title="Luz & Letras", page_icon="logo.jpg", layout="wide")
+# CORREÇÃO 1: Verifica se a imagem existe antes de definir como ícone
+icone_pagina = "logo.jpg" if os.path.exists("logo.jpg") else "💡"
+st.set_page_config(page_title="Luz & Letras", page_icon=icone_pagina, layout="wide")
 
 st.markdown("""
 <script>
@@ -144,30 +147,32 @@ def mostrar_popup(mensagem, tipo="sucesso", tempo=1.5):
 
 def aplicar_fundo_com_logo(caminho_logo="logo.jpg"):
     try:
-        with open(caminho_logo, "rb") as f:
-            logo_base64 = base64.b64encode(f.read()).decode()
-        st.markdown(f"""
-        <style>
-        .stApp {{ position: relative; }}
-        .stApp::before {{ content: ""; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background-image: url("data:image/jpg;base64,{logo_base64}");
-            background-repeat: no-repeat; background-position: center;
-            background-size: min(45vw, 480px); opacity: 0.07; z-index: 0;
-            pointer-events: none; animation: brilhoPulsante 4s ease-in-out infinite; }}
-        @keyframes brilhoPulsante {{
-            0%   {{ opacity: 0.05; filter: drop-shadow(0 0 10px #FFD700); }}
-            50%  {{ opacity: 0.11; filter: drop-shadow(0 0 35px #FFD700); }}
-            100% {{ opacity: 0.05; filter: drop-shadow(0 0 10px #FFD700); }}
-        }}
-        .stApp > * {{ position: relative; z-index: 1; }}
-        [data-testid="stSidebar"] img {{ animation: brilhoSidebar 3s ease-in-out infinite; border-radius: 12px; }}
-        @keyframes brilhoSidebar {{
-            0%   {{ filter: drop-shadow(0 0 6px rgba(255,215,0,0.35)); }}
-            50%  {{ filter: drop-shadow(0 0 18px rgba(255,215,0,0.75)); }}
-            100% {{ filter: drop-shadow(0 0 6px rgba(255,215,0,0.35)); }}
-        }}
-        </style>
-        """, unsafe_allow_html=True)
+        # CORREÇÃO 2: Só tenta aplicar o fundo se a imagem existir
+        if os.path.exists(caminho_logo):
+            with open(caminho_logo, "rb") as f:
+                logo_base64 = base64.b64encode(f.read()).decode()
+            st.markdown(f"""
+            <style>
+            .stApp {{ position: relative; }}
+            .stApp::before {{ content: ""; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                background-image: url("data:image/jpg;base64,{logo_base64}");
+                background-repeat: no-repeat; background-position: center;
+                background-size: min(45vw, 480px); opacity: 0.07; z-index: 0;
+                pointer-events: none; animation: brilhoPulsante 4s ease-in-out infinite; }}
+            @keyframes brilhoPulsante {{
+                0%   {{ opacity: 0.05; filter: drop-shadow(0 0 10px #FFD700); }}
+                50%  {{ opacity: 0.11; filter: drop-shadow(0 0 35px #FFD700); }}
+                100% {{ opacity: 0.05; filter: drop-shadow(0 0 10px #FFD700); }}
+            }}
+            .stApp > * {{ position: relative; z-index: 1; }}
+            [data-testid="stSidebar"] img {{ animation: brilhoSidebar 3s ease-in-out infinite; border-radius: 12px; }}
+            @keyframes brilhoSidebar {{
+                0%   {{ filter: drop-shadow(0 0 6px rgba(255,215,0,0.35)); }}
+                50%  {{ filter: drop-shadow(0 0 18px rgba(255,215,0,0.75)); }}
+                100% {{ filter: drop-shadow(0 0 6px rgba(255,215,0,0.35)); }}
+            }}
+            </style>
+            """, unsafe_allow_html=True)
     except Exception: pass
 
 aplicar_fundo_com_logo()
@@ -505,7 +510,9 @@ if 'logado' not in st.session_state:
 # TELA DE LOGIN
 # ==========================================
 if not st.session_state['logado']:
-    st.sidebar.image("logo.jpg", use_container_width=True)
+    # CORREÇÃO 3: Verifica se a imagem existe na barra lateral
+    if os.path.exists("logo.jpg"):
+        st.sidebar.image("logo.jpg", use_container_width=True)
     st.title("🔒 Login - Luz & Letras")
 
     with st.form("form_login"):
@@ -735,7 +742,10 @@ else:
     # ==========================================
     # SIDEBAR
     # ==========================================
-    st.sidebar.image("logo.jpg", use_container_width=True)
+    # CORREÇÃO 4: Verifica a existência antes de carregar a imagem na sidebar
+    if os.path.exists("logo.jpg"):
+        st.sidebar.image("logo.jpg", use_container_width=True)
+        
     if 'ver_perfil' not in st.session_state: st.session_state['ver_perfil'] = False
     if st.sidebar.button("👤 Perfil"):
         st.session_state['ver_perfil'] = not st.session_state['ver_perfil']
