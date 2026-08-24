@@ -192,12 +192,10 @@ except Exception as e:
     st.error("Erro ao conectar com o banco. Verifique suas chaves.")
     st.stop()
 
-from streamlit_cookies_manager import EncryptedCookieManager
-cookies = EncryptedCookieManager(
-    prefix="luzletras/",
-    password=st.secrets.get("COOKIES_PASSWORD", "luz-letras-senha-super-secreta-2026"),
-)
-if not cookies.ready(): st.stop()
+import extra_streamlit_components as stx
+
+# Isso inicializa o novo sistema de cookies de forma mais simples
+cookie_manager = stx.CookieManager()
 
 
 # ==========================================
