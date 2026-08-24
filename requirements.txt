@@ -6,7 +6,6 @@ python-dateutil
 reportlab
 requests
 openpyxl
-streamlit==1.22.0
 streamlit-cookies-manager
 qrcode[pil]
 Pillow
