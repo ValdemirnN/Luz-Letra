@@ -206,20 +206,26 @@ def fazer_logout():
     if token_atual:
         try: supabase.table("sessoes_ativas").delete().eq("token", token_atual).execute()
         except: pass
-    if "tk" in cookies: del cookies["tk"]
-    if "uid" in cookies: del cookies["uid"]
-    cookies.save()
+    try:
+        cookie_manager.delete("tk", key="del_tk_logout")
+        cookie_manager.delete("uid", key="del_uid_logout")
+    except Exception:
+        pass
     st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': '', 'token_sessao': None})
 
 def restaurar_sessao_por_token():
     try:
-        tk_param = cookies.get("tk")
-        uid_param = cookies.get("uid")
+        tk_param = cookie_manager.get("tk")
+        uid_param = cookie_manager.get("uid")
         if uid_param and tk_param:
             usuario_id_restaurar = int(uid_param)
             sessao_banco = supabase.table("sessoes_ativas").select("id").eq("token", tk_param).eq("usuario_id", usuario_id_restaurar).execute()
             if not sessao_banco.data:
-                del cookies["tk"]; del cookies["uid"]; cookies.save()
+                try:
+                    cookie_manager.delete("tk", key="del_tk_restaurar")
+                    cookie_manager.delete("uid", key="del_uid_restaurar")
+                except Exception:
+                    pass
                 return
             resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome, plano").eq("id", usuario_id_restaurar).execute()
             if resultado.data:
@@ -539,9 +545,8 @@ if not st.session_state['logado']:
                         st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'],
                             'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login, 'token_sessao': novo_token})
                         if 'bloqueio_usuario_id' in st.session_state: del st.session_state['bloqueio_usuario_id']
-                        cookies["tk"] = novo_token
-                        cookies["uid"] = str(usuario['id'])
-                        cookies.save()
+                        cookie_manager.set("tk", novo_token, key="set_tk_login")
+                        cookie_manager.set("uid", str(usuario['id']), key="set_uid_login")
                         st.rerun()
         except Exception as e: mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
 
