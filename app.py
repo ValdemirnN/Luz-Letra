@@ -1271,175 +1271,175 @@ else:
             return []
 
     def gerar_recibo_evento_pdf(evento_dict, itens_lista, dict_produtos_ref, nome_cliente_pdf, contato_cliente_pdf, nome_usuario_confirmou):
-        import os as _os
-        buffer = io.BytesIO()
-        COR_DOURADO = colors.HexColor("#FFC107")
-        COR_PRETO = colors.HexColor("#0E0E0E")
-        COR_CINZA_CLARO = colors.HexColor("#F2F2F2")
-        COR_TEXTO_CINZA = colors.HexColor("#555555")
-        caminho_logo_pdf = "logo_sem_fundo.png" if _os.path.exists("logo_sem_fundo.png") else ("logo.jpg" if _os.path.exists("logo.jpg") else None)
-        def _desenhar_cabecalho_recibo(canvas_obj, doc_obj):
-            canvas_obj.saveState()
-            largura_pagina, altura_pagina = A4
-            altura_faixa = 3.2 * cm
-            canvas_obj.setFillColor(COR_PRETO)
-            canvas_obj.rect(0, altura_pagina - altura_faixa, largura_pagina, altura_faixa, fill=1, stroke=0)
+            import os as _os
+            buffer = io.BytesIO()
+            COR_DOURADO = colors.HexColor("#FFC107")
+            COR_PRETO = colors.HexColor("#0E0E0E")
+            COR_CINZA_CLARO = colors.HexColor("#F2F2F2")
+            COR_TEXTO_CINZA = colors.HexColor("#555555")
+            caminho_logo_pdf = "logo_sem_fundo.png" if _os.path.exists("logo_sem_fundo.png") else ("logo.jpg" if _os.path.exists("logo.jpg") else None)
+            def _desenhar_cabecalho_recibo(canvas_obj, doc_obj):
+                canvas_obj.saveState()
+                largura_pagina, altura_pagina = A4
+                altura_faixa = 3.2 * cm
+                canvas_obj.setFillColor(COR_PRETO)
+                canvas_obj.rect(0, altura_pagina - altura_faixa, largura_pagina, altura_faixa, fill=1, stroke=0)
+                if caminho_logo_pdf:
+                    try: canvas_obj.drawImage(caminho_logo_pdf, 2*cm, altura_pagina-altura_faixa+0.35*cm, width=3.6*cm, height=2.5*cm, preserveAspectRatio=True, mask='auto')
+                    except Exception: pass
+                canvas_obj.setFillColor(COR_DOURADO)
+                canvas_obj.setFont("Helvetica-Bold", 16)
+                canvas_obj.drawString(6.2*cm, altura_pagina-1.5*cm, "CONTRATO E RECIBO DE LOCAÇÃO")
+                canvas_obj.setFillColor(colors.white)
+                canvas_obj.setFont("Helvetica", 10)
+                canvas_obj.drawString(6.2*cm, altura_pagina-2.15*cm, f"Evento: {evento_dict.get('descricao','-')}")
+                canvas_obj.setFillColor(colors.grey)
+                canvas_obj.setFont("Helvetica", 8)
+                canvas_obj.drawString(2*cm, 1.2*cm, f"Luz & Letras — Emitido em {datetime.now().strftime('%d/%m/%Y às %H:%M')}")
+                canvas_obj.drawRightString(largura_pagina-2*cm, 1.2*cm, f"Página {doc_obj.page}")
+                canvas_obj.restoreState()
+            frame_recibo = Frame(2*cm, 1.8*cm, A4[0]-4*cm, A4[1]-5.4*cm, id='corpo_recibo')
+            doc = BaseDocTemplate(buffer, pagesize=A4)
+            doc.addPageTemplates([PageTemplate(id='ComCabecalhoRecibo', frames=[frame_recibo], onPage=_desenhar_cabecalho_recibo)])
+            styles = getSampleStyleSheet()
+            story = []
+            sub_titulo = ParagraphStyle('SubTitRecibo', parent=styles['Heading2'], fontSize=12, spaceAfter=6, textColor=COR_PRETO)
+            normal_style = ParagraphStyle('NormalRecibo', parent=styles['Normal'], fontSize=10, leading=14)
+            termo_style = ParagraphStyle('TermoRecibo', parent=styles['Normal'], fontSize=9, leading=12, alignment=4, spaceBefore=15, spaceAfter=15, textColor=COR_TEXTO_CINZA)
+            story.append(Spacer(1, 10))
+            def _fmt_data_pdf(data_iso):
+                if not data_iso or data_iso == "-": return "-"
+                try: return datetime.strptime(data_iso.split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
+                except: return data_iso
+            data_ini_pdf = _fmt_data_pdf(evento_dict.get('data_inicio'))
+            data_fim_pdf = _fmt_data_pdf(evento_dict.get('data_fim_alocacao'))
+            hora_ini_pdf = evento_dict.get('hora_inicio')[:5] if evento_dict.get('hora_inicio') else "Não inf."
+            hora_fim_pdf = evento_dict.get('hora_fim')[:5] if evento_dict.get('hora_fim') else "Não inf."
+            valor_pdf = float(evento_dict.get('valor_total') or 0)
+            dados_cliente = f"<b>Cliente:</b> {nome_cliente_pdf}<br/><b>Contato:</b> {contato_cliente_pdf}<br/><b>Evento:</b> {evento_dict.get('descricao','-')}<br/><b>Período:</b> {data_ini_pdf} ({hora_ini_pdf}) até {data_fim_pdf} ({hora_fim_pdf})<br/><b>Local/Obs:</b> {evento_dict.get('observacao','-')}<br/><b>Valor:</b> R$ {formatar_moeda(valor_pdf)}<br/><b>Status:</b> {evento_dict.get('status','-')}"
+            tabela_header = Table([[Paragraph(dados_cliente, normal_style)]], colWidths=[17*cm])
+            tabela_header.setStyle(TableStyle([('BOX',(0,0),(-1,-1),1,colors.HexColor("#CCCCCC")),('PADDING',(0,0),(-1,-1),10),('BACKGROUND',(0,0),(-1,-1),colors.HexColor("#FAFAFA"))]))
+            story.append(tabela_header)
+            story.append(Spacer(1,20))
+            story.append(Paragraph("<b>ITENS LOCADOS</b>", sub_titulo))
+            tabela_dados = [["Produto / Item","Qtd","Detalhes"]]
+            if itens_lista:
+                for it in itens_lista:
+                    nome_prod_pdf = dict_produtos_ref.get(it['produto_id'],{}).get('nome',f"Produto #{it['produto_id']}")
+                    detalhe_pdf = "-"
+                    js_obs = safe_json_load(it.get('observacao'))
+                    if js_obs: detalhe_pdf = ", ".join([f"{k}: {v}x" for k,v in js_obs.items()])
+                    elif it.get('observacao'): detalhe_pdf = it.get('observacao')
+                    tabela_dados.append([nome_prod_pdf, str(it['quantidade']), detalhe_pdf])
+            else: tabela_dados.append(["Nenhum item registrado","-","-"])
+            tabela_pdf = Table(tabela_dados, colWidths=[8*cm,2*cm,7*cm])
+            tabela_pdf.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),COR_PRETO),('TEXTCOLOR',(0,0),(-1,0),COR_DOURADO),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('GRID',(0,0),(-1,-1),0.5,colors.grey),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('FONTSIZE',(0,0),(-1,-1),9),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,COR_CINZA_CLARO])]))
+            story.append(tabela_pdf)
+            story.append(Spacer(1,20))
+            termo_texto = "<b>TERMO DE RESPONSABILIDADE:</b><br/>O cliente assume total responsabilidade pela guarda, conservação e integridade de todos os materiais locados. Em caso de danos, avarias ou perda, arcará com os custos de reparo ou reposição."
+            story.append(Paragraph(termo_texto, termo_style))
+            story.append(Spacer(1,15))
+            story.append(Paragraph("<b>ASSINATURAS</b>", sub_titulo))
+            story.append(Spacer(1,5))
+            assinaturas_data = [["____________________________________","____________________________________"],["Luz & Letras - Locações",f"Cliente: {nome_cliente_pdf[:25]}"],[f"Data: {datetime.now().strftime('%d/%m/%Y')}","Data: ____/____/________"]]
+            tabela_assinaturas = Table(assinaturas_data, colWidths=[8.5*cm,8.5*cm])
+            tabela_assinaturas.setStyle(TableStyle([('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'BOTTOM'),('FONTNAME',(0,1),(-1,1),'Helvetica-Bold'),('FONTSIZE',(0,2),(-1,2),9),('TEXTCOLOR',(0,2),(-1,2),COR_TEXTO_CINZA)]))
+            story.append(tabela_assinaturas)
+            story.append(Spacer(1,15))
+            story.append(Paragraph("A equipe <b>Luz & Letras</b> agradece imensamente a sua preferência!", ParagraphStyle('Obrigado',parent=styles['Normal'],fontSize=11,alignment=TA_CENTER,spaceBefore=20,fontName="Helvetica-Oblique",textColor=COR_PRETO)))
+            doc.build(story)
+            buffer.seek(0)
+            return buffer
+            
+        def gerar_pdf_orcamento(orc, itens_lista, nome_cliente_pdf, contato_cliente_pdf):
+            import os as _os
+            buffer = io.BytesIO()
+            COR_DOURADO = colors.HexColor("#FFC107")
+            COR_PRETO = colors.HexColor("#0E0E0E")
+            COR_CINZA_CLARO = colors.HexColor("#F2F2F2")
+            COR_TEXTO_CINZA = colors.HexColor("#555555")
+            caminho_logo_pdf = "logo_sem_fundo.png" if _os.path.exists("logo_sem_fundo.png") else ("logo.jpg" if _os.path.exists("logo.jpg") else None)
+    
+            def _desenhar_cabecalho(canvas_obj, doc_obj):
+                canvas_obj.saveState()
+                largura_pagina, altura_pagina = A4
+                altura_faixa = 3.2 * cm
+                canvas_obj.setFillColor(COR_PRETO)
+                canvas_obj.rect(0, altura_pagina - altura_faixa, largura_pagina, altura_faixa, fill=1, stroke=0)
             if caminho_logo_pdf:
                 try: canvas_obj.drawImage(caminho_logo_pdf, 2*cm, altura_pagina-altura_faixa+0.35*cm, width=3.6*cm, height=2.5*cm, preserveAspectRatio=True, mask='auto')
                 except Exception: pass
             canvas_obj.setFillColor(COR_DOURADO)
             canvas_obj.setFont("Helvetica-Bold", 16)
-            canvas_obj.drawString(6.2*cm, altura_pagina-1.5*cm, "CONTRATO E RECIBO DE LOCAÇÃO")
+            canvas_obj.drawString(6.2*cm, altura_pagina-1.5*cm, "PROPOSTA DE ORÇAMENTO")
             canvas_obj.setFillColor(colors.white)
             canvas_obj.setFont("Helvetica", 10)
-            canvas_obj.drawString(6.2*cm, altura_pagina-2.15*cm, f"Evento: {evento_dict.get('descricao','-')}")
+            canvas_obj.drawString(6.2*cm, altura_pagina-2.15*cm, f"Evento: {orc.get('titulo_evento','-')}")
             canvas_obj.setFillColor(colors.grey)
             canvas_obj.setFont("Helvetica", 8)
             canvas_obj.drawString(2*cm, 1.2*cm, f"Luz & Letras — Emitido em {datetime.now().strftime('%d/%m/%Y às %H:%M')}")
             canvas_obj.drawRightString(largura_pagina-2*cm, 1.2*cm, f"Página {doc_obj.page}")
             canvas_obj.restoreState()
-        frame_recibo = Frame(2*cm, 1.8*cm, A4[0]-4*cm, A4[1]-5.4*cm, id='corpo_recibo')
+    
+        frame = Frame(2*cm, 1.8*cm, A4[0]-4*cm, A4[1]-5.4*cm, id='corpo_orc')
         doc = BaseDocTemplate(buffer, pagesize=A4)
-        doc.addPageTemplates([PageTemplate(id='ComCabecalhoRecibo', frames=[frame_recibo], onPage=_desenhar_cabecalho_recibo)])
+        doc.addPageTemplates([PageTemplate(id='ComCabecalhoOrc', frames=[frame], onPage=_desenhar_cabecalho)])
         styles = getSampleStyleSheet()
         story = []
-        sub_titulo = ParagraphStyle('SubTitRecibo', parent=styles['Heading2'], fontSize=12, spaceAfter=6, textColor=COR_PRETO)
-        normal_style = ParagraphStyle('NormalRecibo', parent=styles['Normal'], fontSize=10, leading=14)
-        termo_style = ParagraphStyle('TermoRecibo', parent=styles['Normal'], fontSize=9, leading=12, alignment=4, spaceBefore=15, spaceAfter=15, textColor=COR_TEXTO_CINZA)
+        sub_titulo = ParagraphStyle('SubTitOrc', parent=styles['Heading2'], fontSize=12, spaceAfter=6, textColor=COR_PRETO)
+        normal_style = ParagraphStyle('NormalOrc', parent=styles['Normal'], fontSize=10, leading=14)
+    
         story.append(Spacer(1, 10))
-        def _fmt_data_pdf(data_iso):
-            if not data_iso or data_iso == "-": return "-"
-            try: return datetime.strptime(data_iso.split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
-            except: return data_iso
-        data_ini_pdf = _fmt_data_pdf(evento_dict.get('data_inicio'))
-        data_fim_pdf = _fmt_data_pdf(evento_dict.get('data_fim_alocacao'))
-        hora_ini_pdf = evento_dict.get('hora_inicio')[:5] if evento_dict.get('hora_inicio') else "Não inf."
-        hora_fim_pdf = evento_dict.get('hora_fim')[:5] if evento_dict.get('hora_fim') else "Não inf."
-        valor_pdf = float(evento_dict.get('valor_total') or 0)
-        dados_cliente = f"<b>Cliente:</b> {nome_cliente_pdf}<br/><b>Contato:</b> {contato_cliente_pdf}<br/><b>Evento:</b> {evento_dict.get('descricao','-')}<br/><b>Período:</b> {data_ini_pdf} ({hora_ini_pdf}) até {data_fim_pdf} ({hora_fim_pdf})<br/><b>Local/Obs:</b> {evento_dict.get('observacao','-')}<br/><b>Valor:</b> R$ {formatar_moeda(valor_pdf)}<br/><b>Status:</b> {evento_dict.get('status','-')}"
+    
+        def _fmt_data(d):
+            if not d: return "-"
+            try: return datetime.strptime(str(d).split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
+            except: return d
+    
+        data_criacao_fmt = _fmt_data(orc.get('data_criacao')) if orc.get('data_criacao') else datetime.now().strftime("%d/%m/%Y")
+        try:
+            data_validade = (datetime.now() + relativedelta(days=int(orc.get('validade_dias') or 7))).strftime("%d/%m/%Y")
+        except Exception:
+            data_validade = "-"
+    
+        dados_cliente = (f"<b>Cliente:</b> {nome_cliente_pdf}<br/><b>Contato:</b> {contato_cliente_pdf}<br/>"
+            f"<b>Evento:</b> {orc.get('titulo_evento','-')}<br/>"
+            f"<b>Período:</b> {_fmt_data(orc.get('data_inicio'))} até {_fmt_data(orc.get('data_fim'))}<br/>"
+            f"<b>Local:</b> {orc.get('endereco_evento','-')}<br/>"
+            f"<b>Proposta válida até:</b> {data_validade}")
         tabela_header = Table([[Paragraph(dados_cliente, normal_style)]], colWidths=[17*cm])
         tabela_header.setStyle(TableStyle([('BOX',(0,0),(-1,-1),1,colors.HexColor("#CCCCCC")),('PADDING',(0,0),(-1,-1),10),('BACKGROUND',(0,0),(-1,-1),colors.HexColor("#FAFAFA"))]))
         story.append(tabela_header)
         story.append(Spacer(1,20))
-        story.append(Paragraph("<b>ITENS LOCADOS</b>", sub_titulo))
-        tabela_dados = [["Produto / Item","Qtd","Detalhes"]]
-        if itens_lista:
-            for it in itens_lista:
-                nome_prod_pdf = dict_produtos_ref.get(it['produto_id'],{}).get('nome',f"Produto #{it['produto_id']}")
-                detalhe_pdf = "-"
-                js_obs = safe_json_load(it.get('observacao'))
-                if js_obs: detalhe_pdf = ", ".join([f"{k}: {v}x" for k,v in js_obs.items()])
-                elif it.get('observacao'): detalhe_pdf = it.get('observacao')
-                tabela_dados.append([nome_prod_pdf, str(it['quantidade']), detalhe_pdf])
-        else: tabela_dados.append(["Nenhum item registrado","-","-"])
-        tabela_pdf = Table(tabela_dados, colWidths=[8*cm,2*cm,7*cm])
+    
+        story.append(Paragraph("<b>ITENS ORÇADOS</b>", sub_titulo))
+        tabela_dados = [["Item","Qtd","Valor Unit.","Subtotal"]]
+        for it in itens_lista:
+            tabela_dados.append([it.get('nome','-'), str(it.get('quantidade',0)), f"R$ {formatar_moeda(it.get('valor_unit',0))}", f"R$ {formatar_moeda(it.get('valor_total',0))}"])
+        tabela_pdf = Table(tabela_dados, colWidths=[8*cm,2*cm,3.5*cm,3.5*cm])
         tabela_pdf.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),COR_PRETO),('TEXTCOLOR',(0,0),(-1,0),COR_DOURADO),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('GRID',(0,0),(-1,-1),0.5,colors.grey),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('FONTSIZE',(0,0),(-1,-1),9),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,COR_CINZA_CLARO])]))
         story.append(tabela_pdf)
+        story.append(Spacer(1,15))
+    
+        resumo_dados = [
+            ["Valor dos Itens", f"R$ {formatar_moeda(orc.get('valor_itens',0))}"],
+            ["Frete/Deslocamento", f"R$ {formatar_moeda(orc.get('valor_frete',0))}"],
+            ["Desconto", f"- R$ {formatar_moeda(orc.get('desconto',0))}"],
+            ["VALOR TOTAL", f"R$ {formatar_moeda(orc.get('valor_total',0))}"],
+        ]
+        tabela_resumo = Table(resumo_dados, colWidths=[13*cm,4*cm])
+        tabela_resumo.setStyle(TableStyle([('ALIGN',(1,0),(1,-1),'RIGHT'),('FONTSIZE',(0,0),(-1,-1),10),
+            ('FONTNAME',(0,3),(-1,3),'Helvetica-Bold'),('FONTSIZE',(0,3),(-1,3),12),
+            ('LINEABOVE',(0,3),(-1,3),1,COR_PRETO),('TOPPADDING',(0,3),(-1,3),8)]))
+        story.append(tabela_resumo)
         story.append(Spacer(1,20))
-        termo_texto = "<b>TERMO DE RESPONSABILIDADE:</b><br/>O cliente assume total responsabilidade pela guarda, conservação e integridade de todos os materiais locados. Em caso de danos, avarias ou perda, arcará com os custos de reparo ou reposição."
-        story.append(Paragraph(termo_texto, termo_style))
-        story.append(Spacer(1,15))
-        story.append(Paragraph("<b>ASSINATURAS</b>", sub_titulo))
-        story.append(Spacer(1,5))
-        assinaturas_data = [["____________________________________","____________________________________"],["Luz & Letras - Locações",f"Cliente: {nome_cliente_pdf[:25]}"],[f"Data: {datetime.now().strftime('%d/%m/%Y')}","Data: ____/____/________"]]
-        tabela_assinaturas = Table(assinaturas_data, colWidths=[8.5*cm,8.5*cm])
-        tabela_assinaturas.setStyle(TableStyle([('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'BOTTOM'),('FONTNAME',(0,1),(-1,1),'Helvetica-Bold'),('FONTSIZE',(0,2),(-1,2),9),('TEXTCOLOR',(0,2),(-1,2),COR_TEXTO_CINZA)]))
-        story.append(tabela_assinaturas)
-        story.append(Spacer(1,15))
-        story.append(Paragraph("A equipe <b>Luz & Letras</b> agradece imensamente a sua preferência!", ParagraphStyle('Obrigado',parent=styles['Normal'],fontSize=11,alignment=TA_CENTER,spaceBefore=20,fontName="Helvetica-Oblique",textColor=COR_PRETO)))
-        doc.build(story)
-        buffer.seek(0)
-        return buffer
-        
-    def gerar_pdf_orcamento(orc, itens_lista, nome_cliente_pdf, contato_cliente_pdf):
-        import os as _os
-        buffer = io.BytesIO()
-        COR_DOURADO = colors.HexColor("#FFC107")
-        COR_PRETO = colors.HexColor("#0E0E0E")
-        COR_CINZA_CLARO = colors.HexColor("#F2F2F2")
-        COR_TEXTO_CINZA = colors.HexColor("#555555")
-        caminho_logo_pdf = "logo_sem_fundo.png" if _os.path.exists("logo_sem_fundo.png") else ("logo.jpg" if _os.path.exists("logo.jpg") else None)
-
-        def _desenhar_cabecalho(canvas_obj, doc_obj):
-            canvas_obj.saveState()
-            largura_pagina, altura_pagina = A4
-            altura_faixa = 3.2 * cm
-            canvas_obj.setFillColor(COR_PRETO)
-            canvas_obj.rect(0, altura_pagina - altura_faixa, largura_pagina, altura_faixa, fill=1, stroke=0)
-        if caminho_logo_pdf:
-            try: canvas_obj.drawImage(caminho_logo_pdf, 2*cm, altura_pagina-altura_faixa+0.35*cm, width=3.6*cm, height=2.5*cm, preserveAspectRatio=True, mask='auto')
-            except Exception: pass
-        canvas_obj.setFillColor(COR_DOURADO)
-        canvas_obj.setFont("Helvetica-Bold", 16)
-        canvas_obj.drawString(6.2*cm, altura_pagina-1.5*cm, "PROPOSTA DE ORÇAMENTO")
-        canvas_obj.setFillColor(colors.white)
-        canvas_obj.setFont("Helvetica", 10)
-        canvas_obj.drawString(6.2*cm, altura_pagina-2.15*cm, f"Evento: {orc.get('titulo_evento','-')}")
-        canvas_obj.setFillColor(colors.grey)
-        canvas_obj.setFont("Helvetica", 8)
-        canvas_obj.drawString(2*cm, 1.2*cm, f"Luz & Letras — Emitido em {datetime.now().strftime('%d/%m/%Y às %H:%M')}")
-        canvas_obj.drawRightString(largura_pagina-2*cm, 1.2*cm, f"Página {doc_obj.page}")
-        canvas_obj.restoreState()
-
-    frame = Frame(2*cm, 1.8*cm, A4[0]-4*cm, A4[1]-5.4*cm, id='corpo_orc')
-    doc = BaseDocTemplate(buffer, pagesize=A4)
-    doc.addPageTemplates([PageTemplate(id='ComCabecalhoOrc', frames=[frame], onPage=_desenhar_cabecalho)])
-    styles = getSampleStyleSheet()
-    story = []
-    sub_titulo = ParagraphStyle('SubTitOrc', parent=styles['Heading2'], fontSize=12, spaceAfter=6, textColor=COR_PRETO)
-    normal_style = ParagraphStyle('NormalOrc', parent=styles['Normal'], fontSize=10, leading=14)
-
-    story.append(Spacer(1, 10))
-
-    def _fmt_data(d):
-        if not d: return "-"
-        try: return datetime.strptime(str(d).split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
-        except: return d
-
-    data_criacao_fmt = _fmt_data(orc.get('data_criacao')) if orc.get('data_criacao') else datetime.now().strftime("%d/%m/%Y")
-    try:
-        data_validade = (datetime.now() + relativedelta(days=int(orc.get('validade_dias') or 7))).strftime("%d/%m/%Y")
-    except Exception:
-        data_validade = "-"
-
-    dados_cliente = (f"<b>Cliente:</b> {nome_cliente_pdf}<br/><b>Contato:</b> {contato_cliente_pdf}<br/>"
-        f"<b>Evento:</b> {orc.get('titulo_evento','-')}<br/>"
-        f"<b>Período:</b> {_fmt_data(orc.get('data_inicio'))} até {_fmt_data(orc.get('data_fim'))}<br/>"
-        f"<b>Local:</b> {orc.get('endereco_evento','-')}<br/>"
-        f"<b>Proposta válida até:</b> {data_validade}")
-    tabela_header = Table([[Paragraph(dados_cliente, normal_style)]], colWidths=[17*cm])
-    tabela_header.setStyle(TableStyle([('BOX',(0,0),(-1,-1),1,colors.HexColor("#CCCCCC")),('PADDING',(0,0),(-1,-1),10),('BACKGROUND',(0,0),(-1,-1),colors.HexColor("#FAFAFA"))]))
-    story.append(tabela_header)
-    story.append(Spacer(1,20))
-
-    story.append(Paragraph("<b>ITENS ORÇADOS</b>", sub_titulo))
-    tabela_dados = [["Item","Qtd","Valor Unit.","Subtotal"]]
-    for it in itens_lista:
-        tabela_dados.append([it.get('nome','-'), str(it.get('quantidade',0)), f"R$ {formatar_moeda(it.get('valor_unit',0))}", f"R$ {formatar_moeda(it.get('valor_total',0))}"])
-    tabela_pdf = Table(tabela_dados, colWidths=[8*cm,2*cm,3.5*cm,3.5*cm])
-    tabela_pdf.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),COR_PRETO),('TEXTCOLOR',(0,0),(-1,0),COR_DOURADO),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('GRID',(0,0),(-1,-1),0.5,colors.grey),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('FONTSIZE',(0,0),(-1,-1),9),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,COR_CINZA_CLARO])]))
-    story.append(tabela_pdf)
-    story.append(Spacer(1,15))
-
-    resumo_dados = [
-        ["Valor dos Itens", f"R$ {formatar_moeda(orc.get('valor_itens',0))}"],
-        ["Frete/Deslocamento", f"R$ {formatar_moeda(orc.get('valor_frete',0))}"],
-        ["Desconto", f"- R$ {formatar_moeda(orc.get('desconto',0))}"],
-        ["VALOR TOTAL", f"R$ {formatar_moeda(orc.get('valor_total',0))}"],
-    ]
-    tabela_resumo = Table(resumo_dados, colWidths=[13*cm,4*cm])
-    tabela_resumo.setStyle(TableStyle([('ALIGN',(1,0),(1,-1),'RIGHT'),('FONTSIZE',(0,0),(-1,-1),10),
-        ('FONTNAME',(0,3),(-1,3),'Helvetica-Bold'),('FONTSIZE',(0,3),(-1,3),12),
-        ('LINEABOVE',(0,3),(-1,3),1,COR_PRETO),('TOPPADDING',(0,3),(-1,3),8)]))
-    story.append(tabela_resumo)
-    story.append(Spacer(1,20))
-
-    if orc.get('observacoes'):
-        story.append(Paragraph(f"<b>Observações:</b> {orc['observacoes']}", ParagraphStyle('Obs', parent=normal_style, textColor=COR_TEXTO_CINZA)))
-        story.append(Spacer(1,15))
-
-    story.append(Paragraph("Proposta sujeita à disponibilidade de estoque na data de confirmação. A equipe <b>Luz & Letras</b> agradece a preferência!",
-        ParagraphStyle('Rodape', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER, textColor=COR_TEXTO_CINZA)))
+    
+        if orc.get('observacoes'):
+            story.append(Paragraph(f"<b>Observações:</b> {orc['observacoes']}", ParagraphStyle('Obs', parent=normal_style, textColor=COR_TEXTO_CINZA)))
+            story.append(Spacer(1,15))
+    
+        story.append(Paragraph("Proposta sujeita à disponibilidade de estoque na data de confirmação. A equipe <b>Luz & Letras</b> agradece a preferência!",
+            ParagraphStyle('Rodape', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER, textColor=COR_TEXTO_CINZA)))
 
         doc.build(story)
         buffer.seek(0)
