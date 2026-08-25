@@ -559,7 +559,121 @@ if not st.session_state['logado']:
             mostrar_popup("Aparelhos antigos desconectados! Faça login novamente.")
             st.rerun()
 
-    st.markdown("---")
+ st.markdown("---")
+    with st.expander("🔑 Esqueceu a senha? Clique aqui"):
+        if 'recuperacao_etapa' not in st.session_state:
+            st.session_state['recuperacao_etapa'] = 'email'
+
+        # ---------- ETAPA 1: INFORMAR E-MAIL ----------
+        if st.session_state['recuperacao_etapa'] == 'email':
+            st.caption("Informe o e-mail cadastrado na sua conta. Enviaremos um código de verificação para você redefinir a senha.")
+            with st.form("form_recuperar_email"):
+                email_recuperacao = st.text_input("Seu E-mail", key="input_email_recuperacao")
+                enviar_codigo_btn = st.form_submit_button("📨 Enviar Código de Verificação")
+            if enviar_codigo_btn:
+                if not email_recuperacao.strip():
+                    mostrar_popup("Informe o e-mail cadastrado.", tipo="erro")
+                else:
+                    usuario_recup = supabase.table("usuarios").select("id, nome, email").eq("email", email_recuperacao.strip()).execute()
+                    if not usuario_recup.data:
+                        mostrar_popup("Não encontramos nenhuma conta com esse e-mail.", tipo="erro")
+                    else:
+                        dados_usuario_recup = usuario_recup.data[0]
+                        codigo_gerado = gerar_codigo_recuperacao()
+                        expira_em = (datetime.now() + relativedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S")
+                        try:
+                            supabase.table("usuarios").update({
+                                "codigo_recuperacao": codigo_gerado,
+                                "codigo_recuperacao_expira": expira_em
+                            }).eq("id", dados_usuario_recup['id']).execute()
+                            nome_dest_recup = dados_usuario_recup.get('nome') or dados_usuario_recup['email']
+                            if enviar_email_codigo_recuperacao(dados_usuario_recup['email'], nome_dest_recup, codigo_gerado):
+                                st.session_state['recuperacao_usuario_id'] = dados_usuario_recup['id']
+                                st.session_state['recuperacao_email'] = dados_usuario_recup['email']
+                                st.session_state['recuperacao_etapa'] = 'codigo'
+                                mostrar_popup("Código enviado! Verifique sua caixa de entrada.")
+                                st.rerun()
+                        except Exception as e:
+                            mostrar_popup(f"Erro ao gerar o código de recuperação: {e}", tipo="erro")
+
+        # ---------- ETAPA 2: CONFIRMAR CÓDIGO ----------
+        elif st.session_state['recuperacao_etapa'] == 'codigo':
+            st.caption(f"Digite o código de 6 dígitos enviado para **{st.session_state.get('recuperacao_email','')}**.")
+            codigo_digitado = st.text_input("Código de Verificação", max_chars=6, key="input_codigo_recuperacao")
+            col_rc1, col_rc2, col_rc3 = st.columns(3)
+            with col_rc1:
+                if st.button("✅ Verificar Código"):
+                    if not codigo_digitado.strip():
+                        mostrar_popup("Digite o código recebido por e-mail.", tipo="erro")
+                    else:
+                        checagem = supabase.table("usuarios").select("codigo_recuperacao, codigo_recuperacao_expira").eq("id", st.session_state['recuperacao_usuario_id']).execute()
+                        if not checagem.data or not checagem.data[0].get('codigo_recuperacao'):
+                            mostrar_popup("Código não encontrado. Solicite um novo.", tipo="erro")
+                        else:
+                            codigo_salvo = checagem.data[0]['codigo_recuperacao']
+                            expira_salvo = checagem.data[0].get('codigo_recuperacao_expira')
+                            try: expirado = (not expira_salvo) or (datetime.strptime(expira_salvo, "%Y-%m-%d %H:%M:%S") < datetime.now())
+                            except Exception: expirado = True
+                            if expirado:
+                                mostrar_popup("Este código expirou. Solicite um novo.", tipo="erro")
+                            elif codigo_digitado.strip() != codigo_salvo:
+                                mostrar_popup("Código incorreto. Confira e tente novamente.", tipo="erro")
+                            else:
+                                st.session_state['recuperacao_etapa'] = 'nova_senha'
+                                mostrar_popup("Código confirmado! Agora crie sua nova senha.")
+                                st.rerun()
+            with col_rc2:
+                if st.button("🔄 Reenviar Código"):
+                    checagem_email = supabase.table("usuarios").select("nome, email").eq("id", st.session_state['recuperacao_usuario_id']).execute()
+                    nome_dest_reenvio = (checagem_email.data[0].get('nome') or st.session_state['recuperacao_email']) if checagem_email.data else st.session_state['recuperacao_email']
+                    codigo_novo = gerar_codigo_recuperacao()
+                    expira_novo = (datetime.now() + relativedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S")
+                    supabase.table("usuarios").update({"codigo_recuperacao": codigo_novo, "codigo_recuperacao_expira": expira_novo}).eq("id", st.session_state['recuperacao_usuario_id']).execute()
+                    if enviar_email_codigo_recuperacao(st.session_state['recuperacao_email'], nome_dest_reenvio, codigo_novo):
+                        mostrar_popup("Novo código enviado!")
+            with col_rc3:
+                if st.button("↩️ Cancelar"):
+                    for chave_limpar in ['recuperacao_etapa', 'recuperacao_usuario_id', 'recuperacao_email']:
+                        if chave_limpar in st.session_state: del st.session_state[chave_limpar]
+                    st.rerun()
+
+        # ---------- ETAPA 3: CRIAR NOVA SENHA ----------
+        elif st.session_state['recuperacao_etapa'] == 'nova_senha':
+            st.caption("Crie sua nova senha. Todos os requisitos abaixo precisam ser atendidos para poder salvar.")
+            nova_senha_recup = st.text_input("Nova Senha", type="password", key="nova_senha_recuperacao")
+            confirma_senha_recup = st.text_input("Confirme a Nova Senha", type="password", key="confirma_senha_recuperacao")
+
+            requisitos_senha = validar_senha_forte(nova_senha_recup)
+            st.markdown("**Requisitos da senha:**")
+            for descricao_req, atendido in requisitos_senha.items():
+                st.markdown(f"{'✅' if atendido else '❌'} {descricao_req}")
+
+            senhas_preenchidas = bool(nova_senha_recup) or bool(confirma_senha_recup)
+            senhas_coincidem = bool(nova_senha_recup) and (nova_senha_recup == confirma_senha_recup)
+            if senhas_preenchidas:
+                st.markdown(f"{'✅' if senhas_coincidem else '❌'} As senhas digitadas coincidem")
+
+            todos_requisitos_ok = all(requisitos_senha.values()) and senhas_coincidem
+
+            col_ns1, col_ns2 = st.columns(2)
+            with col_ns1:
+                if st.button("💾 Confirmar Nova Senha", disabled=not todos_requisitos_ok):
+                    supabase.table("usuarios").update({
+                        "senha_hash": nova_senha_recup,
+                        "codigo_recuperacao": None,
+                        "codigo_recuperacao_expira": None
+                    }).eq("id", st.session_state['recuperacao_usuario_id']).execute()
+                    for chave_limpar in ['recuperacao_etapa', 'recuperacao_usuario_id', 'recuperacao_email']:
+                        if chave_limpar in st.session_state: del st.session_state[chave_limpar]
+                    mostrar_popup("SENHA REDEFINIDA COM SUCESSO! Faça login com sua nova senha.")
+                    st.rerun()
+            with col_ns2:
+                if st.button("↩️ Cancelar", key="cancelar_nova_senha"):
+                    for chave_limpar in ['recuperacao_etapa', 'recuperacao_usuario_id', 'recuperacao_email']:
+                        if chave_limpar in st.session_state: del st.session_state[chave_limpar]
+                    st.rerun()
+            if not todos_requisitos_ok and senhas_preenchidas:
+                st.info("Atenda a todos os requisitos acima para conseguir salvar a nova senha.")
     with st.expander("🆕 Ainda não tem conta? Criar conta"):
         with st.form("form_criar_conta"):
             nome_empresa_cadastro = st.text_input("Nome da Empresa")
