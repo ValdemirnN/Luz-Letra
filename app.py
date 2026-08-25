@@ -3171,7 +3171,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
             st.markdown("---")
             st.markdown("#### 🚗 Frete / Deslocamento")
             col_fr1, col_fr2 = st.columns(2)
-            with col_fr1: origem_orc = st.text_input("Endereço de Origem (sua base)", value=ENDERECO_BASE_EMPRESA, key="orc_origem")
+            with col_fr1: origem_orc = st.text_input("Endereço de Origem (sua base)", value="", placeholder=ENDERECO_BASE_EMPRESA, key="orc_origem")
             with col_fr2:
                 if st.button("📍 Calcular Distância", key="btn_calc_dist_orc"):
                     if not origem_orc.strip() or not endereco_evento_orc.strip():
