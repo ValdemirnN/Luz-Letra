@@ -503,7 +503,41 @@ def calcular_distancia_google_maps(origem, destino):
 if 'logado' not in st.session_state:
     st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': '', 'token_sessao': None})
     restaurar_sessao_por_token()
+def gerar_codigo_recuperacao():
+    import random
+    return str(random.randint(100000, 999999))
 
+def enviar_email_codigo_recuperacao(destinatario, nome_destinatario, codigo):
+    corpo = f"""Olá {nome_destinatario},
+
+Seu código de verificação para redefinir sua senha é: {codigo}
+
+Este código expira em 15 minutos.
+
+Se você não solicitou essa alteração, apenas ignore este e-mail.
+
+Atenciosamente,
+Equipe Luz & Letras
+"""
+    msg = MIMEText(corpo)
+    msg['Subject'] = "Código de Recuperação de Senha - Luz & Letras"
+    msg['From'] = GMAIL_REMETENTE
+    msg['To'] = destinatario
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=15) as servidor:
+            servidor.login(GMAIL_REMETENTE, GMAIL_SENHA_APP)
+            servidor.sendmail(GMAIL_REMETENTE, destinatario, msg.as_string())
+        return True
+    except Exception:
+        return False
+
+def validar_senha_forte(senha):
+    import re
+    return {
+        "Mínimo de 7 caracteres": len(senha or "") >= 7,
+        "Pelo menos uma letra maiúscula": bool(re.search(r'[A-Z]', senha or "")),
+        "Pelo menos um número": bool(re.search(r'[0-9]', senha or "")),
+    }    
 
 # ==========================================
 # TELA DE LOGIN
