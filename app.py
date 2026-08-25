@@ -559,7 +559,7 @@ if not st.session_state['logado']:
             mostrar_popup("Aparelhos antigos desconectados! Faça login novamente.")
             st.rerun()
 
- st.markdown("---")
+    st.markdown("---")
     with st.expander("🔑 Esqueceu a senha? Clique aqui"):
         if 'recuperacao_etapa' not in st.session_state:
             st.session_state['recuperacao_etapa'] = 'email'
