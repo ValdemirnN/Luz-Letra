@@ -1350,21 +1350,22 @@ else:
         doc.build(story)
         buffer.seek(0)
         return buffer
-def gerar_pdf_orcamento(orc, itens_lista, nome_cliente_pdf, contato_cliente_pdf):
-    import os as _os
-    buffer = io.BytesIO()
-    COR_DOURADO = colors.HexColor("#FFC107")
-    COR_PRETO = colors.HexColor("#0E0E0E")
-    COR_CINZA_CLARO = colors.HexColor("#F2F2F2")
-    COR_TEXTO_CINZA = colors.HexColor("#555555")
-    caminho_logo_pdf = "logo_sem_fundo.png" if _os.path.exists("logo_sem_fundo.png") else ("logo.jpg" if _os.path.exists("logo.jpg") else None)
+        
+    def gerar_pdf_orcamento(orc, itens_lista, nome_cliente_pdf, contato_cliente_pdf):
+        import os as _os
+        buffer = io.BytesIO()
+        COR_DOURADO = colors.HexColor("#FFC107")
+        COR_PRETO = colors.HexColor("#0E0E0E")
+        COR_CINZA_CLARO = colors.HexColor("#F2F2F2")
+        COR_TEXTO_CINZA = colors.HexColor("#555555")
+        caminho_logo_pdf = "logo_sem_fundo.png" if _os.path.exists("logo_sem_fundo.png") else ("logo.jpg" if _os.path.exists("logo.jpg") else None)
 
-    def _desenhar_cabecalho(canvas_obj, doc_obj):
-        canvas_obj.saveState()
-        largura_pagina, altura_pagina = A4
-        altura_faixa = 3.2 * cm
-        canvas_obj.setFillColor(COR_PRETO)
-        canvas_obj.rect(0, altura_pagina - altura_faixa, largura_pagina, altura_faixa, fill=1, stroke=0)
+        def _desenhar_cabecalho(canvas_obj, doc_obj):
+            canvas_obj.saveState()
+            largura_pagina, altura_pagina = A4
+            altura_faixa = 3.2 * cm
+            canvas_obj.setFillColor(COR_PRETO)
+            canvas_obj.rect(0, altura_pagina - altura_faixa, largura_pagina, altura_faixa, fill=1, stroke=0)
         if caminho_logo_pdf:
             try: canvas_obj.drawImage(caminho_logo_pdf, 2*cm, altura_pagina-altura_faixa+0.35*cm, width=3.6*cm, height=2.5*cm, preserveAspectRatio=True, mask='auto')
             except Exception: pass
@@ -1440,11 +1441,12 @@ def gerar_pdf_orcamento(orc, itens_lista, nome_cliente_pdf, contato_cliente_pdf)
     story.append(Paragraph("Proposta sujeita à disponibilidade de estoque na data de confirmação. A equipe <b>Luz & Letras</b> agradece a preferência!",
         ParagraphStyle('Rodape', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER, textColor=COR_TEXTO_CINZA)))
 
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-    
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
     def _criar_modal_exclusao():
+        def modal(produto_info, tipo, total_remover=0, qtds_json=None, motivo=""):
         def modal(produto_info, tipo, total_remover=0, qtds_json=None, motivo=""):
             if tipo == "parcial":
                 st.warning(f"Tem certeza que deseja remover **{total_remover} peças** de **{produto_info['nome']}** parcialmente?")
