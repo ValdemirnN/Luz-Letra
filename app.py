@@ -928,12 +928,12 @@ else:
         dados_usuario_atual = dados_usuario_resp.data[0] if dados_usuario_resp.data else {}
 
         with st.expander("📇 Meus Dados Cadastrados", expanded=False):
-         with st.form("form_editar_perfil"):
-            novo_nome_perfil = st.text_input("Nome", value=dados_usuario_atual.get('nome') or "")
-            novo_email_perfil = st.text_input("E-mail", value=dados_usuario_atual.get('email') or "")
-            st.caption("Alterar o e-mail muda o login que você usa para entrar no sistema.")
-            senha_atual_perfil = st.text_input("Confirme sua senha atual para salvar", type="password")
-            salvar_perfil = st.form_submit_button("💾 Salvar Alterações")
+            with st.form("form_editar_perfil"):
+                novo_nome_perfil = st.text_input("Nome", value=dados_usuario_atual.get('nome') or "")
+                novo_email_perfil = st.text_input("E-mail", value=dados_usuario_atual.get('email') or "")
+                st.caption("Alterar o e-mail muda o login que você usa para entrar no sistema.")
+                senha_atual_perfil = st.text_input("Confirme sua senha atual para salvar", type="password")
+                salvar_perfil = st.form_submit_button("💾 Salvar Alterações")
         if salvar_perfil:
             if not novo_nome_perfil.strip() or not novo_email_perfil.strip(): mostrar_popup("Preencha nome e e-mail.", tipo="erro")
             elif not senha_atual_perfil: mostrar_popup("Confirme sua senha atual para salvar as alterações.", tipo="erro")
@@ -952,11 +952,11 @@ else:
 
                 st.markdown("---")
         with st.expander("🔑 Alterar Senha", expanded=False):
-         with st.form("form_trocar_senha_perfil"):
-            senha_atual_troca = st.text_input("Senha Atual", type="password", key="senha_atual_troca_perfil")
-            senha_nova_troca = st.text_input("Nova Senha", type="password", key="senha_nova_troca_perfil")
-            senha_nova_troca_confirma = st.text_input("Confirme a Nova Senha", type="password", key="senha_nova_confirma_perfil")
-            trocar_senha_btn = st.form_submit_button("🔒 Alterar Senha")
+            with st.form("form_trocar_senha_perfil"):
+                senha_atual_troca = st.text_input("Senha Atual", type="password", key="senha_atual_troca_perfil")
+                senha_nova_troca = st.text_input("Nova Senha", type="password", key="senha_nova_troca_perfil")
+                senha_nova_troca_confirma = st.text_input("Confirme a Nova Senha", type="password", key="senha_nova_confirma_perfil")
+                trocar_senha_btn = st.form_submit_button("🔒 Alterar Senha")
         if trocar_senha_btn:
             senha_check_resp2 = supabase.table("usuarios").select("senha_hash").eq("id", st.session_state['usuario_id']).execute()
             senha_hash_atual2 = senha_check_resp2.data[0]['senha_hash'] if senha_check_resp2.data else None
@@ -1525,7 +1525,7 @@ else:
 
                     with st.expander(titulo_exp):
                         if aguardando_manual:
-                            st.warning("⏳ Esta pessoa escolheu pagar em mãos e aguarda confirmação.")
+                            st.warning("⏳ Esta pessoa escolheu pagar em mãos e está aguardando aprovação.")
                             if comprovante_u: st.info(f"📎 Comprovante: {comprovante_u}")
                             if st.button("✅ Confirmar Pagamento Recebido", key=f"conf_manual_{u['id']}"):
                                 venc_ant = venc
