@@ -2991,7 +2991,8 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                             }).eq("id", mc['id']).execute()
                                             st.session_state[f"editando_mc_{mc['id']}"] = False
                                             mostrar_popup("Registro atualizado com sucesso!")
-                                            st.rerun()                                    with col_btn_mc2:
+                                            st.rerun()
+                                            with col_btn_mc2:
                                         st.warning("Excluir remove apenas o registro histórico.")
                                         if st.button("🗑️ Excluir do Histórico", key=f"del_hist_mc_{mc['id']}"):
                                             supabase.table("manutencao").delete().eq("id", mc['id']).execute()
