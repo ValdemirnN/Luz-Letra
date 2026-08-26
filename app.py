@@ -2897,48 +2897,39 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                             mostrar_popup("Registro removido do histórico.")
                                             st.rerun()
 
-                                    st.markdown(" ")
-                                    st.markdown(f"""
-                                    <style>
-                                    div[data-testid="stButton"] > button[kind="secondary"]#btn_retorno_{m['id']} {{
-                                        background-color: #1B5E20 !important;
-                                        color: white !important;
-                                        border: none !important;
-                                    }}
-                                    </style>
-                                    """, unsafe_allow_html=True)
-                                    if st.button(
-                                        "✅ Confirmar Retorno ao Estoque",
-                                        key=f"ret_manut_{m['id']}",
-                                        use_container_width=True
-                                    ):
-                                        prod_ret = supabase.table("produtos").select("quantidade_estoque, observacao").eq("id", m['produto_id']).execute()
-                                        if prod_ret.data:
-                                            estq_novo_ret = prod_ret.data[0]['quantidade_estoque'] + m['quantidade']
-                                            if m.get('detalhes_kit'):
-                                                try:
-                                                    dk_ret = json.loads(m['detalhes_kit'])
-                                                    obs_ret = safe_json_load(prod_ret.data[0].get('observacao'))
-                                                    if obs_ret and dk_ret:
-                                                        for k, v in dk_ret.items():
-                                                            obs_ret[k] = obs_ret.get(k, 0) + v
-                                                        supabase.table("produtos").update({
-                                                            "quantidade_estoque": estq_novo_ret,
-                                                            "observacao": json.dumps(obs_ret)
-                                                        }).eq("id", m['produto_id']).execute()
-                                                    else:
-                                                        supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
-                                                except Exception:
+                                # Botão de retorno em linha própria, fora das colunas
+                                if st.button(
+                                    "✅ Confirmar Retorno ao Estoque",
+                                    key=f"ret_manut_{m['id']}",
+                                    use_container_width=True
+                                ):
+                                    prod_ret = supabase.table("produtos").select("quantidade_estoque, observacao").eq("id", m['produto_id']).execute()
+                                    if prod_ret.data:
+                                        estq_novo_ret = prod_ret.data[0]['quantidade_estoque'] + m['quantidade']
+                                        if m.get('detalhes_kit'):
+                                            try:
+                                                dk_ret = json.loads(m['detalhes_kit'])
+                                                obs_ret = safe_json_load(prod_ret.data[0].get('observacao'))
+                                                if obs_ret and dk_ret:
+                                                    for k, v in dk_ret.items():
+                                                        obs_ret[k] = obs_ret.get(k, 0) + v
+                                                    supabase.table("produtos").update({
+                                                        "quantidade_estoque": estq_novo_ret,
+                                                        "observacao": json.dumps(obs_ret)
+                                                    }).eq("id", m['produto_id']).execute()
+                                                else:
                                                     supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
-                                            else:
+                                            except Exception:
                                                 supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
+                                        else:
+                                            supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
 
-                                            supabase.table("manutencao").update({
-                                                "status": "Concluído",
-                                                "data_retorno_real": str(datetime.now().date())
-                                            }).eq("id", m['id']).execute()
-                                            mostrar_popup("Produto devolvido ao estoque com sucesso!")
-                                            st.rerun()
+                                        supabase.table("manutencao").update({
+                                            "status": "Concluído",
+                                            "data_retorno_real": str(datetime.now().date())
+                                        }).eq("id", m['id']).execute()
+                                        mostrar_popup("Produto devolvido ao estoque com sucesso!")
+                                        st.rerun()
 
                                 st.markdown("---")
                         else:
