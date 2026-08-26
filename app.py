@@ -2728,7 +2728,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
         with st.expander("🔧 Controle de Manutenção", expanded=False):
             tab_enviar_manut, tab_extrato_manut = st.tabs(["Enviar para Manutenção", "📋 Histórico de Manutenção"])
 
-            with tab_enviar_manut:
+with tab_enviar_manut:
                 if produtos_lista.data:
                     opcoes_manut = {p['nome']: p for p in produtos_lista.data}
                     prod_manut_nome = st.selectbox("Selecione o Produto", list(opcoes_manut.keys()), key="sel_manut")
@@ -2761,13 +2761,13 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
 
                     motivo_manut = st.text_input("Motivo / Defeito", key="motivo_manut")
 
-                        st.markdown("**📍 Onde vai ficar para manutenção?**")
-                        col_loc1, col_loc2, col_loc3, col_loc4, col_loc5 = st.columns(5)
-                        with col_loc1: local_nome_manut = st.text_input("Nome do Local / Oficina", key="manut_local_nome", placeholder="Ex: Oficina do João")
-                        with col_loc2: local_rua_manut = st.text_input("Rua", key="manut_local_rua", placeholder="Ex: Rua das Flores")
-                        with col_loc3: local_numero_manut = st.text_input("Número", key="manut_local_numero", placeholder="Ex: 123")
-                        with col_loc4: local_bairro_manut = st.text_input("Bairro / Referência", key="manut_local_bairro", placeholder="Ex: Centro")
-                        with col_loc5: contato_manut = st.text_input("Telefone/Contato", key="manut_contato", placeholder="(84) 99999-9999")
+                    st.markdown("**📍 Onde vai ficar para manutenção?**")
+                    col_loc1, col_loc2, col_loc3, col_loc4, col_loc5 = st.columns(5)
+                    with col_loc1: local_nome_manut = st.text_input("Nome do Local / Oficina", key="manut_local_nome", placeholder="Ex: Oficina do João")
+                    with col_loc2: local_rua_manut = st.text_input("Rua", key="manut_local_rua", placeholder="Ex: Rua das Flores")
+                    with col_loc3: local_numero_manut = st.text_input("Número", key="manut_local_numero", placeholder="Ex: 123")
+                    with col_loc4: local_bairro_manut = st.text_input("Bairro / Referência", key="manut_local_bairro", placeholder="Ex: Centro")
+                    with col_loc5: contato_manut = st.text_input("Telefone/Contato", key="manut_contato", placeholder="(84) 99999-9999")
 
                     st.markdown("**📅 Previsão de Retorno da Manutenção:**")
                     data_prev_retorno = st.date_input(
@@ -2784,8 +2784,10 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         elif (qtd_manut or 0) <= 0:
                             mostrar_popup("Informe a quantidade a enviar.", tipo="erro")
                         else:
-                                local_completo = f"{local_nome_manut} — {local_rua_manut}, {local_numero_manut} — {local_bairro_manut}".strip(" —,")
-                                contato_manut_formatado = formatar_telefone_br(contato_manut) if contato_manut.strip() else None
+                            local_completo = f"{local_nome_manut} — {local_rua_manut}, {local_numero_manut} — {local_bairro_manut}".strip(" —,")
+                            contato_manut_formatado = formatar_telefone_br(contato_manut) if contato_manut.strip() else None
+                            novo_estoque_manut = prod_manut['quantidade_estoque'] - qtd_manut
+
                             if js_manut and qtds_manut_kit:
                                 novo_json_manut = dict(js_manut)
                                 for k, v in qtds_manut_kit.items():
@@ -2816,7 +2818,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                             st.rerun()
                 else:
                     st.info("Nenhum produto cadastrado.")
-
             with tab_extrato_manut:
                 try:
                     manut_lista = supabase.table("manutencao").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_envio", desc=True).execute()
