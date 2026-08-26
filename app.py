@@ -3050,82 +3050,82 @@ with tab_enviar_manut:
                     except Exception as e:
                         st.error(f"Erro ao carregar manutenção: {e}")
 
-        with st.expander("🗑️ Controle de Itens Quebrados", expanded=False):
-            tab_reg_quebrado, tab_lista_quebrados = st.tabs(["Registrar Quebra", "📋 Histórico de Quebrados"])
-
-            with tab_reg_quebrado:
-                if produtos_lista.data:
-                    opcoes_quebrado = {p['nome']: p for p in produtos_lista.data}
-                    prod_quebra_nome = st.selectbox("Selecione o Produto", list(opcoes_quebrado.keys()), key="sel_quebrado")
-                    prod_quebrado = opcoes_quebrado[prod_quebra_nome]
-
-                    js_quebrado = safe_json_load(prod_quebrado.get('observacao'))
-
-                    col_q1, col_q2 = st.columns(2)
-                    with col_q1:
-                        if js_quebrado:
-                            st.markdown(f"**Especifique quais peças de {prod_quebrado['nome']} foram quebradas/perdidas:**")
-                            cols_qkit = st.columns(6)
-                            idx_qkit = 0
-                            qtds_quebra_kit = {}
-                            for k, max_v in js_quebrado.items():
-                                if max_v > 0:
-                                    v_qk = cols_qkit[idx_qkit % 6].number_input(
-                                        f"{k} (Tem: {max_v})", min_value=0, max_value=max_v,
-                                        value=None, key=f"quebra_kit_{prod_quebrado['id']}_{k}"
-                                    )
-                                    if (v_qk or 0) > 0:
-                                        qtds_quebra_kit[k] = v_qk
-                                    idx_qkit += 1
-                            qtd_quebrada = sum(qtds_quebra_kit.values())
-                        else:
-                            qtd_quebrada = st.number_input(
-                                "Quantidade Quebrada/Perdida",
-                                min_value=1, max_value=prod_quebrado['quantidade_estoque'], step=1,
-                                key="qtd_quebrada_normal"
-                            )
-                            qtds_quebra_kit = {}
-
-                    with col_q2:
-                        motivo_quebra = st.text_input("Detalhes (Ex: Quebrou na festa X)", key="motivo_quebra")
-
-                    st.error("⚠️ **Atenção:** Itens quebrados são **removidos permanentemente** do estoque. Esta ação não pode ser desfeita.")
-
-                    if st.button("🗑️ Registrar Quebra / Perda Definitiva", key="btn_reg_quebra"):
-                        if not motivo_quebra.strip():
-                            mostrar_popup("Informe os detalhes da quebra.", tipo="erro")
-                        elif (qtd_quebrada or 0) <= 0:
-                            mostrar_popup("Informe a quantidade quebrada.", tipo="erro")
-                        else:
-                            # Remove permanentemente do estoque
-                            novo_estoque_q = prod_quebrado['quantidade_estoque'] - qtd_quebrada
-
-                            if js_quebrado and qtds_quebra_kit:
-                                novo_json_q = dict(js_quebrado)
-                                for k, v in qtds_quebra_kit.items():
-                                    novo_json_q[k] = max(0, novo_json_q.get(k, 0) - v)
-                                supabase.table("produtos").update({
-                                    "quantidade_estoque": max(0, novo_estoque_q),
-                                    "observacao": json.dumps(novo_json_q)
-                                }).eq("id", prod_quebrado['id']).execute()
+            with st.expander("🗑️ Controle de Itens Quebrados", expanded=False):
+                tab_reg_quebrado, tab_lista_quebrados = st.tabs(["Registrar Quebra", "📋 Histórico de Quebrados"])
+    
+                with tab_reg_quebrado:
+                    if produtos_lista.data:
+                        opcoes_quebrado = {p['nome']: p for p in produtos_lista.data}
+                        prod_quebra_nome = st.selectbox("Selecione o Produto", list(opcoes_quebrado.keys()), key="sel_quebrado")
+                        prod_quebrado = opcoes_quebrado[prod_quebra_nome]
+    
+                        js_quebrado = safe_json_load(prod_quebrado.get('observacao'))
+    
+                        col_q1, col_q2 = st.columns(2)
+                        with col_q1:
+                            if js_quebrado:
+                                st.markdown(f"**Especifique quais peças de {prod_quebrado['nome']} foram quebradas/perdidas:**")
+                                cols_qkit = st.columns(6)
+                                idx_qkit = 0
+                                qtds_quebra_kit = {}
+                                for k, max_v in js_quebrado.items():
+                                    if max_v > 0:
+                                        v_qk = cols_qkit[idx_qkit % 6].number_input(
+                                            f"{k} (Tem: {max_v})", min_value=0, max_value=max_v,
+                                            value=None, key=f"quebra_kit_{prod_quebrado['id']}_{k}"
+                                        )
+                                        if (v_qk or 0) > 0:
+                                            qtds_quebra_kit[k] = v_qk
+                                        idx_qkit += 1
+                                qtd_quebrada = sum(qtds_quebra_kit.values())
                             else:
-                                supabase.table("produtos").update({
-                                    "quantidade_estoque": max(0, novo_estoque_q)
-                                }).eq("id", prod_quebrado['id']).execute()
-
-                            supabase.table("itens_quebrados").insert({
-                                "empresa_id": emp_id,
-                                "produto_id": prod_quebrado['id'],
-                                "quantidade": qtd_quebrada,
-                                "motivo": motivo_quebra,
-                                "data_registro": str(datetime.now().date()),
-                                "detalhes_kit": json.dumps(qtds_quebra_kit) if qtds_quebra_kit else None
-                            }).execute()
-
-                            mostrar_popup("Baixa de estoque registrada permanentemente.")
-                            st.rerun()
-                else:
-                    st.info("Nenhum produto cadastrado.")
+                                qtd_quebrada = st.number_input(
+                                    "Quantidade Quebrada/Perdida",
+                                    min_value=1, max_value=prod_quebrado['quantidade_estoque'], step=1,
+                                    key="qtd_quebrada_normal"
+                                )
+                                qtds_quebra_kit = {}
+    
+                        with col_q2:
+                            motivo_quebra = st.text_input("Detalhes (Ex: Quebrou na festa X)", key="motivo_quebra")
+    
+                        st.error("⚠️ **Atenção:** Itens quebrados são **removidos permanentemente** do estoque. Esta ação não pode ser desfeita.")
+    
+                        if st.button("🗑️ Registrar Quebra / Perda Definitiva", key="btn_reg_quebra"):
+                            if not motivo_quebra.strip():
+                                mostrar_popup("Informe os detalhes da quebra.", tipo="erro")
+                            elif (qtd_quebrada or 0) <= 0:
+                                mostrar_popup("Informe a quantidade quebrada.", tipo="erro")
+                            else:
+                                # Remove permanentemente do estoque
+                                novo_estoque_q = prod_quebrado['quantidade_estoque'] - qtd_quebrada
+    
+                                if js_quebrado and qtds_quebra_kit:
+                                    novo_json_q = dict(js_quebrado)
+                                    for k, v in qtds_quebra_kit.items():
+                                        novo_json_q[k] = max(0, novo_json_q.get(k, 0) - v)
+                                    supabase.table("produtos").update({
+                                        "quantidade_estoque": max(0, novo_estoque_q),
+                                        "observacao": json.dumps(novo_json_q)
+                                    }).eq("id", prod_quebrado['id']).execute()
+                                else:
+                                    supabase.table("produtos").update({
+                                        "quantidade_estoque": max(0, novo_estoque_q)
+                                    }).eq("id", prod_quebrado['id']).execute()
+    
+                                supabase.table("itens_quebrados").insert({
+                                    "empresa_id": emp_id,
+                                    "produto_id": prod_quebrado['id'],
+                                    "quantidade": qtd_quebrada,
+                                    "motivo": motivo_quebra,
+                                    "data_registro": str(datetime.now().date()),
+                                    "detalhes_kit": json.dumps(qtds_quebra_kit) if qtds_quebra_kit else None
+                                }).execute()
+    
+                                mostrar_popup("Baixa de estoque registrada permanentemente.")
+                                st.rerun()
+                    else:
+                        st.info("Nenhum produto cadastrado.")
 
             with tab_lista_quebrados:
                 try:
