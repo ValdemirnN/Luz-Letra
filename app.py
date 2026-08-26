@@ -2815,7 +2815,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                     if manut_lista.data:
                         hoje_manut = datetime.now().date()
 
-                        # Separar em manutenção ativa vs histórico concluído
                         em_manut = [m for m in manut_lista.data if m['status'] == "Em Manutenção"]
                         concluidos = [m for m in manut_lista.data if m['status'] == "Concluído"]
 
@@ -2826,7 +2825,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                 data_envio_m = m.get('data_envio', '-')
                                 data_prev_m = m.get('data_prevista_retorno', '-')
 
-                                # Verifica se o prazo já passou
                                 prazo_vencido = False
                                 dias_atraso = 0
                                 if data_prev_m and data_prev_m != '-':
@@ -2838,7 +2836,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                     except Exception:
                                         pass
 
-                                # Mostra detalhes do kit se houver
                                 detalhes_kit_m = ""
                                 if m.get('detalhes_kit'):
                                     try:
@@ -2861,9 +2858,8 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
 
                                 st.caption(f"Motivo: {m['motivo']}")
 
-                                col_mb1, col_mb2 = st.columns(2)
+                                col_mb1, col_mb2, col_mb3 = st.columns(3)
                                 with col_mb1:
-                                    # Atualizar data prevista (sem precisar que esteja pronto)
                                     nova_data_prev = st.date_input(
                                         "Atualizar previsão de retorno",
                                         value=datetime.strptime(data_prev_m, "%Y-%m-%d").date() if data_prev_m and data_prev_m != '-' else hoje_manut,
@@ -2879,16 +2875,13 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                         st.rerun()
 
                                 with col_mb2:
-                                    # Só retorna ao estoque quando o usuário confirmar manualmente que saiu da manutenção
                                     st.info("⬇️ Confirme apenas quando o item já tiver retornado fisicamente.")
                                     if st.button(f"✅ Confirmar Retorno ao Estoque", key=f"ret_manut_{m['id']}"):
-                                        # Devolve ao estoque principal
                                         prod_ret = supabase.table("produtos").select("quantidade_estoque, observacao").eq("id", m['produto_id']).execute()
                                         if prod_ret.data:
                                             estq_atual_ret = prod_ret.data[0]['quantidade_estoque']
                                             estq_novo_ret = estq_atual_ret + m['quantidade']
 
-                                            # Se tinha kit, restaura os subitens também
                                             if m.get('detalhes_kit'):
                                                 try:
                                                     dk_ret = json.loads(m['detalhes_kit'])
@@ -2920,29 +2913,87 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                             mostrar_popup("Produto devolvido ao estoque com sucesso!")
                                             st.rerun()
 
+                                with col_mb3:
+                                    st.warning("⚠️ Excluir remove o registro sem devolver ao estoque.")
+                                    if st.button(f"🗑️ Excluir Registro", key=f"del_manut_ativo_{m['id']}"):
+                                        supabase.table("manutencao").delete().eq("id", m['id']).execute()
+                                        mostrar_popup("Registro excluído.")
+                                        st.rerun()
+
                                 st.markdown("---")
                         else:
                             st.success("✅ Nenhum item em manutenção no momento.")
 
                         if concluidos:
-                            with st.expander(f"📜 Histórico de Manutenções Concluídas ({len(concluidos)})", expanded=False):
-                                for mc in concluidos:
-                                    nome_pc = mc['produtos']['nome'] if mc.get('produtos') else f"Produto #{mc['produto_id']}"
-                                    detalhes_kit_c = ""
-                                    if mc.get('detalhes_kit'):
+                            st.markdown(f"#### 📜 Histórico de Manutenções Concluídas ({len(concluidos)})")
+                            for mc in concluidos:
+                                nome_pc = mc['produtos']['nome'] if mc.get('produtos') else f"Produto #{mc['produto_id']}"
+                                detalhes_kit_c = ""
+                                if mc.get('detalhes_kit'):
+                                    try:
+                                        dkc = json.loads(mc['detalhes_kit'])
+                                        detalhes_kit_c = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dkc.items()])
+                                    except Exception:
+                                        pass
+
+                                data_retorno_real = mc.get('data_retorno_real', '-')
+
+                                with st.expander(
+                                    f"✅ {nome_pc} — {mc['quantidade']} un. | "
+                                    f"Enviado: {mc.get('data_envio','-')} | "
+                                    f"Retornou: {data_retorno_real}{detalhes_kit_c}",
+                                    expanded=False
+                                ):
+                                    st.caption(f"Motivo original: {mc['motivo']}")
+
+                                    # --- EDITAR ---
+                                    st.markdown("**✏️ Editar registro:**")
+                                    col_ec1, col_ec2, col_ec3 = st.columns(3)
+                                    with col_ec1:
+                                        novo_motivo_mc = st.text_input(
+                                            "Motivo", value=mc['motivo'],
+                                            key=f"edit_motivo_mc_{mc['id']}"
+                                        )
+                                    with col_ec2:
                                         try:
-                                            dkc = json.loads(mc['detalhes_kit'])
-                                            detalhes_kit_c = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dkc.items()])
+                                            val_data_envio = datetime.strptime(mc.get('data_envio','2024-01-01'), "%Y-%m-%d").date()
                                         except Exception:
-                                            pass
-                                    data_retorno_real = mc.get('data_retorno_real', '-')
-                                    st.write(
-                                        f"✅ **{nome_pc}** — {mc['quantidade']} un. | "
-                                        f"Enviado: {mc.get('data_envio','-')} | "
-                                        f"Retornou: {data_retorno_real}{detalhes_kit_c}"
-                                    )
-                                    st.caption(f"Motivo: {mc['motivo']}")
-                                    st.markdown("<hr style='border-color:#333;margin:6px 0'>", unsafe_allow_html=True)
+                                            val_data_envio = datetime.now().date()
+                                        nova_data_envio_mc = st.date_input(
+                                            "Data de Envio",
+                                            value=val_data_envio,
+                                            format="DD/MM/YYYY",
+                                            key=f"edit_envio_mc_{mc['id']}"
+                                        )
+                                    with col_ec3:
+                                        try:
+                                            val_data_ret = datetime.strptime(mc.get('data_retorno_real','2024-01-01'), "%Y-%m-%d").date()
+                                        except Exception:
+                                            val_data_ret = datetime.now().date()
+                                        nova_data_retorno_mc = st.date_input(
+                                            "Data de Retorno Real",
+                                            value=val_data_ret,
+                                            format="DD/MM/YYYY",
+                                            key=f"edit_retorno_mc_{mc['id']}"
+                                        )
+
+                                    col_btn_mc1, col_btn_mc2 = st.columns(2)
+                                    with col_btn_mc1:
+                                        if st.button("💾 Salvar Edição", key=f"salvar_edit_mc_{mc['id']}"):
+                                            supabase.table("manutencao").update({
+                                                "motivo": novo_motivo_mc,
+                                                "data_envio": str(nova_data_envio_mc),
+                                                "data_retorno_real": str(nova_data_retorno_mc)
+                                            }).eq("id", mc['id']).execute()
+                                            mostrar_popup("Registro atualizado com sucesso!")
+                                            st.rerun()
+
+                                    with col_btn_mc2:
+                                        st.warning("Excluir remove apenas o registro histórico.")
+                                        if st.button("🗑️ Excluir do Histórico", key=f"del_hist_mc_{mc['id']}"):
+                                            supabase.table("manutencao").delete().eq("id", mc['id']).execute()
+                                            mostrar_popup("Registro excluído do histórico.")
+                                            st.rerun()
                     else:
                         st.info("Nenhum registro de manutenção ainda.")
                 except Exception as e:
