@@ -2950,35 +2950,47 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                     f"Retornou: {data_retorno_real}{detalhes_kit_c}",
                                     expanded=False
                                 ):
-                                    st.caption(f"Motivo original: {mc['motivo']}")
-                                    st.markdown("**✏️ Editar registro:**")
-                                    col_ec1, col_ec2, col_ec3 = st.columns(3)
-                                    with col_ec1:
-                                        novo_motivo_mc = st.text_input("Motivo", value=mc['motivo'], key=f"edit_motivo_mc_{mc['id']}")
-                                    with col_ec2:
-                                        try:
-                                            val_data_envio = datetime.strptime(mc.get('data_envio', '2024-01-01'), "%Y-%m-%d").date()
-                                        except Exception:
-                                            val_data_envio = datetime.now().date()
-                                        nova_data_envio_mc = st.date_input("Data de Envio", value=val_data_envio, format="DD/MM/YYYY", key=f"edit_envio_mc_{mc['id']}")
-                                    with col_ec3:
-                                        try:
-                                            val_data_ret = datetime.strptime(mc.get('data_retorno_real', '2024-01-01'), "%Y-%m-%d").date()
-                                        except Exception:
-                                            val_data_ret = datetime.now().date()
-                                        nova_data_retorno_mc = st.date_input("Data de Retorno Real", value=val_data_ret, format="DD/MM/YYYY", key=f"edit_retorno_mc_{mc['id']}")
+                                    st.caption(f"Motivo: {mc['motivo']}")
 
                                     col_btn_mc1, col_btn_mc2 = st.columns(2)
                                     with col_btn_mc1:
+                                        if st.button("✏️ Editar Registro", key=f"toggle_edit_mc_{mc['id']}"):
+                                            chave = f"editando_mc_{mc['id']}"
+                                            st.session_state[chave] = not st.session_state.get(chave, False)
+                                            st.rerun()
+                                    with col_btn_mc2:
+                                        if st.button("🗑️ Excluir do Histórico", key=f"del_hist_mc_{mc['id']}"):
+                                            supabase.table("manutencao").delete().eq("id", mc['id']).execute()
+                                            mostrar_popup("Registro excluído do histórico.")
+                                            st.rerun()
+
+                                    if st.session_state.get(f"editando_mc_{mc['id']}", False):
+                                        st.markdown("---")
+                                        col_ec1, col_ec2, col_ec3 = st.columns(3)
+                                        with col_ec1:
+                                            novo_motivo_mc = st.text_input("Motivo", value=mc['motivo'], key=f"edit_motivo_mc_{mc['id']}")
+                                        with col_ec2:
+                                            try:
+                                                val_data_envio = datetime.strptime(mc.get('data_envio', '2024-01-01'), "%Y-%m-%d").date()
+                                            except Exception:
+                                                val_data_envio = datetime.now().date()
+                                            nova_data_envio_mc = st.date_input("Data de Envio", value=val_data_envio, format="DD/MM/YYYY", key=f"edit_envio_mc_{mc['id']}")
+                                        with col_ec3:
+                                            try:
+                                                val_data_ret = datetime.strptime(mc.get('data_retorno_real', '2024-01-01'), "%Y-%m-%d").date()
+                                            except Exception:
+                                                val_data_ret = datetime.now().date()
+                                            nova_data_retorno_mc = st.date_input("Data de Retorno Real", value=val_data_ret, format="DD/MM/YYYY", key=f"edit_retorno_mc_{mc['id']}")
+
                                         if st.button("💾 Salvar Edição", key=f"salvar_edit_mc_{mc['id']}"):
                                             supabase.table("manutencao").update({
                                                 "motivo": novo_motivo_mc,
                                                 "data_envio": str(nova_data_envio_mc),
                                                 "data_retorno_real": str(nova_data_retorno_mc)
                                             }).eq("id", mc['id']).execute()
+                                            st.session_state[f"editando_mc_{mc['id']}"] = False
                                             mostrar_popup("Registro atualizado com sucesso!")
-                                            st.rerun()
-                                    with col_btn_mc2:
+                                            st.rerun()                                    with col_btn_mc2:
                                         st.warning("Excluir remove apenas o registro histórico.")
                                         if st.button("🗑️ Excluir do Histórico", key=f"del_hist_mc_{mc['id']}"):
                                             supabase.table("manutencao").delete().eq("id", mc['id']).execute()
