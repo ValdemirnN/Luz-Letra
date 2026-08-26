@@ -2759,7 +2759,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         )
                         qtds_manut_kit = {}
 
-                    # Motivo e data em linha separada — FORA das colunas para garantir visibilidade
                     motivo_manut = st.text_input("Motivo / Defeito", key="motivo_manut")
 
                     st.markdown("**📅 Previsão de Retorno da Manutenção:**")
@@ -2769,7 +2768,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         format="DD/MM/YYYY",
                         key="data_prev_manut"
                     )
-                    st.caption(f"O item ficará **fora do estoque** até você confirmar manualmente o retorno. Esta data é apenas uma referência.")
+                    st.caption("O item ficará fora do estoque até você confirmar manualmente o retorno. Esta data é apenas uma referência.")
 
                     if st.button("🔧 Registrar Manutenção", key="btn_reg_manut"):
                         if not motivo_manut.strip():
@@ -2778,7 +2777,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                             mostrar_popup("Informe a quantidade a enviar.", tipo="erro")
                         else:
                             novo_estoque_manut = prod_manut['quantidade_estoque'] - qtd_manut
-
                             if js_manut and qtds_manut_kit:
                                 novo_json_manut = dict(js_manut)
                                 for k, v in qtds_manut_kit.items():
@@ -2807,14 +2805,13 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                             st.rerun()
                 else:
                     st.info("Nenhum produto cadastrado.")
-                    
+
             with tab_extrato_manut:
                 try:
                     manut_lista = supabase.table("manutencao").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_envio", desc=True).execute()
 
                     if manut_lista.data:
                         hoje_manut = datetime.now().date()
-
                         em_manut = [m for m in manut_lista.data if m['status'] == "Em Manutenção"]
                         concluidos = [m for m in manut_lista.data if m['status'] == "Concluído"]
 
@@ -2866,7 +2863,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                         format="DD/MM/YYYY",
                                         key=f"nova_data_prev_{m['id']}"
                                     )
-                                    if st.button(f"📅 Salvar Nova Data", key=f"btn_nova_data_{m['id']}"):
+                                    if st.button("📅 Salvar Nova Data", key=f"btn_nova_data_{m['id']}"):
                                         supabase.table("manutencao").update({
                                             "data_prevista_retorno": str(nova_data_prev),
                                             "motivo": m['motivo'] + f" [Prazo atualizado em {datetime.now().strftime('%d/%m/%Y')}]"
@@ -2876,12 +2873,10 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
 
                                 with col_mb2:
                                     st.info("⬇️ Confirme apenas quando o item já tiver retornado fisicamente.")
-                                    if st.button(f"✅ Confirmar Retorno ao Estoque", key=f"ret_manut_{m['id']}"):
+                                    if st.button("✅ Confirmar Retorno ao Estoque", key=f"ret_manut_{m['id']}"):
                                         prod_ret = supabase.table("produtos").select("quantidade_estoque, observacao").eq("id", m['produto_id']).execute()
                                         if prod_ret.data:
-                                            estq_atual_ret = prod_ret.data[0]['quantidade_estoque']
-                                            estq_novo_ret = estq_atual_ret + m['quantidade']
-
+                                            estq_novo_ret = prod_ret.data[0]['quantidade_estoque'] + m['quantidade']
                                             if m.get('detalhes_kit'):
                                                 try:
                                                     dk_ret = json.loads(m['detalhes_kit'])
@@ -2894,17 +2889,11 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                                             "observacao": json.dumps(obs_ret)
                                                         }).eq("id", m['produto_id']).execute()
                                                     else:
-                                                        supabase.table("produtos").update({
-                                                            "quantidade_estoque": estq_novo_ret
-                                                        }).eq("id", m['produto_id']).execute()
+                                                        supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
                                                 except Exception:
-                                                    supabase.table("produtos").update({
-                                                        "quantidade_estoque": estq_novo_ret
-                                                    }).eq("id", m['produto_id']).execute()
+                                                    supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
                                             else:
-                                                supabase.table("produtos").update({
-                                                    "quantidade_estoque": estq_novo_ret
-                                                }).eq("id", m['produto_id']).execute()
+                                                supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
 
                                             supabase.table("manutencao").update({
                                                 "status": "Concluído",
@@ -2915,7 +2904,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
 
                                 with col_mb3:
                                     st.warning("⚠️ Excluir remove o registro sem devolver ao estoque.")
-                                    if st.button(f"🗑️ Excluir Registro", key=f"del_manut_ativo_{m['id']}"):
+                                    if st.button("🗑️ Excluir Registro", key=f"del_manut_ativo_{m['id']}"):
                                         supabase.table("manutencao").delete().eq("id", m['id']).execute()
                                         mostrar_popup("Registro excluído.")
                                         st.rerun()
@@ -2935,7 +2924,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                         detalhes_kit_c = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dkc.items()])
                                     except Exception:
                                         pass
-
                                 data_retorno_real = mc.get('data_retorno_real', '-')
 
                                 with st.expander(
@@ -2945,37 +2933,22 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                     expanded=False
                                 ):
                                     st.caption(f"Motivo original: {mc['motivo']}")
-
-                                    # --- EDITAR ---
                                     st.markdown("**✏️ Editar registro:**")
                                     col_ec1, col_ec2, col_ec3 = st.columns(3)
                                     with col_ec1:
-                                        novo_motivo_mc = st.text_input(
-                                            "Motivo", value=mc['motivo'],
-                                            key=f"edit_motivo_mc_{mc['id']}"
-                                        )
+                                        novo_motivo_mc = st.text_input("Motivo", value=mc['motivo'], key=f"edit_motivo_mc_{mc['id']}")
                                     with col_ec2:
                                         try:
-                                            val_data_envio = datetime.strptime(mc.get('data_envio','2024-01-01'), "%Y-%m-%d").date()
+                                            val_data_envio = datetime.strptime(mc.get('data_envio', '2024-01-01'), "%Y-%m-%d").date()
                                         except Exception:
                                             val_data_envio = datetime.now().date()
-                                        nova_data_envio_mc = st.date_input(
-                                            "Data de Envio",
-                                            value=val_data_envio,
-                                            format="DD/MM/YYYY",
-                                            key=f"edit_envio_mc_{mc['id']}"
-                                        )
+                                        nova_data_envio_mc = st.date_input("Data de Envio", value=val_data_envio, format="DD/MM/YYYY", key=f"edit_envio_mc_{mc['id']}")
                                     with col_ec3:
                                         try:
-                                            val_data_ret = datetime.strptime(mc.get('data_retorno_real','2024-01-01'), "%Y-%m-%d").date()
+                                            val_data_ret = datetime.strptime(mc.get('data_retorno_real', '2024-01-01'), "%Y-%m-%d").date()
                                         except Exception:
                                             val_data_ret = datetime.now().date()
-                                        nova_data_retorno_mc = st.date_input(
-                                            "Data de Retorno Real",
-                                            value=val_data_ret,
-                                            format="DD/MM/YYYY",
-                                            key=f"edit_retorno_mc_{mc['id']}"
-                                        )
+                                        nova_data_retorno_mc = st.date_input("Data de Retorno Real", value=val_data_ret, format="DD/MM/YYYY", key=f"edit_retorno_mc_{mc['id']}")
 
                                     col_btn_mc1, col_btn_mc2 = st.columns(2)
                                     with col_btn_mc1:
@@ -2987,7 +2960,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                             }).eq("id", mc['id']).execute()
                                             mostrar_popup("Registro atualizado com sucesso!")
                                             st.rerun()
-
                                     with col_btn_mc2:
                                         st.warning("Excluir remove apenas o registro histórico.")
                                         if st.button("🗑️ Excluir do Histórico", key=f"del_hist_mc_{mc['id']}"):
