@@ -2818,237 +2818,237 @@ with tab_enviar_manut:
                             st.rerun()
                 else:
                     st.info("Nenhum produto cadastrado.")
-            with tab_extrato_manut:
-                try:
-                    manut_lista = supabase.table("manutencao").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_envio", desc=True).execute()
-
-                    if manut_lista.data:
-                        hoje_manut = datetime.now().date()
-                        em_manut = [m for m in manut_lista.data if m['status'] == "Em Manutenção"]
-                        concluidos = [m for m in manut_lista.data if m['status'] == "Concluído"]
-
-                        if em_manut:
-                            st.markdown("#### 🔴 Em Manutenção (itens fora de circulação)")
-                            for m in em_manut:
-                                nome_p = m['produtos']['nome'] if m.get('produtos') else f"Produto #{m['produto_id']}"
-                                data_envio_m = m.get('data_envio', '-')
-                                data_prev_m = m.get('data_prevista_retorno', '-')
-                                local_m = m.get('local_manutencao') or 'Local não informado'
-
-                                prazo_vencido = False
-                                dias_atraso = 0
-                                if data_prev_m and data_prev_m != '-':
-                                    try:
-                                        dt_prev = datetime.strptime(data_prev_m, "%Y-%m-%d").date()
-                                        if hoje_manut > dt_prev:
-                                            prazo_vencido = True
-                                            dias_atraso = (hoje_manut - dt_prev).days
-                                    except Exception:
-                                        pass
-
-                                detalhes_kit_m = ""
-                                if m.get('detalhes_kit'):
-                                    try:
-                                        dk = json.loads(m['detalhes_kit'])
-                                        detalhes_kit_m = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dk.items()])
-                                    except Exception:
-                                        pass
-
-                                icone_m = "⚠️" if prazo_vencido else "🔧"
-                                atraso_txt = f" — ATRASADO {dias_atraso} dia(s)" if prazo_vencido else ""
-                                titulo_exp = (
-                                    f"{icone_m} {nome_p} — {m['quantidade']} un. | "
-                                    f"Enviado: {data_envio_m} | Retorno: {data_prev_m}{atraso_txt} | "
-                                    f"📍 {local_m}"
-                                )
-
-                                with st.expander(titulo_exp, expanded=False):
-                                    st.caption(f"Motivo: {m['motivo']}")
-                                    if m.get('local_manutencao'):
-                                        st.info(f"📍 **Local:** {m['local_manutencao']}")
-                                    if m.get('contato_manutencao'):
-                                        st.info(f"📞 **Contato:** {m['contato_manutencao']}")
-
-                                    col_mb1, col_mb2 = st.columns(2)
-
-                                    with col_mb1:
-                                        with st.expander("📅 Atualizar data prevista", expanded=False):
-                                            nova_data_prev = st.date_input(
-                                                "Nova previsão",
-                                                value=datetime.strptime(data_prev_m, "%Y-%m-%d").date() if data_prev_m and data_prev_m != '-' else hoje_manut,
-                                                format="DD/MM/YYYY",
-                                                key=f"nova_data_prev_{m['id']}"
-                                            )
-                                            if st.button("💾 Salvar data", key=f"btn_nova_data_{m['id']}"):
-                                                supabase.table("manutencao").update({
-                                                    "data_prevista_retorno": str(nova_data_prev),
-                                                    "motivo": m['motivo'] + f" [Prazo atualizado em {datetime.now().strftime('%d/%m/%Y')}]"
-                                                }).eq("id", m['id']).execute()
-                                                mostrar_popup("Data de retorno atualizada!")
-                                                st.rerun()
-
-                                        with st.expander("💀 Mover para Quebrados", expanded=False):
-                                            st.caption("Use se o item não tiver mais conserto.")
-                                            motivo_quebra_manut = st.text_input(
-                                                "Motivo da quebra/perda",
-                                                key=f"motivo_quebra_manut_{m['id']}",
-                                                placeholder="Ex: sem conserto, perda total..."
-                                            )
-                                            if st.button("💀 Confirmar Quebra", key=f"mover_quebrado_{m['id']}"):
-                                                if not motivo_quebra_manut.strip():
-                                                    mostrar_popup("Informe o motivo antes de confirmar.", tipo="erro")
-                                                else:
-                                                    supabase.table("itens_quebrados").insert({
-                                                        "empresa_id": emp_id,
-                                                        "produto_id": m['produto_id'],
-                                                        "quantidade": m['quantidade'],
-                                                        "motivo": f"[Veio da manutenção — {local_m}] {motivo_quebra_manut}",
-                                                        "data_registro": str(datetime.now().date()),
-                                                        "detalhes_kit": m.get('detalhes_kit')
-                                                    }).execute()
-                                                    supabase.table("manutencao").delete().eq("id", m['id']).execute()
-                                                    mostrar_popup("Item movido para o histórico de quebrados!")
+                with tab_extrato_manut:
+                    try:
+                        manut_lista = supabase.table("manutencao").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_envio", desc=True).execute()
+    
+                        if manut_lista.data:
+                            hoje_manut = datetime.now().date()
+                            em_manut = [m for m in manut_lista.data if m['status'] == "Em Manutenção"]
+                            concluidos = [m for m in manut_lista.data if m['status'] == "Concluído"]
+    
+                            if em_manut:
+                                st.markdown("#### 🔴 Em Manutenção (itens fora de circulação)")
+                                for m in em_manut:
+                                    nome_p = m['produtos']['nome'] if m.get('produtos') else f"Produto #{m['produto_id']}"
+                                    data_envio_m = m.get('data_envio', '-')
+                                    data_prev_m = m.get('data_prevista_retorno', '-')
+                                    local_m = m.get('local_manutencao') or 'Local não informado'
+    
+                                    prazo_vencido = False
+                                    dias_atraso = 0
+                                    if data_prev_m and data_prev_m != '-':
+                                        try:
+                                            dt_prev = datetime.strptime(data_prev_m, "%Y-%m-%d").date()
+                                            if hoje_manut > dt_prev:
+                                                prazo_vencido = True
+                                                dias_atraso = (hoje_manut - dt_prev).days
+                                        except Exception:
+                                            pass
+    
+                                    detalhes_kit_m = ""
+                                    if m.get('detalhes_kit'):
+                                        try:
+                                            dk = json.loads(m['detalhes_kit'])
+                                            detalhes_kit_m = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dk.items()])
+                                        except Exception:
+                                            pass
+    
+                                    icone_m = "⚠️" if prazo_vencido else "🔧"
+                                    atraso_txt = f" — ATRASADO {dias_atraso} dia(s)" if prazo_vencido else ""
+                                    titulo_exp = (
+                                        f"{icone_m} {nome_p} — {m['quantidade']} un. | "
+                                        f"Enviado: {data_envio_m} | Retorno: {data_prev_m}{atraso_txt} | "
+                                        f"📍 {local_m}"
+                                    )
+    
+                                    with st.expander(titulo_exp, expanded=False):
+                                        st.caption(f"Motivo: {m['motivo']}")
+                                        if m.get('local_manutencao'):
+                                            st.info(f"📍 **Local:** {m['local_manutencao']}")
+                                        if m.get('contato_manutencao'):
+                                            st.info(f"📞 **Contato:** {m['contato_manutencao']}")
+    
+                                        col_mb1, col_mb2 = st.columns(2)
+    
+                                        with col_mb1:
+                                            with st.expander("📅 Atualizar data prevista", expanded=False):
+                                                nova_data_prev = st.date_input(
+                                                    "Nova previsão",
+                                                    value=datetime.strptime(data_prev_m, "%Y-%m-%d").date() if data_prev_m and data_prev_m != '-' else hoje_manut,
+                                                    format="DD/MM/YYYY",
+                                                    key=f"nova_data_prev_{m['id']}"
+                                                )
+                                                if st.button("💾 Salvar data", key=f"btn_nova_data_{m['id']}"):
+                                                    supabase.table("manutencao").update({
+                                                        "data_prevista_retorno": str(nova_data_prev),
+                                                        "motivo": m['motivo'] + f" [Prazo atualizado em {datetime.now().strftime('%d/%m/%Y')}]"
+                                                    }).eq("id", m['id']).execute()
+                                                    mostrar_popup("Data de retorno atualizada!")
                                                     st.rerun()
-
-                                    with col_mb2:
-                                        with st.expander("🗑️ Remover do Histórico", expanded=False):
-                                            st.caption("Remove apenas o registro. O estoque não é alterado.")
-                                            if st.button("🗑️ Confirmar Remoção", key=f"del_manut_ativo_{m['id']}"):
-                                                supabase.table("manutencao").delete().eq("id", m['id']).execute()
-                                                mostrar_popup("Registro removido do histórico.")
-                                                st.rerun()
-
-                                    if st.button(
-                                        "✅ Confirmar Retorno ao Estoque",
-                                        key=f"ret_manut_{m['id']}",
-                                        use_container_width=True
-                                    ):
-                                        prod_ret = supabase.table("produtos").select("quantidade_estoque, observacao").eq("id", m['produto_id']).execute()
-                                        if prod_ret.data:
-                                            estq_novo_ret = prod_ret.data[0]['quantidade_estoque'] + m['quantidade']
-                                            if m.get('detalhes_kit'):
-                                                try:
-                                                    dk_ret = json.loads(m['detalhes_kit'])
-                                                    obs_ret = safe_json_load(prod_ret.data[0].get('observacao'))
-                                                    if obs_ret and dk_ret:
-                                                        for k, v in dk_ret.items():
-                                                            obs_ret[k] = obs_ret.get(k, 0) + v
-                                                        supabase.table("produtos").update({
-                                                            "quantidade_estoque": estq_novo_ret,
-                                                            "observacao": json.dumps(obs_ret)
-                                                        }).eq("id", m['produto_id']).execute()
+    
+                                            with st.expander("💀 Mover para Quebrados", expanded=False):
+                                                st.caption("Use se o item não tiver mais conserto.")
+                                                motivo_quebra_manut = st.text_input(
+                                                    "Motivo da quebra/perda",
+                                                    key=f"motivo_quebra_manut_{m['id']}",
+                                                    placeholder="Ex: sem conserto, perda total..."
+                                                )
+                                                if st.button("💀 Confirmar Quebra", key=f"mover_quebrado_{m['id']}"):
+                                                    if not motivo_quebra_manut.strip():
+                                                        mostrar_popup("Informe o motivo antes de confirmar.", tipo="erro")
                                                     else:
+                                                        supabase.table("itens_quebrados").insert({
+                                                            "empresa_id": emp_id,
+                                                            "produto_id": m['produto_id'],
+                                                            "quantidade": m['quantidade'],
+                                                            "motivo": f"[Veio da manutenção — {local_m}] {motivo_quebra_manut}",
+                                                            "data_registro": str(datetime.now().date()),
+                                                            "detalhes_kit": m.get('detalhes_kit')
+                                                        }).execute()
+                                                        supabase.table("manutencao").delete().eq("id", m['id']).execute()
+                                                        mostrar_popup("Item movido para o histórico de quebrados!")
+                                                        st.rerun()
+    
+                                        with col_mb2:
+                                            with st.expander("🗑️ Remover do Histórico", expanded=False):
+                                                st.caption("Remove apenas o registro. O estoque não é alterado.")
+                                                if st.button("🗑️ Confirmar Remoção", key=f"del_manut_ativo_{m['id']}"):
+                                                    supabase.table("manutencao").delete().eq("id", m['id']).execute()
+                                                    mostrar_popup("Registro removido do histórico.")
+                                                    st.rerun()
+    
+                                        if st.button(
+                                            "✅ Confirmar Retorno ao Estoque",
+                                            key=f"ret_manut_{m['id']}",
+                                            use_container_width=True
+                                        ):
+                                            prod_ret = supabase.table("produtos").select("quantidade_estoque, observacao").eq("id", m['produto_id']).execute()
+                                            if prod_ret.data:
+                                                estq_novo_ret = prod_ret.data[0]['quantidade_estoque'] + m['quantidade']
+                                                if m.get('detalhes_kit'):
+                                                    try:
+                                                        dk_ret = json.loads(m['detalhes_kit'])
+                                                        obs_ret = safe_json_load(prod_ret.data[0].get('observacao'))
+                                                        if obs_ret and dk_ret:
+                                                            for k, v in dk_ret.items():
+                                                                obs_ret[k] = obs_ret.get(k, 0) + v
+                                                            supabase.table("produtos").update({
+                                                                "quantidade_estoque": estq_novo_ret,
+                                                                "observacao": json.dumps(obs_ret)
+                                                            }).eq("id", m['produto_id']).execute()
+                                                        else:
+                                                            supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
+                                                    except Exception:
                                                         supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
-                                                except Exception:
+                                                else:
                                                     supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
-                                            else:
-                                                supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
-
+    
+                                                supabase.table("manutencao").update({
+                                                    "status": "Concluído",
+                                                    "data_retorno_real": str(datetime.now().date())
+                                                }).eq("id", m['id']).execute()
+                                                mostrar_popup("Produto devolvido ao estoque com sucesso!")
+                                                st.rerun()
+                            else:
+                                st.success("✅ Nenhum item em manutenção no momento.")
+                            if concluidos:
+                            st.markdown(f"#### 📜 Histórico de Manutenções Concluídas ({len(concluidos)})")
+                            for mc in concluidos:
+                                nome_pc = mc['produtos']['nome'] if mc.get('produtos') else f"Produto #{mc['produto_id']}"
+                                detalhes_kit_c = ""
+                                if mc.get('detalhes_kit'):
+                                    try:
+                                        dkc = json.loads(mc['detalhes_kit'])
+                                        detalhes_kit_c = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dkc.items()])
+                                    except Exception:
+                                        pass
+                                data_retorno_real = mc.get('data_retorno_real', '-')
+                        
+                                with st.expander(
+                                    f"✅ {nome_pc} — {mc['quantidade']} un. | "
+                                    f"Enviado: {mc.get('data_envio','-')} | "
+                                    f"Retornou: {data_retorno_real}{detalhes_kit_c}",
+                                    expanded=False
+                                ):
+                                    st.caption(f"Motivo: {mc['motivo']}")
+                                    st.write(f"📍 **Local:** {mc.get('local_manutencao') or 'Não informado'}")
+                                    if mc.get('contato_manutencao'):
+                                        st.write(f"📞 **Contato:** {mc['contato_manutencao']}")
+                        
+                                    col_btn_mc1, col_btn_mc2 = st.columns(2)
+                                    with col_btn_mc1:
+                                        if st.button("✏️ Editar Registro", key=f"toggle_edit_mc_{mc['id']}"):
+                                            chave = f"editando_mc_{mc['id']}"
+                                            st.session_state[chave] = not st.session_state.get(chave, False)
+                                            st.rerun()
+                                    with col_btn_mc2:
+                                        if st.button("🗑️ Excluir do Histórico", key=f"excluir_hist_concluido_{mc['id']}"):
+                                            supabase.table("manutencao").delete().eq("id", mc['id']).execute()
+                                            mostrar_popup("Registro excluído do histórico.")
+                                            st.rerun()
+                        
+                                    if st.session_state.get(f"editando_mc_{mc['id']}", False):
+                                        st.markdown("---")
+                                        col_ec1, col_ec2, col_ec3 = st.columns(3)
+                                        with col_ec1:
+                                            novo_motivo_mc = st.text_input(
+                                                "Motivo",
+                                                value=mc['motivo'],
+                                                key=f"edit_motivo_mc_{mc['id']}"
+                                            )
+                                        with col_ec2:
+                                            try:
+                                                val_data_envio = datetime.strptime(mc.get('data_envio', '2024-01-01'), "%Y-%m-%d").date()
+                                            except Exception:
+                                                val_data_envio = datetime.now().date()
+                                            nova_data_envio_mc = st.date_input(
+                                                "Data de Envio",
+                                                value=val_data_envio,
+                                                format="DD/MM/YYYY",
+                                                key=f"edit_envio_mc_{mc['id']}"
+                                            )
+                                        with col_ec3:
+                                            try:
+                                                val_data_ret = datetime.strptime(mc.get('data_retorno_real', '2024-01-01'), "%Y-%m-%d").date()
+                                            except Exception:
+                                                val_data_ret = datetime.now().date()
+                                            nova_data_retorno_mc = st.date_input(
+                                                "Data de Retorno Real",
+                                                value=val_data_ret,
+                                                format="DD/MM/YYYY",
+                                                key=f"edit_retorno_mc_{mc['id']}"
+                                            )
+                        
+                                        col_ec4, col_ec5 = st.columns(2)
+                                        with col_ec4:
+                                            novo_local_mc = st.text_input(
+                                                "Local da Manutenção",
+                                                value=mc.get('local_manutencao') or "",
+                                                key=f"edit_local_mc_{mc['id']}"
+                                            )
+                                        with col_ec5:
+                                            novo_contato_mc = st.text_input(
+                                                "Contato",
+                                                value=mc.get('contato_manutencao') or "",
+                                                key=f"edit_contato_mc_{mc['id']}"
+                                            )
+                        
+                                        if st.button("💾 Salvar Edição", key=f"salvar_edit_mc_{mc['id']}"):
                                             supabase.table("manutencao").update({
-                                                "status": "Concluído",
-                                                "data_retorno_real": str(datetime.now().date())
-                                            }).eq("id", m['id']).execute()
-                                            mostrar_popup("Produto devolvido ao estoque com sucesso!")
+                                                "motivo": novo_motivo_mc,
+                                                "data_envio": str(nova_data_envio_mc),
+                                                "data_retorno_real": str(nova_data_retorno_mc),
+                                                "local_manutencao": novo_local_mc,
+                                                "contato_manutencao": novo_contato_mc
+                                            }).eq("id", mc['id']).execute()
+                                            st.session_state[f"editando_mc_{mc['id']}"] = False
+                                            mostrar_popup("Registro atualizado com sucesso!")
                                             st.rerun()
                         else:
-                            st.success("✅ Nenhum item em manutenção no momento.")
-                        if concluidos:
-                        st.markdown(f"#### 📜 Histórico de Manutenções Concluídas ({len(concluidos)})")
-                        for mc in concluidos:
-                            nome_pc = mc['produtos']['nome'] if mc.get('produtos') else f"Produto #{mc['produto_id']}"
-                            detalhes_kit_c = ""
-                            if mc.get('detalhes_kit'):
-                                try:
-                                    dkc = json.loads(mc['detalhes_kit'])
-                                    detalhes_kit_c = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dkc.items()])
-                                except Exception:
-                                    pass
-                            data_retorno_real = mc.get('data_retorno_real', '-')
-                    
-                            with st.expander(
-                                f"✅ {nome_pc} — {mc['quantidade']} un. | "
-                                f"Enviado: {mc.get('data_envio','-')} | "
-                                f"Retornou: {data_retorno_real}{detalhes_kit_c}",
-                                expanded=False
-                            ):
-                                st.caption(f"Motivo: {mc['motivo']}")
-                                st.write(f"📍 **Local:** {mc.get('local_manutencao') or 'Não informado'}")
-                                if mc.get('contato_manutencao'):
-                                    st.write(f"📞 **Contato:** {mc['contato_manutencao']}")
-                    
-                                col_btn_mc1, col_btn_mc2 = st.columns(2)
-                                with col_btn_mc1:
-                                    if st.button("✏️ Editar Registro", key=f"toggle_edit_mc_{mc['id']}"):
-                                        chave = f"editando_mc_{mc['id']}"
-                                        st.session_state[chave] = not st.session_state.get(chave, False)
-                                        st.rerun()
-                                with col_btn_mc2:
-                                    if st.button("🗑️ Excluir do Histórico", key=f"excluir_hist_concluido_{mc['id']}"):
-                                        supabase.table("manutencao").delete().eq("id", mc['id']).execute()
-                                        mostrar_popup("Registro excluído do histórico.")
-                                        st.rerun()
-                    
-                                if st.session_state.get(f"editando_mc_{mc['id']}", False):
-                                    st.markdown("---")
-                                    col_ec1, col_ec2, col_ec3 = st.columns(3)
-                                    with col_ec1:
-                                        novo_motivo_mc = st.text_input(
-                                            "Motivo",
-                                            value=mc['motivo'],
-                                            key=f"edit_motivo_mc_{mc['id']}"
-                                        )
-                                    with col_ec2:
-                                        try:
-                                            val_data_envio = datetime.strptime(mc.get('data_envio', '2024-01-01'), "%Y-%m-%d").date()
-                                        except Exception:
-                                            val_data_envio = datetime.now().date()
-                                        nova_data_envio_mc = st.date_input(
-                                            "Data de Envio",
-                                            value=val_data_envio,
-                                            format="DD/MM/YYYY",
-                                            key=f"edit_envio_mc_{mc['id']}"
-                                        )
-                                    with col_ec3:
-                                        try:
-                                            val_data_ret = datetime.strptime(mc.get('data_retorno_real', '2024-01-01'), "%Y-%m-%d").date()
-                                        except Exception:
-                                            val_data_ret = datetime.now().date()
-                                        nova_data_retorno_mc = st.date_input(
-                                            "Data de Retorno Real",
-                                            value=val_data_ret,
-                                            format="DD/MM/YYYY",
-                                            key=f"edit_retorno_mc_{mc['id']}"
-                                        )
-                    
-                                    col_ec4, col_ec5 = st.columns(2)
-                                    with col_ec4:
-                                        novo_local_mc = st.text_input(
-                                            "Local da Manutenção",
-                                            value=mc.get('local_manutencao') or "",
-                                            key=f"edit_local_mc_{mc['id']}"
-                                        )
-                                    with col_ec5:
-                                        novo_contato_mc = st.text_input(
-                                            "Contato",
-                                            value=mc.get('contato_manutencao') or "",
-                                            key=f"edit_contato_mc_{mc['id']}"
-                                        )
-                    
-                                    if st.button("💾 Salvar Edição", key=f"salvar_edit_mc_{mc['id']}"):
-                                        supabase.table("manutencao").update({
-                                            "motivo": novo_motivo_mc,
-                                            "data_envio": str(nova_data_envio_mc),
-                                            "data_retorno_real": str(nova_data_retorno_mc),
-                                            "local_manutencao": novo_local_mc,
-                                            "contato_manutencao": novo_contato_mc
-                                        }).eq("id", mc['id']).execute()
-                                        st.session_state[f"editando_mc_{mc['id']}"] = False
-                                        mostrar_popup("Registro atualizado com sucesso!")
-                                        st.rerun()
-                    else:
-                        st.info("Nenhum registro de manutenção ainda.")
-                except Exception as e:
-                    st.error(f"Erro ao carregar manutenção: {e}")
+                            st.info("Nenhum registro de manutenção ainda.")
+                    except Exception as e:
+                        st.error(f"Erro ao carregar manutenção: {e}")
 
         with st.expander("🗑️ Controle de Itens Quebrados", expanded=False):
             tab_reg_quebrado, tab_lista_quebrados = st.tabs(["Registrar Quebra", "📋 Histórico de Quebrados"])
