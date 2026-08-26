@@ -2953,7 +2953,7 @@ with tab_enviar_manut:
                             else:
                                 st.success("✅ Nenhum item em manutenção no momento.")
                             if concluidos:
-                            st.markdown(f"#### 📜 Histórico de Manutenções Concluídas ({len(concluidos)})")
+                                st.markdown(f"#### 📜 Histórico de Manutenções Concluídas ({len(concluidos)})")
                             for mc in concluidos:
                                 nome_pc = mc['produtos']['nome'] if mc.get('produtos') else f"Produto #{mc['produto_id']}"
                                 detalhes_kit_c = ""
