@@ -2761,6 +2761,13 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
 
                     motivo_manut = st.text_input("Motivo / Defeito", key="motivo_manut")
 
+                    st.markdown("**📍 Onde vai ficar para manutenção?**")
+                    col_loc1, col_loc2, col_loc3, col_loc4 = st.columns(4)
+                    with col_loc1: local_nome_manut = st.text_input("Nome do Local / Oficina", key="manut_local_nome", placeholder="Ex: Oficina do João")
+                    with col_loc2: local_rua_manut = st.text_input("Rua", key="manut_local_rua", placeholder="Ex: Rua das Flores")
+                    with col_loc3: local_numero_manut = st.text_input("Número", key="manut_local_numero", placeholder="Ex: 123")
+                    with col_loc4: local_bairro_manut = st.text_input("Bairro / Referência", key="manut_local_bairro", placeholder="Ex: Centro")
+
                     st.markdown("**📅 Previsão de Retorno da Manutenção:**")
                     data_prev_retorno = st.date_input(
                         "Data prevista para o item voltar ao estoque",
@@ -2776,6 +2783,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         elif (qtd_manut or 0) <= 0:
                             mostrar_popup("Informe a quantidade a enviar.", tipo="erro")
                         else:
+                            local_completo = f"{local_nome_manut} — {local_rua_manut}, {local_numero_manut} — {local_bairro_manut}".strip(" —,")
                             novo_estoque_manut = prod_manut['quantidade_estoque'] - qtd_manut
                             if js_manut and qtds_manut_kit:
                                 novo_json_manut = dict(js_manut)
@@ -2798,7 +2806,8 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                 "status": "Em Manutenção",
                                 "data_envio": str(datetime.now().date()),
                                 "data_prevista_retorno": str(data_prev_retorno),
-                                "detalhes_kit": json.dumps(qtds_manut_kit) if qtds_manut_kit else None
+                                "detalhes_kit": json.dumps(qtds_manut_kit) if qtds_manut_kit else None,
+                                "local_manutencao": local_completo if local_completo else None
                             }).execute()
 
                             mostrar_popup("Produto enviado para manutenção!")
@@ -2821,6 +2830,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                 nome_p = m['produtos']['nome'] if m.get('produtos') else f"Produto #{m['produto_id']}"
                                 data_envio_m = m.get('data_envio', '-')
                                 data_prev_m = m.get('data_prevista_retorno', '-')
+                                local_m = m.get('local_manutencao') or 'Local não informado'
 
                                 prazo_vencido = False
                                 dias_atraso = 0
@@ -2841,100 +2851,102 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                     except Exception:
                                         pass
 
-                                # Cabeçalho do item
-                                if prazo_vencido:
-                                    st.error(f"⚠️ **{nome_p}** — {m['quantidade']} un. | Enviado: {data_envio_m} | Previsão: {data_prev_m} — **ATRASADO {dias_atraso} dia(s)**{detalhes_kit_m}")
-                                else:
-                                    st.warning(f"🔧 **{nome_p}** — {m['quantidade']} un. | Enviado: {data_envio_m} | Retorno previsto: {data_prev_m}{detalhes_kit_m}")
-                                st.caption(f"Motivo: {m['motivo']}")
+                                icone_m = "⚠️" if prazo_vencido else "🔧"
+                                atraso_txt = f" — ATRASADO {dias_atraso} dia(s)" if prazo_vencido else ""
+                                titulo_exp = (
+                                    f"{icone_m} {nome_p} — {m['quantidade']} un. | "
+                                    f"Enviado: {data_envio_m} | Retorno: {data_prev_m}{atraso_txt} | "
+                                    f"📍 {local_m}"
+                                )
 
-                                col_mb1, col_mb2 = st.columns(2)
+                                with st.expander(titulo_exp, expanded=False):
+                                    st.caption(f"Motivo: {m['motivo']}")
+                                    if m.get('local_manutencao'):
+                                        st.info(f"📍 **Local:** {m['local_manutencao']}")
 
-                                with col_mb1:
-                                    with st.expander("📅 Atualizar data prevista", expanded=False):
-                                        nova_data_prev = st.date_input(
-                                            "Nova previsão",
-                                            value=datetime.strptime(data_prev_m, "%Y-%m-%d").date() if data_prev_m and data_prev_m != '-' else hoje_manut,
-                                            format="DD/MM/YYYY",
-                                            key=f"nova_data_prev_{m['id']}"
-                                        )
-                                        if st.button("💾 Salvar data", key=f"btn_nova_data_{m['id']}"):
-                                            supabase.table("manutencao").update({
-                                                "data_prevista_retorno": str(nova_data_prev),
-                                                "motivo": m['motivo'] + f" [Prazo atualizado em {datetime.now().strftime('%d/%m/%Y')}]"
-                                            }).eq("id", m['id']).execute()
-                                            mostrar_popup("Data de retorno atualizada!")
-                                            st.rerun()
+                                    col_mb1, col_mb2 = st.columns(2)
 
-                                    with st.expander("💀 Mover para Quebrados", expanded=False):
-                                        st.caption("Use se o item não tiver mais conserto. Será registrado no histórico de quebrados.")
-                                        motivo_quebra_manut = st.text_input(
-                                            "Motivo da quebra/perda",
-                                            key=f"motivo_quebra_manut_{m['id']}",
-                                            placeholder="Ex: sem conserto, perda total..."
-                                        )
-                                        if st.button("💀 Confirmar Quebra", key=f"mover_quebrado_{m['id']}"):
-                                            if not motivo_quebra_manut.strip():
-                                                mostrar_popup("Informe o motivo antes de confirmar.", tipo="erro")
-                                            else:
-                                                supabase.table("itens_quebrados").insert({
-                                                    "empresa_id": emp_id,
-                                                    "produto_id": m['produto_id'],
-                                                    "quantidade": m['quantidade'],
-                                                    "motivo": f"[Veio da manutenção] {motivo_quebra_manut}",
-                                                    "data_registro": str(datetime.now().date()),
-                                                    "detalhes_kit": m.get('detalhes_kit')
-                                                }).execute()
-                                                supabase.table("manutencao").delete().eq("id", m['id']).execute()
-                                                mostrar_popup("Item movido para o histórico de quebrados!")
+                                    with col_mb1:
+                                        with st.expander("📅 Atualizar data prevista", expanded=False):
+                                            nova_data_prev = st.date_input(
+                                                "Nova previsão",
+                                                value=datetime.strptime(data_prev_m, "%Y-%m-%d").date() if data_prev_m and data_prev_m != '-' else hoje_manut,
+                                                format="DD/MM/YYYY",
+                                                key=f"nova_data_prev_{m['id']}"
+                                            )
+                                            if st.button("💾 Salvar data", key=f"btn_nova_data_{m['id']}"):
+                                                supabase.table("manutencao").update({
+                                                    "data_prevista_retorno": str(nova_data_prev),
+                                                    "motivo": m['motivo'] + f" [Prazo atualizado em {datetime.now().strftime('%d/%m/%Y')}]"
+                                                }).eq("id", m['id']).execute()
+                                                mostrar_popup("Data de retorno atualizada!")
                                                 st.rerun()
 
-                                with col_mb2:
-                                    with st.expander("🗑️ Remover do Histórico", expanded=False):
-                                        st.caption("Remove apenas o registro. O estoque não é alterado.")
-                                        if st.button("🗑️ Confirmar Remoção", key=f"del_manut_ativo_{m['id']}"):
-                                            supabase.table("manutencao").delete().eq("id", m['id']).execute()
-                                            mostrar_popup("Registro removido do histórico.")
-                                            st.rerun()
-
-                                # Botão de retorno em linha própria, fora das colunas
-                                if st.button(
-                                    "✅ Confirmar Retorno ao Estoque",
-                                    key=f"ret_manut_{m['id']}",
-                                    use_container_width=True
-                                ):
-                                    prod_ret = supabase.table("produtos").select("quantidade_estoque, observacao").eq("id", m['produto_id']).execute()
-                                    if prod_ret.data:
-                                        estq_novo_ret = prod_ret.data[0]['quantidade_estoque'] + m['quantidade']
-                                        if m.get('detalhes_kit'):
-                                            try:
-                                                dk_ret = json.loads(m['detalhes_kit'])
-                                                obs_ret = safe_json_load(prod_ret.data[0].get('observacao'))
-                                                if obs_ret and dk_ret:
-                                                    for k, v in dk_ret.items():
-                                                        obs_ret[k] = obs_ret.get(k, 0) + v
-                                                    supabase.table("produtos").update({
-                                                        "quantidade_estoque": estq_novo_ret,
-                                                        "observacao": json.dumps(obs_ret)
-                                                    }).eq("id", m['produto_id']).execute()
+                                        with st.expander("💀 Mover para Quebrados", expanded=False):
+                                            st.caption("Use se o item não tiver mais conserto.")
+                                            motivo_quebra_manut = st.text_input(
+                                                "Motivo da quebra/perda",
+                                                key=f"motivo_quebra_manut_{m['id']}",
+                                                placeholder="Ex: sem conserto, perda total..."
+                                            )
+                                            if st.button("💀 Confirmar Quebra", key=f"mover_quebrado_{m['id']}"):
+                                                if not motivo_quebra_manut.strip():
+                                                    mostrar_popup("Informe o motivo antes de confirmar.", tipo="erro")
                                                 else:
+                                                    supabase.table("itens_quebrados").insert({
+                                                        "empresa_id": emp_id,
+                                                        "produto_id": m['produto_id'],
+                                                        "quantidade": m['quantidade'],
+                                                        "motivo": f"[Veio da manutenção — {local_m}] {motivo_quebra_manut}",
+                                                        "data_registro": str(datetime.now().date()),
+                                                        "detalhes_kit": m.get('detalhes_kit')
+                                                    }).execute()
+                                                    supabase.table("manutencao").delete().eq("id", m['id']).execute()
+                                                    mostrar_popup("Item movido para o histórico de quebrados!")
+                                                    st.rerun()
+
+                                    with col_mb2:
+                                        with st.expander("🗑️ Remover do Histórico", expanded=False):
+                                            st.caption("Remove apenas o registro. O estoque não é alterado.")
+                                            if st.button("🗑️ Confirmar Remoção", key=f"del_manut_ativo_{m['id']}"):
+                                                supabase.table("manutencao").delete().eq("id", m['id']).execute()
+                                                mostrar_popup("Registro removido do histórico.")
+                                                st.rerun()
+
+                                    if st.button(
+                                        "✅ Confirmar Retorno ao Estoque",
+                                        key=f"ret_manut_{m['id']}",
+                                        use_container_width=True
+                                    ):
+                                        prod_ret = supabase.table("produtos").select("quantidade_estoque, observacao").eq("id", m['produto_id']).execute()
+                                        if prod_ret.data:
+                                            estq_novo_ret = prod_ret.data[0]['quantidade_estoque'] + m['quantidade']
+                                            if m.get('detalhes_kit'):
+                                                try:
+                                                    dk_ret = json.loads(m['detalhes_kit'])
+                                                    obs_ret = safe_json_load(prod_ret.data[0].get('observacao'))
+                                                    if obs_ret and dk_ret:
+                                                        for k, v in dk_ret.items():
+                                                            obs_ret[k] = obs_ret.get(k, 0) + v
+                                                        supabase.table("produtos").update({
+                                                            "quantidade_estoque": estq_novo_ret,
+                                                            "observacao": json.dumps(obs_ret)
+                                                        }).eq("id", m['produto_id']).execute()
+                                                    else:
+                                                        supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
+                                                except Exception:
                                                     supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
-                                            except Exception:
+                                            else:
                                                 supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
-                                        else:
-                                            supabase.table("produtos").update({"quantidade_estoque": estq_novo_ret}).eq("id", m['produto_id']).execute()
 
-                                        supabase.table("manutencao").update({
-                                            "status": "Concluído",
-                                            "data_retorno_real": str(datetime.now().date())
-                                        }).eq("id", m['id']).execute()
-                                        mostrar_popup("Produto devolvido ao estoque com sucesso!")
-                                        st.rerun()
-
-                                st.markdown("---")
+                                            supabase.table("manutencao").update({
+                                                "status": "Concluído",
+                                                "data_retorno_real": str(datetime.now().date())
+                                            }).eq("id", m['id']).execute()
+                                            mostrar_popup("Produto devolvido ao estoque com sucesso!")
+                                            st.rerun()
                         else:
                             st.success("✅ Nenhum item em manutenção no momento.")
-
                         if concluidos:
                             st.markdown(f"#### 📜 Histórico de Manutenções Concluídas ({len(concluidos)})")
                             for mc in concluidos:
