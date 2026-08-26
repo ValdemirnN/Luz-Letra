@@ -2734,42 +2734,42 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                     prod_manut_nome = st.selectbox("Selecione o Produto", list(opcoes_manut.keys()), key="sel_manut")
                     prod_manut = opcoes_manut[prod_manut_nome]
 
-                    # Verifica se o produto tem subitens (kit de letras/números)
                     js_manut = safe_json_load(prod_manut.get('observacao'))
 
-                    col_m1, col_m2 = st.columns(2)
-                    with col_m1:
-                        if js_manut:
-                            st.markdown(f"**Especifique quais peças de {prod_manut['nome']} vão para manutenção:**")
-                            cols_mkit = st.columns(6)
-                            idx_mkit = 0
-                            qtds_manut_kit = {}
-                            for k, max_v in js_manut.items():
-                                if max_v > 0:
-                                    v_mk = cols_mkit[idx_mkit % 6].number_input(
-                                        f"{k} (Tem: {max_v})", min_value=0, max_value=max_v,
-                                        value=None, key=f"manut_kit_{prod_manut['id']}_{k}"
-                                    )
-                                    if (v_mk or 0) > 0:
-                                        qtds_manut_kit[k] = v_mk
-                                    idx_mkit += 1
-                            qtd_manut = sum(qtds_manut_kit.values())
-                        else:
-                            qtd_manut = st.number_input(
-                                "Qtd para Manutenção",
-                                min_value=1, max_value=prod_manut['quantidade_estoque'], step=1,
-                                key="qtd_manut_normal"
-                            )
-                            qtds_manut_kit = {}
-
-                    with col_m2:
-                        motivo_manut = st.text_input("Motivo / Defeito", key="motivo_manut")
-                        data_prev_retorno = st.date_input(
-                            "Previsão de Retorno",
-                            value=datetime.now().date() + relativedelta(days=7),
-                            format="DD/MM/YYYY",
-                            key="data_prev_manut"
+                    if js_manut:
+                        st.markdown(f"**Especifique quais peças de {prod_manut['nome']} vão para manutenção:**")
+                        cols_mkit = st.columns(6)
+                        idx_mkit = 0
+                        qtds_manut_kit = {}
+                        for k, max_v in js_manut.items():
+                            if max_v > 0:
+                                v_mk = cols_mkit[idx_mkit % 6].number_input(
+                                    f"{k} (Tem: {max_v})", min_value=0, max_value=max_v,
+                                    value=None, key=f"manut_kit_{prod_manut['id']}_{k}"
+                                )
+                                if (v_mk or 0) > 0:
+                                    qtds_manut_kit[k] = v_mk
+                                idx_mkit += 1
+                        qtd_manut = sum(qtds_manut_kit.values())
+                    else:
+                        qtd_manut = st.number_input(
+                            "Qtd para Manutenção",
+                            min_value=1, max_value=prod_manut['quantidade_estoque'], step=1,
+                            key="qtd_manut_normal"
                         )
+                        qtds_manut_kit = {}
+
+                    # Motivo e data em linha separada — FORA das colunas para garantir visibilidade
+                    motivo_manut = st.text_input("Motivo / Defeito", key="motivo_manut")
+
+                    st.markdown("**📅 Previsão de Retorno da Manutenção:**")
+                    data_prev_retorno = st.date_input(
+                        "Data prevista para o item voltar ao estoque",
+                        value=datetime.now().date() + relativedelta(days=7),
+                        format="DD/MM/YYYY",
+                        key="data_prev_manut"
+                    )
+                    st.caption(f"O item ficará **fora do estoque** até você confirmar manualmente o retorno. Esta data é apenas uma referência.")
 
                     if st.button("🔧 Registrar Manutenção", key="btn_reg_manut"):
                         if not motivo_manut.strip():
@@ -2777,10 +2777,8 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         elif (qtd_manut or 0) <= 0:
                             mostrar_popup("Informe a quantidade a enviar.", tipo="erro")
                         else:
-                            # Deduz do estoque principal
                             novo_estoque_manut = prod_manut['quantidade_estoque'] - qtd_manut
 
-                            # Se tiver kit, atualiza o JSON de subitens também
                             if js_manut and qtds_manut_kit:
                                 novo_json_manut = dict(js_manut)
                                 for k, v in qtds_manut_kit.items():
@@ -2794,7 +2792,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                     "quantidade_estoque": max(0, novo_estoque_manut)
                                 }).eq("id", prod_manut['id']).execute()
 
-                            # Registra na tabela de manutenção com data prevista de retorno
                             supabase.table("manutencao").insert({
                                 "empresa_id": emp_id,
                                 "produto_id": prod_manut['id'],
@@ -2810,7 +2807,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                             st.rerun()
                 else:
                     st.info("Nenhum produto cadastrado.")
-
             with tab_extrato_manut:
                 try:
                     manut_lista = supabase.table("manutencao").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_envio", desc=True).execute()
