@@ -2903,12 +2903,44 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                             st.rerun()
 
                                 with col_mb3:
-                                    st.warning("⚠️ Excluir remove o registro sem devolver ao estoque.")
-                                    if st.button("🗑️ Excluir Registro", key=f"del_manut_ativo_{m['id']}"):
+                                    st.markdown("**Outras ações:**")
+
+                                    # Remove só o registro do histórico (item volta a circular normalmente)
+                                    if st.button("🗑️ Remover do Histórico", key=f"del_manut_ativo_{m['id']}"):
                                         supabase.table("manutencao").delete().eq("id", m['id']).execute()
-                                        mostrar_popup("Registro excluído.")
+                                        mostrar_popup("Registro removido do histórico de manutenção.")
                                         st.rerun()
 
+                                    st.markdown("---")
+
+                                    # Move para quebrados: registra no histórico de quebrados E deduz do estoque total
+                                    st.caption("⬇️ Use se o item não tiver mais conserto.")
+                                    motivo_quebra_manut = st.text_input(
+                                        "Motivo da quebra/perda",
+                                        key=f"motivo_quebra_manut_{m['id']}",
+                                        placeholder="Ex: sem conserto, perda total..."
+                                    )
+                                    if st.button("💀 Mover para Itens Quebrados", key=f"mover_quebrado_{m['id']}"):
+                                        if not motivo_quebra_manut.strip():
+                                            mostrar_popup("Informe o motivo antes de mover para quebrados.", tipo="erro")
+                                        else:
+                                            # Registra no histórico de itens quebrados
+                                            supabase.table("itens_quebrados").insert({
+                                                "empresa_id": emp_id,
+                                                "produto_id": m['produto_id'],
+                                                "quantidade": m['quantidade'],
+                                                "motivo": f"[Veio da manutenção] {motivo_quebra_manut}",
+                                                "data_registro": str(datetime.now().date()),
+                                                "detalhes_kit": m.get('detalhes_kit')
+                                            }).execute()
+
+                                            # Remove o registro de manutenção
+                                            supabase.table("manutencao").delete().eq("id", m['id']).execute()
+
+                                            # O estoque já foi deduzido quando foi enviado para manutenção,
+                                            # então não precisa deduzir de novo — só remove o registro
+                                            mostrar_popup("Item movido para o histórico de quebrados!")
+                                            st.rerun()
                                 st.markdown("---")
                         else:
                             st.success("✅ Nenhum item em manutenção no momento.")
