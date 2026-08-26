@@ -2958,7 +2958,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                             chave = f"editando_mc_{mc['id']}"
                                             st.session_state[chave] = not st.session_state.get(chave, False)
                                             st.rerun()
-                                            
                                     with col_btn_mc2:
                                         if st.button("🗑️ Excluir do Histórico", key=f"del_hist_mc_{mc['id']}"):
                                             supabase.table("manutencao").delete().eq("id", mc['id']).execute()
@@ -2969,19 +2968,33 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                         st.markdown("---")
                                         col_ec1, col_ec2, col_ec3 = st.columns(3)
                                         with col_ec1:
-                                            novo_motivo_mc = st.text_input("Motivo", value=mc['motivo'], key=f"edit_motivo_mc_{mc['id']}")
+                                            novo_motivo_mc = st.text_input(
+                                                "Motivo",
+                                                value=mc['motivo'],
+                                                key=f"edit_motivo_mc_{mc['id']}"
+                                            )
                                         with col_ec2:
                                             try:
                                                 val_data_envio = datetime.strptime(mc.get('data_envio', '2024-01-01'), "%Y-%m-%d").date()
                                             except Exception:
                                                 val_data_envio = datetime.now().date()
-                                            nova_data_envio_mc = st.date_input("Data de Envio", value=val_data_envio, format="DD/MM/YYYY", key=f"edit_envio_mc_{mc['id']}")
+                                            nova_data_envio_mc = st.date_input(
+                                                "Data de Envio",
+                                                value=val_data_envio,
+                                                format="DD/MM/YYYY",
+                                                key=f"edit_envio_mc_{mc['id']}"
+                                            )
                                         with col_ec3:
                                             try:
                                                 val_data_ret = datetime.strptime(mc.get('data_retorno_real', '2024-01-01'), "%Y-%m-%d").date()
                                             except Exception:
                                                 val_data_ret = datetime.now().date()
-                                            nova_data_retorno_mc = st.date_input("Data de Retorno Real", value=val_data_ret, format="DD/MM/YYYY", key=f"edit_retorno_mc_{mc['id']}")
+                                            nova_data_retorno_mc = st.date_input(
+                                                "Data de Retorno Real",
+                                                value=val_data_ret,
+                                                format="DD/MM/YYYY",
+                                                key=f"edit_retorno_mc_{mc['id']}"
+                                            )
 
                                         if st.button("💾 Salvar Edição", key=f"salvar_edit_mc_{mc['id']}"):
                                             supabase.table("manutencao").update({
@@ -2992,7 +3005,8 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                             st.session_state[f"editando_mc_{mc['id']}"] = False
                                             mostrar_popup("Registro atualizado com sucesso!")
                                             st.rerun()
-                                            with col_btn_mc2:
+                                            
+                                        with col_btn_mc2:
                                         st.warning("Excluir remove apenas o registro histórico.")
                                         if st.button("🗑️ Excluir do Histórico", key=f"del_hist_mc_{mc['id']}"):
                                             supabase.table("manutencao").delete().eq("id", mc['id']).execute()
