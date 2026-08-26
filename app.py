@@ -2897,8 +2897,21 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                             mostrar_popup("Registro removido do histórico.")
                                             st.rerun()
 
-                                    st.markdown("<br>", unsafe_allow_html=True)
-                                    if st.button("✅ Confirmar Retorno ao Estoque", key=f"ret_manut_{m['id']}", use_container_width=True, type="primary"):
+                                    st.markdown(" ")
+                                    st.markdown(f"""
+                                    <style>
+                                    div[data-testid="stButton"] > button[kind="secondary"]#btn_retorno_{m['id']} {{
+                                        background-color: #1B5E20 !important;
+                                        color: white !important;
+                                        border: none !important;
+                                    }}
+                                    </style>
+                                    """, unsafe_allow_html=True)
+                                    if st.button(
+                                        "✅ Confirmar Retorno ao Estoque",
+                                        key=f"ret_manut_{m['id']}",
+                                        use_container_width=True
+                                    ):
                                         prod_ret = supabase.table("produtos").select("quantidade_estoque, observacao").eq("id", m['produto_id']).execute()
                                         if prod_ret.data:
                                             estq_novo_ret = prod_ret.data[0]['quantidade_estoque'] + m['quantidade']
@@ -2951,7 +2964,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                     expanded=False
                                 ):
                                     st.caption(f"Motivo: {mc['motivo']}")
-
                                     col_btn_mc1, col_btn_mc2 = st.columns(2)
                                     with col_btn_mc1:
                                         if st.button("✏️ Editar Registro", key=f"toggle_edit_mc_{mc['id']}"):
@@ -2959,7 +2971,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                             st.session_state[chave] = not st.session_state.get(chave, False)
                                             st.rerun()
                                     with col_btn_mc2:
-                                        if st.button("🗑️ Excluir do Histórico", key=f"del_hist_mc_{mc['id']}"):
+                                        if st.button("🗑️ Excluir do Histórico", key=f"excluir_hist_concluido_{mc['id']}"):
                                             supabase.table("manutencao").delete().eq("id", mc['id']).execute()
                                             mostrar_popup("Registro excluído do histórico.")
                                             st.rerun()
@@ -2995,7 +3007,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                                 format="DD/MM/YYYY",
                                                 key=f"edit_retorno_mc_{mc['id']}"
                                             )
-
                                         if st.button("💾 Salvar Edição", key=f"salvar_edit_mc_{mc['id']}"):
                                             supabase.table("manutencao").update({
                                                 "motivo": novo_motivo_mc,
