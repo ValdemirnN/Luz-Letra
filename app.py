@@ -2761,12 +2761,13 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
 
                     motivo_manut = st.text_input("Motivo / Defeito", key="motivo_manut")
 
-                    st.markdown("**📍 Onde vai ficar para manutenção?**")
-                    col_loc1, col_loc2, col_loc3, col_loc4 = st.columns(4)
-                    with col_loc1: local_nome_manut = st.text_input("Nome do Local / Oficina", key="manut_local_nome", placeholder="Ex: Oficina do João")
-                    with col_loc2: local_rua_manut = st.text_input("Rua", key="manut_local_rua", placeholder="Ex: Rua das Flores")
-                    with col_loc3: local_numero_manut = st.text_input("Número", key="manut_local_numero", placeholder="Ex: 123")
-                    with col_loc4: local_bairro_manut = st.text_input("Bairro / Referência", key="manut_local_bairro", placeholder="Ex: Centro")
+                        st.markdown("**📍 Onde vai ficar para manutenção?**")
+                        col_loc1, col_loc2, col_loc3, col_loc4, col_loc5 = st.columns(5)
+                        with col_loc1: local_nome_manut = st.text_input("Nome do Local / Oficina", key="manut_local_nome", placeholder="Ex: Oficina do João")
+                        with col_loc2: local_rua_manut = st.text_input("Rua", key="manut_local_rua", placeholder="Ex: Rua das Flores")
+                        with col_loc3: local_numero_manut = st.text_input("Número", key="manut_local_numero", placeholder="Ex: 123")
+                        with col_loc4: local_bairro_manut = st.text_input("Bairro / Referência", key="manut_local_bairro", placeholder="Ex: Centro")
+                        with col_loc5: contato_manut = st.text_input("Telefone/Contato", key="manut_contato", placeholder="(84) 99999-9999")
 
                     st.markdown("**📅 Previsão de Retorno da Manutenção:**")
                     data_prev_retorno = st.date_input(
@@ -2783,8 +2784,8 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         elif (qtd_manut or 0) <= 0:
                             mostrar_popup("Informe a quantidade a enviar.", tipo="erro")
                         else:
-                            local_completo = f"{local_nome_manut} — {local_rua_manut}, {local_numero_manut} — {local_bairro_manut}".strip(" —,")
-                            novo_estoque_manut = prod_manut['quantidade_estoque'] - qtd_manut
+                                local_completo = f"{local_nome_manut} — {local_rua_manut}, {local_numero_manut} — {local_bairro_manut}".strip(" —,")
+                                contato_manut_formatado = formatar_telefone_br(contato_manut) if contato_manut.strip() else None
                             if js_manut and qtds_manut_kit:
                                 novo_json_manut = dict(js_manut)
                                 for k, v in qtds_manut_kit.items():
@@ -2807,7 +2808,8 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                 "data_envio": str(datetime.now().date()),
                                 "data_prevista_retorno": str(data_prev_retorno),
                                 "detalhes_kit": json.dumps(qtds_manut_kit) if qtds_manut_kit else None,
-                                "local_manutencao": local_completo if local_completo else None
+                                "local_manutencao": local_completo if local_completo else None,
+                                "contato_manutencao": contato_manut_formatado
                             }).execute()
 
                             mostrar_popup("Produto enviado para manutenção!")
@@ -2863,6 +2865,8 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                     st.caption(f"Motivo: {m['motivo']}")
                                     if m.get('local_manutencao'):
                                         st.info(f"📍 **Local:** {m['local_manutencao']}")
+                                    if m.get('contato_manutencao'):
+                                        st.info(f"📞 **Contato:** {m['contato_manutencao']}")
 
                                     col_mb1, col_mb2 = st.columns(2)
 
@@ -2948,84 +2952,98 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         else:
                             st.success("✅ Nenhum item em manutenção no momento.")
                         if concluidos:
-                            st.markdown(f"#### 📜 Histórico de Manutenções Concluídas ({len(concluidos)})")
-                            for mc in concluidos:
-                                nome_pc = mc['produtos']['nome'] if mc.get('produtos') else f"Produto #{mc['produto_id']}"
-                                detalhes_kit_c = ""
-                                if mc.get('detalhes_kit'):
-                                    try:
-                                        dkc = json.loads(mc['detalhes_kit'])
-                                        detalhes_kit_c = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dkc.items()])
-                                    except Exception:
-                                        pass
-                                data_retorno_real = mc.get('data_retorno_real', '-')
-
-                                with st.expander(
-                                    f"✅ {nome_pc} — {mc['quantidade']} un. | "
-                                    f"Enviado: {mc.get('data_envio','-')} | "
-                                    f"Retornou: {data_retorno_real}{detalhes_kit_c}",
-                                    expanded=False
-                                ):
-                                    st.caption(f"Motivo: {mc['motivo']}")
-                                    col_btn_mc1, col_btn_mc2 = st.columns(2)
-                                    with col_btn_mc1:
-                                        if st.button("✏️ Editar Registro", key=f"toggle_edit_mc_{mc['id']}"):
-                                            chave = f"editando_mc_{mc['id']}"
-                                            st.session_state[chave] = not st.session_state.get(chave, False)
-                                            st.rerun()
-                                    with col_btn_mc2:
-                                        if st.button("🗑️ Excluir do Histórico", key=f"excluir_hist_concluido_{mc['id']}"):
-                                            supabase.table("manutencao").delete().eq("id", mc['id']).execute()
-                                            mostrar_popup("Registro excluído do histórico.")
-                                            st.rerun()
-
-                                    if st.session_state.get(f"editando_mc_{mc['id']}", False):
-                                        st.markdown("---")
-                                        col_ec1, col_ec2, col_ec3 = st.columns(3)
-                                        with col_ec1:
-                                            novo_motivo_mc = st.text_input(
-                                                "Motivo",
-                                                value=mc['motivo'],
-                                                key=f"edit_motivo_mc_{mc['id']}"
-                                            )
-                                        with col_ec2:
-                                            try:
-                                                val_data_envio = datetime.strptime(mc.get('data_envio', '2024-01-01'), "%Y-%m-%d").date()
-                                            except Exception:
-                                                val_data_envio = datetime.now().date()
-                                            nova_data_envio_mc = st.date_input(
-                                                "Data de Envio",
-                                                value=val_data_envio,
-                                                format="DD/MM/YYYY",
-                                                key=f"edit_envio_mc_{mc['id']}"
-                                            )
-                                        with col_ec3:
-                                            try:
-                                                val_data_ret = datetime.strptime(mc.get('data_retorno_real', '2024-01-01'), "%Y-%m-%d").date()
-                                            except Exception:
-                                                val_data_ret = datetime.now().date()
-                                            nova_data_retorno_mc = st.date_input(
-                                                "Data de Retorno Real",
-                                                value=val_data_ret,
-                                                format="DD/MM/YYYY",
-                                                key=f"edit_retorno_mc_{mc['id']}"
-                                            )
-                                        if st.button("💾 Salvar Edição", key=f"salvar_edit_mc_{mc['id']}"):
-                                            supabase.table("manutencao").update({
-                                                "motivo": novo_motivo_mc,
-                                                "data_envio": str(nova_data_envio_mc),
-                                                "data_retorno_real": str(nova_data_retorno_mc)
-                                            }).eq("id", mc['id']).execute()
-                                            st.session_state[f"editando_mc_{mc['id']}"] = False
-                                            mostrar_popup("Registro atualizado com sucesso!")
-                                            st.rerun()
-                                            
-                                        with col_btn_mc2:                                     
-                                            st.warning("Excluir remove apenas o registro histórico.")
-                                        if st.button("🗑️ Excluir do Histórico", key=f"del_hist_mc_{mc['id']}"):
-                                            supabase.table("manutencao").delete().eq("id", mc['id']).execute()
-                                            mostrar_popup("Registro excluído do histórico.")
-                                            st.rerun()
+                        st.markdown(f"#### 📜 Histórico de Manutenções Concluídas ({len(concluidos)})")
+                        for mc in concluidos:
+                            nome_pc = mc['produtos']['nome'] if mc.get('produtos') else f"Produto #{mc['produto_id']}"
+                            detalhes_kit_c = ""
+                            if mc.get('detalhes_kit'):
+                                try:
+                                    dkc = json.loads(mc['detalhes_kit'])
+                                    detalhes_kit_c = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dkc.items()])
+                                except Exception:
+                                    pass
+                            data_retorno_real = mc.get('data_retorno_real', '-')
+                    
+                            with st.expander(
+                                f"✅ {nome_pc} — {mc['quantidade']} un. | "
+                                f"Enviado: {mc.get('data_envio','-')} | "
+                                f"Retornou: {data_retorno_real}{detalhes_kit_c}",
+                                expanded=False
+                            ):
+                                st.caption(f"Motivo: {mc['motivo']}")
+                                st.write(f"📍 **Local:** {mc.get('local_manutencao') or 'Não informado'}")
+                                if mc.get('contato_manutencao'):
+                                    st.write(f"📞 **Contato:** {mc['contato_manutencao']}")
+                    
+                                col_btn_mc1, col_btn_mc2 = st.columns(2)
+                                with col_btn_mc1:
+                                    if st.button("✏️ Editar Registro", key=f"toggle_edit_mc_{mc['id']}"):
+                                        chave = f"editando_mc_{mc['id']}"
+                                        st.session_state[chave] = not st.session_state.get(chave, False)
+                                        st.rerun()
+                                with col_btn_mc2:
+                                    if st.button("🗑️ Excluir do Histórico", key=f"excluir_hist_concluido_{mc['id']}"):
+                                        supabase.table("manutencao").delete().eq("id", mc['id']).execute()
+                                        mostrar_popup("Registro excluído do histórico.")
+                                        st.rerun()
+                    
+                                if st.session_state.get(f"editando_mc_{mc['id']}", False):
+                                    st.markdown("---")
+                                    col_ec1, col_ec2, col_ec3 = st.columns(3)
+                                    with col_ec1:
+                                        novo_motivo_mc = st.text_input(
+                                            "Motivo",
+                                            value=mc['motivo'],
+                                            key=f"edit_motivo_mc_{mc['id']}"
+                                        )
+                                    with col_ec2:
+                                        try:
+                                            val_data_envio = datetime.strptime(mc.get('data_envio', '2024-01-01'), "%Y-%m-%d").date()
+                                        except Exception:
+                                            val_data_envio = datetime.now().date()
+                                        nova_data_envio_mc = st.date_input(
+                                            "Data de Envio",
+                                            value=val_data_envio,
+                                            format="DD/MM/YYYY",
+                                            key=f"edit_envio_mc_{mc['id']}"
+                                        )
+                                    with col_ec3:
+                                        try:
+                                            val_data_ret = datetime.strptime(mc.get('data_retorno_real', '2024-01-01'), "%Y-%m-%d").date()
+                                        except Exception:
+                                            val_data_ret = datetime.now().date()
+                                        nova_data_retorno_mc = st.date_input(
+                                            "Data de Retorno Real",
+                                            value=val_data_ret,
+                                            format="DD/MM/YYYY",
+                                            key=f"edit_retorno_mc_{mc['id']}"
+                                        )
+                    
+                                    col_ec4, col_ec5 = st.columns(2)
+                                    with col_ec4:
+                                        novo_local_mc = st.text_input(
+                                            "Local da Manutenção",
+                                            value=mc.get('local_manutencao') or "",
+                                            key=f"edit_local_mc_{mc['id']}"
+                                        )
+                                    with col_ec5:
+                                        novo_contato_mc = st.text_input(
+                                            "Contato",
+                                            value=mc.get('contato_manutencao') or "",
+                                            key=f"edit_contato_mc_{mc['id']}"
+                                        )
+                    
+                                    if st.button("💾 Salvar Edição", key=f"salvar_edit_mc_{mc['id']}"):
+                                        supabase.table("manutencao").update({
+                                            "motivo": novo_motivo_mc,
+                                            "data_envio": str(nova_data_envio_mc),
+                                            "data_retorno_real": str(nova_data_retorno_mc),
+                                            "local_manutencao": novo_local_mc,
+                                            "contato_manutencao": novo_contato_mc
+                                        }).eq("id", mc['id']).execute()
+                                        st.session_state[f"editando_mc_{mc['id']}"] = False
+                                        mostrar_popup("Registro atualizado com sucesso!")
+                                        st.rerun()
                     else:
                         st.info("Nenhum registro de manutenção ainda.")
                 except Exception as e:
