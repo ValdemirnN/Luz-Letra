@@ -2726,73 +2726,339 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         st.rerun()
 
         with st.expander("🔧 Controle de Manutenção", expanded=False):
-            tab_enviar_manut, tab_extrato_manut = st.tabs(["Enviar para Manutenção","Extrato de Manutenção"])
+            tab_enviar_manut, tab_extrato_manut = st.tabs(["Enviar para Manutenção", "📋 Histórico de Manutenção"])
+
             with tab_enviar_manut:
                 if produtos_lista.data:
                     opcoes_manut = {p['nome']: p for p in produtos_lista.data}
                     prod_manut_nome = st.selectbox("Selecione o Produto", list(opcoes_manut.keys()), key="sel_manut")
                     prod_manut = opcoes_manut[prod_manut_nome]
+
+                    # Verifica se o produto tem subitens (kit de letras/números)
+                    js_manut = safe_json_load(prod_manut.get('observacao'))
+
                     col_m1, col_m2 = st.columns(2)
-                    with col_m1: qtd_manut = st.number_input("Qtd para Manutenção", min_value=1, max_value=prod_manut['quantidade_estoque'], step=1)
-                    with col_m2: motivo_manut = st.text_input("Motivo / Defeito")
-                    if st.button("🔧 Registrar Manutenção"):
-                        if not motivo_manut.strip(): mostrar_popup("Informe o motivo da manutenção.", tipo="erro")
+                    with col_m1:
+                        if js_manut:
+                            st.markdown(f"**Especifique quais peças de {prod_manut['nome']} vão para manutenção:**")
+                            cols_mkit = st.columns(6)
+                            idx_mkit = 0
+                            qtds_manut_kit = {}
+                            for k, max_v in js_manut.items():
+                                if max_v > 0:
+                                    v_mk = cols_mkit[idx_mkit % 6].number_input(
+                                        f"{k} (Tem: {max_v})", min_value=0, max_value=max_v,
+                                        value=None, key=f"manut_kit_{prod_manut['id']}_{k}"
+                                    )
+                                    if (v_mk or 0) > 0:
+                                        qtds_manut_kit[k] = v_mk
+                                    idx_mkit += 1
+                            qtd_manut = sum(qtds_manut_kit.values())
                         else:
-                            novo_estoque = prod_manut['quantidade_estoque'] - qtd_manut
-                            supabase.table("produtos").update({"quantidade_estoque": novo_estoque}).eq("id", prod_manut['id']).execute()
-                            supabase.table("manutencao").insert({"empresa_id": emp_id,"produto_id": prod_manut['id'],"quantidade": qtd_manut,"motivo": motivo_manut,"status": "Em Manutenção","data_envio": str(datetime.now().date())}).execute()
+                            qtd_manut = st.number_input(
+                                "Qtd para Manutenção",
+                                min_value=1, max_value=prod_manut['quantidade_estoque'], step=1,
+                                key="qtd_manut_normal"
+                            )
+                            qtds_manut_kit = {}
+
+                    with col_m2:
+                        motivo_manut = st.text_input("Motivo / Defeito", key="motivo_manut")
+                        data_prev_retorno = st.date_input(
+                            "Previsão de Retorno",
+                            value=datetime.now().date() + relativedelta(days=7),
+                            format="DD/MM/YYYY",
+                            key="data_prev_manut"
+                        )
+
+                    if st.button("🔧 Registrar Manutenção", key="btn_reg_manut"):
+                        if not motivo_manut.strip():
+                            mostrar_popup("Informe o motivo da manutenção.", tipo="erro")
+                        elif (qtd_manut or 0) <= 0:
+                            mostrar_popup("Informe a quantidade a enviar.", tipo="erro")
+                        else:
+                            # Deduz do estoque principal
+                            novo_estoque_manut = prod_manut['quantidade_estoque'] - qtd_manut
+
+                            # Se tiver kit, atualiza o JSON de subitens também
+                            if js_manut and qtds_manut_kit:
+                                novo_json_manut = dict(js_manut)
+                                for k, v in qtds_manut_kit.items():
+                                    novo_json_manut[k] = max(0, novo_json_manut.get(k, 0) - v)
+                                supabase.table("produtos").update({
+                                    "quantidade_estoque": max(0, novo_estoque_manut),
+                                    "observacao": json.dumps(novo_json_manut)
+                                }).eq("id", prod_manut['id']).execute()
+                            else:
+                                supabase.table("produtos").update({
+                                    "quantidade_estoque": max(0, novo_estoque_manut)
+                                }).eq("id", prod_manut['id']).execute()
+
+                            # Registra na tabela de manutenção com data prevista de retorno
+                            supabase.table("manutencao").insert({
+                                "empresa_id": emp_id,
+                                "produto_id": prod_manut['id'],
+                                "quantidade": qtd_manut,
+                                "motivo": motivo_manut,
+                                "status": "Em Manutenção",
+                                "data_envio": str(datetime.now().date()),
+                                "data_prevista_retorno": str(data_prev_retorno),
+                                "detalhes_kit": json.dumps(qtds_manut_kit) if qtds_manut_kit else None
+                            }).execute()
+
                             mostrar_popup("Produto enviado para manutenção!")
                             st.rerun()
+                else:
+                    st.info("Nenhum produto cadastrado.")
+
             with tab_extrato_manut:
                 try:
-                    manut_lista = supabase.table("manutencao").select("*, produtos(nome)").eq("empresa_id", emp_id).execute()
+                    manut_lista = supabase.table("manutencao").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_envio", desc=True).execute()
+
                     if manut_lista.data:
-                        for m in manut_lista.data:
-                            nome_p = m['produtos']['nome'] if m.get('produtos') else f"Produto #{m['produto_id']}"
-                            st.write(f"🛠️ **{nome_p}** — {m['quantidade']} un. | Data: {m['data_envio']} | Status: {m['status']}")
-                            st.caption(f"Motivo: {m['motivo']}")
-                            if m['status'] == "Em Manutenção":
-                                if st.button(f"✅ Retornar ao Estoque (ID {m['id']})", key=f"ret_manut_{m['id']}"):
-                                    prod_atual = supabase.table("produtos").select("quantidade_estoque").eq("id", m['produto_id']).execute()
-                                    if prod_atual.data:
-                                        estq_atualizado = prod_atual.data[0]['quantidade_estoque'] + m['quantidade']
-                                        supabase.table("produtos").update({"quantidade_estoque": estq_atualizado}).eq("id", m['produto_id']).execute()
-                                        supabase.table("manutencao").update({"status": "Concluído"}).eq("id", m['id']).execute()
-                                        mostrar_popup("Produto devolvido ao estoque principal!")
+                        hoje_manut = datetime.now().date()
+
+                        # Separar em manutenção ativa vs histórico concluído
+                        em_manut = [m for m in manut_lista.data if m['status'] == "Em Manutenção"]
+                        concluidos = [m for m in manut_lista.data if m['status'] == "Concluído"]
+
+                        if em_manut:
+                            st.markdown("#### 🔴 Em Manutenção (itens fora de circulação)")
+                            for m in em_manut:
+                                nome_p = m['produtos']['nome'] if m.get('produtos') else f"Produto #{m['produto_id']}"
+                                data_envio_m = m.get('data_envio', '-')
+                                data_prev_m = m.get('data_prevista_retorno', '-')
+
+                                # Verifica se o prazo já passou
+                                prazo_vencido = False
+                                dias_atraso = 0
+                                if data_prev_m and data_prev_m != '-':
+                                    try:
+                                        dt_prev = datetime.strptime(data_prev_m, "%Y-%m-%d").date()
+                                        if hoje_manut > dt_prev:
+                                            prazo_vencido = True
+                                            dias_atraso = (hoje_manut - dt_prev).days
+                                    except Exception:
+                                        pass
+
+                                # Mostra detalhes do kit se houver
+                                detalhes_kit_m = ""
+                                if m.get('detalhes_kit'):
+                                    try:
+                                        dk = json.loads(m['detalhes_kit'])
+                                        detalhes_kit_m = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dk.items()])
+                                    except Exception:
+                                        pass
+
+                                if prazo_vencido:
+                                    st.error(
+                                        f"⚠️ **PRAZO VENCIDO ({dias_atraso} dia(s) em atraso)** — "
+                                        f"**{nome_p}** — {m['quantidade']} un. | "
+                                        f"Enviado: {data_envio_m} | Previsão era: {data_prev_m}{detalhes_kit_m}"
+                                    )
+                                else:
+                                    st.warning(
+                                        f"🔧 **{nome_p}** — {m['quantidade']} un. | "
+                                        f"Enviado: {data_envio_m} | Retorno previsto: {data_prev_m}{detalhes_kit_m}"
+                                    )
+
+                                st.caption(f"Motivo: {m['motivo']}")
+
+                                col_mb1, col_mb2 = st.columns(2)
+                                with col_mb1:
+                                    # Atualizar data prevista (sem precisar que esteja pronto)
+                                    nova_data_prev = st.date_input(
+                                        "Atualizar previsão de retorno",
+                                        value=datetime.strptime(data_prev_m, "%Y-%m-%d").date() if data_prev_m and data_prev_m != '-' else hoje_manut,
+                                        format="DD/MM/YYYY",
+                                        key=f"nova_data_prev_{m['id']}"
+                                    )
+                                    if st.button(f"📅 Salvar Nova Data", key=f"btn_nova_data_{m['id']}"):
+                                        supabase.table("manutencao").update({
+                                            "data_prevista_retorno": str(nova_data_prev),
+                                            "motivo": m['motivo'] + f" [Prazo atualizado em {datetime.now().strftime('%d/%m/%Y')}]"
+                                        }).eq("id", m['id']).execute()
+                                        mostrar_popup("Data de retorno atualizada!")
                                         st.rerun()
-                            st.markdown("---")
-                    else: st.info("Nenhum item em manutenção.")
-                except Exception as e: st.error(f"Erro ao carregar manutenção: {e}")
+
+                                with col_mb2:
+                                    # Só retorna ao estoque quando o usuário confirmar manualmente que saiu da manutenção
+                                    st.info("⬇️ Confirme apenas quando o item já tiver retornado fisicamente.")
+                                    if st.button(f"✅ Confirmar Retorno ao Estoque", key=f"ret_manut_{m['id']}"):
+                                        # Devolve ao estoque principal
+                                        prod_ret = supabase.table("produtos").select("quantidade_estoque, observacao").eq("id", m['produto_id']).execute()
+                                        if prod_ret.data:
+                                            estq_atual_ret = prod_ret.data[0]['quantidade_estoque']
+                                            estq_novo_ret = estq_atual_ret + m['quantidade']
+
+                                            # Se tinha kit, restaura os subitens também
+                                            if m.get('detalhes_kit'):
+                                                try:
+                                                    dk_ret = json.loads(m['detalhes_kit'])
+                                                    obs_ret = safe_json_load(prod_ret.data[0].get('observacao'))
+                                                    if obs_ret and dk_ret:
+                                                        for k, v in dk_ret.items():
+                                                            obs_ret[k] = obs_ret.get(k, 0) + v
+                                                        supabase.table("produtos").update({
+                                                            "quantidade_estoque": estq_novo_ret,
+                                                            "observacao": json.dumps(obs_ret)
+                                                        }).eq("id", m['produto_id']).execute()
+                                                    else:
+                                                        supabase.table("produtos").update({
+                                                            "quantidade_estoque": estq_novo_ret
+                                                        }).eq("id", m['produto_id']).execute()
+                                                except Exception:
+                                                    supabase.table("produtos").update({
+                                                        "quantidade_estoque": estq_novo_ret
+                                                    }).eq("id", m['produto_id']).execute()
+                                            else:
+                                                supabase.table("produtos").update({
+                                                    "quantidade_estoque": estq_novo_ret
+                                                }).eq("id", m['produto_id']).execute()
+
+                                            supabase.table("manutencao").update({
+                                                "status": "Concluído",
+                                                "data_retorno_real": str(datetime.now().date())
+                                            }).eq("id", m['id']).execute()
+                                            mostrar_popup("Produto devolvido ao estoque com sucesso!")
+                                            st.rerun()
+
+                                st.markdown("---")
+                        else:
+                            st.success("✅ Nenhum item em manutenção no momento.")
+
+                        if concluidos:
+                            with st.expander(f"📜 Histórico de Manutenções Concluídas ({len(concluidos)})", expanded=False):
+                                for mc in concluidos:
+                                    nome_pc = mc['produtos']['nome'] if mc.get('produtos') else f"Produto #{mc['produto_id']}"
+                                    detalhes_kit_c = ""
+                                    if mc.get('detalhes_kit'):
+                                        try:
+                                            dkc = json.loads(mc['detalhes_kit'])
+                                            detalhes_kit_c = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dkc.items()])
+                                        except Exception:
+                                            pass
+                                    data_retorno_real = mc.get('data_retorno_real', '-')
+                                    st.write(
+                                        f"✅ **{nome_pc}** — {mc['quantidade']} un. | "
+                                        f"Enviado: {mc.get('data_envio','-')} | "
+                                        f"Retornou: {data_retorno_real}{detalhes_kit_c}"
+                                    )
+                                    st.caption(f"Motivo: {mc['motivo']}")
+                                    st.markdown("<hr style='border-color:#333;margin:6px 0'>", unsafe_allow_html=True)
+                    else:
+                        st.info("Nenhum registro de manutenção ainda.")
+                except Exception as e:
+                    st.error(f"Erro ao carregar manutenção: {e}")
 
         with st.expander("🗑️ Controle de Itens Quebrados", expanded=False):
-            tab_reg_quebrado, tab_lista_quebrados = st.tabs(["Registrar Itens Quebrados","Histórico de Quebrados"])
+            tab_reg_quebrado, tab_lista_quebrados = st.tabs(["Registrar Quebra", "📋 Histórico de Quebrados"])
+
             with tab_reg_quebrado:
                 if produtos_lista.data:
                     opcoes_quebrado = {p['nome']: p for p in produtos_lista.data}
                     prod_quebra_nome = st.selectbox("Selecione o Produto", list(opcoes_quebrado.keys()), key="sel_quebrado")
                     prod_quebrado = opcoes_quebrado[prod_quebra_nome]
+
+                    js_quebrado = safe_json_load(prod_quebrado.get('observacao'))
+
                     col_q1, col_q2 = st.columns(2)
-                    with col_q1: qtd_quebrada = st.number_input("Quantidade Quebrada/Perdida", min_value=1, max_value=prod_quebrado['quantidade_estoque'], step=1)
-                    with col_q2: motivo_quebra = st.text_input("Detalhes (Ex: Quebrou na festa X)")
-                    if st.button("🗑️ Registrar Baixa por Quebra"):
-                        if not motivo_quebra.strip(): mostrar_popup("Informe os detalhes da quebra.", tipo="erro")
+                    with col_q1:
+                        if js_quebrado:
+                            st.markdown(f"**Especifique quais peças de {prod_quebrado['nome']} foram quebradas/perdidas:**")
+                            cols_qkit = st.columns(6)
+                            idx_qkit = 0
+                            qtds_quebra_kit = {}
+                            for k, max_v in js_quebrado.items():
+                                if max_v > 0:
+                                    v_qk = cols_qkit[idx_qkit % 6].number_input(
+                                        f"{k} (Tem: {max_v})", min_value=0, max_value=max_v,
+                                        value=None, key=f"quebra_kit_{prod_quebrado['id']}_{k}"
+                                    )
+                                    if (v_qk or 0) > 0:
+                                        qtds_quebra_kit[k] = v_qk
+                                    idx_qkit += 1
+                            qtd_quebrada = sum(qtds_quebra_kit.values())
                         else:
+                            qtd_quebrada = st.number_input(
+                                "Quantidade Quebrada/Perdida",
+                                min_value=1, max_value=prod_quebrado['quantidade_estoque'], step=1,
+                                key="qtd_quebrada_normal"
+                            )
+                            qtds_quebra_kit = {}
+
+                    with col_q2:
+                        motivo_quebra = st.text_input("Detalhes (Ex: Quebrou na festa X)", key="motivo_quebra")
+
+                    st.error("⚠️ **Atenção:** Itens quebrados são **removidos permanentemente** do estoque. Esta ação não pode ser desfeita.")
+
+                    if st.button("🗑️ Registrar Quebra / Perda Definitiva", key="btn_reg_quebra"):
+                        if not motivo_quebra.strip():
+                            mostrar_popup("Informe os detalhes da quebra.", tipo="erro")
+                        elif (qtd_quebrada or 0) <= 0:
+                            mostrar_popup("Informe a quantidade quebrada.", tipo="erro")
+                        else:
+                            # Remove permanentemente do estoque
                             novo_estoque_q = prod_quebrado['quantidade_estoque'] - qtd_quebrada
-                            supabase.table("produtos").update({"quantidade_estoque": novo_estoque_q}).eq("id", prod_quebrado['id']).execute()
-                            supabase.table("itens_quebrados").insert({"empresa_id": emp_id,"produto_id": prod_quebrado['id'],"quantidade": qtd_quebrada,"motivo": motivo_quebra,"data_registro": str(datetime.now().date())}).execute()
-                            mostrar_popup("Baixa de estoque registrada com sucesso!")
+
+                            if js_quebrado and qtds_quebra_kit:
+                                novo_json_q = dict(js_quebrado)
+                                for k, v in qtds_quebra_kit.items():
+                                    novo_json_q[k] = max(0, novo_json_q.get(k, 0) - v)
+                                supabase.table("produtos").update({
+                                    "quantidade_estoque": max(0, novo_estoque_q),
+                                    "observacao": json.dumps(novo_json_q)
+                                }).eq("id", prod_quebrado['id']).execute()
+                            else:
+                                supabase.table("produtos").update({
+                                    "quantidade_estoque": max(0, novo_estoque_q)
+                                }).eq("id", prod_quebrado['id']).execute()
+
+                            supabase.table("itens_quebrados").insert({
+                                "empresa_id": emp_id,
+                                "produto_id": prod_quebrado['id'],
+                                "quantidade": qtd_quebrada,
+                                "motivo": motivo_quebra,
+                                "data_registro": str(datetime.now().date()),
+                                "detalhes_kit": json.dumps(qtds_quebra_kit) if qtds_quebra_kit else None
+                            }).execute()
+
+                            mostrar_popup("Baixa de estoque registrada permanentemente.")
                             st.rerun()
+                else:
+                    st.info("Nenhum produto cadastrado.")
+
             with tab_lista_quebrados:
                 try:
                     quebrados_lista = supabase.table("itens_quebrados").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_registro", desc=True).execute()
+
                     if quebrados_lista.data:
+                        total_quebrados = len(quebrados_lista.data)
+                        total_pecas_perdidas = sum(q['quantidade'] for q in quebrados_lista.data)
+                        col_qk1, col_qk2 = st.columns(2)
+                        col_qk1.metric("📋 Total de Registros", total_quebrados)
+                        col_qk2.metric("📦 Total de Peças Perdidas", total_pecas_perdidas)
+                        st.markdown("---")
+
                         for q in quebrados_lista.data:
                             nome_pq = q['produtos']['nome'] if q.get('produtos') else f"Produto #{q['produto_id']}"
-                            st.error(f"❌ **{nome_pq}** — {q['quantidade']} un. perdidas em {q['data_registro']}")
+                            detalhes_kit_q = ""
+                            if q.get('detalhes_kit'):
+                                try:
+                                    dkq = json.loads(q['detalhes_kit'])
+                                    detalhes_kit_q = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dkq.items()])
+                                except Exception:
+                                    pass
+                            st.error(
+                                f"❌ **{nome_pq}** — {q['quantidade']} un. perdidas em "
+                                f"{q['data_registro']}{detalhes_kit_q}"
+                            )
                             st.caption(f"Motivo: {q['motivo']}")
-                            st.markdown("---")
-                    else: st.info("Nenhum item quebrado registrado.")
-                except Exception as e: st.error(f"Erro ao carregar itens quebrados: {e}")
+                            st.markdown("<hr style='border-color:#333;margin:6px 0'>", unsafe_allow_html=True)
+                    else:
+                        st.info("Nenhum item quebrado registrado.")
+                except Exception as e:
+                    st.error(f"Erro ao carregar itens quebrados: {e}")
 
 
     # ==========================================
