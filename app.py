@@ -2958,6 +2958,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                             chave = f"editando_mc_{mc['id']}"
                                             st.session_state[chave] = not st.session_state.get(chave, False)
                                             st.rerun()
+                                            
                                     with col_btn_mc2:
                                         if st.button("🗑️ Excluir do Histórico", key=f"del_hist_mc_{mc['id']}"):
                                             supabase.table("manutencao").delete().eq("id", mc['id']).execute()
