@@ -3127,37 +3127,37 @@ with tab_enviar_manut:
                         else:
                             st.info("Nenhum produto cadastrado.")
 
-            with tab_lista_quebrados:
-                try:
-                    quebrados_lista = supabase.table("itens_quebrados").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_registro", desc=True).execute()
-
-                    if quebrados_lista.data:
-                        total_quebrados = len(quebrados_lista.data)
-                        total_pecas_perdidas = sum(q['quantidade'] for q in quebrados_lista.data)
-                        col_qk1, col_qk2 = st.columns(2)
-                        col_qk1.metric("📋 Total de Registros", total_quebrados)
-                        col_qk2.metric("📦 Total de Peças Perdidas", total_pecas_perdidas)
-                        st.markdown("---")
-
-                        for q in quebrados_lista.data:
-                            nome_pq = q['produtos']['nome'] if q.get('produtos') else f"Produto #{q['produto_id']}"
-                            detalhes_kit_q = ""
-                            if q.get('detalhes_kit'):
-                                try:
-                                    dkq = json.loads(q['detalhes_kit'])
-                                    detalhes_kit_q = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dkq.items()])
-                                except Exception:
-                                    pass
-                            st.error(
-                                f"❌ **{nome_pq}** — {q['quantidade']} un. perdidas em "
-                                f"{q['data_registro']}{detalhes_kit_q}"
-                            )
-                            st.caption(f"Motivo: {q['motivo']}")
-                            st.markdown("<hr style='border-color:#333;margin:6px 0'>", unsafe_allow_html=True)
-                    else:
-                        st.info("Nenhum item quebrado registrado.")
-                except Exception as e:
-                    st.error(f"Erro ao carregar itens quebrados: {e}")
+                with tab_lista_quebrados:
+                    try:
+                        quebrados_lista = supabase.table("itens_quebrados").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_registro", desc=True).execute()
+    
+                        if quebrados_lista.data:
+                            total_quebrados = len(quebrados_lista.data)
+                            total_pecas_perdidas = sum(q['quantidade'] for q in quebrados_lista.data)
+                            col_qk1, col_qk2 = st.columns(2)
+                            col_qk1.metric("📋 Total de Registros", total_quebrados)
+                            col_qk2.metric("📦 Total de Peças Perdidas", total_pecas_perdidas)
+                            st.markdown("---")
+    
+                            for q in quebrados_lista.data:
+                                nome_pq = q['produtos']['nome'] if q.get('produtos') else f"Produto #{q['produto_id']}"
+                                detalhes_kit_q = ""
+                                if q.get('detalhes_kit'):
+                                    try:
+                                        dkq = json.loads(q['detalhes_kit'])
+                                        detalhes_kit_q = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dkq.items()])
+                                    except Exception:
+                                        pass
+                                st.error(
+                                    f"❌ **{nome_pq}** — {q['quantidade']} un. perdidas em "
+                                    f"{q['data_registro']}{detalhes_kit_q}"
+                                )
+                                st.caption(f"Motivo: {q['motivo']}")
+                                st.markdown("<hr style='border-color:#333;margin:6px 0'>", unsafe_allow_html=True)
+                        else:
+                            st.info("Nenhum item quebrado registrado.")
+                    except Exception as e:
+                        st.error(f"Erro ao carregar itens quebrados: {e}")
 
 
     # ==========================================
