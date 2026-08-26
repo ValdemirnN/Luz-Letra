@@ -2807,6 +2807,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                             st.rerun()
                 else:
                     st.info("Nenhum produto cadastrado.")
+                    
             with tab_extrato_manut:
                 try:
                     manut_lista = supabase.table("manutencao").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_envio", desc=True).execute()
