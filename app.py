@@ -3193,7 +3193,7 @@ with tab_enviar_manut:
     # ==========================================
     # MENU: COMPRAS
     # ==========================================
-        elif menu == "🛒 Compras":
+    elif menu == "🛒 Compras":
             st.title("Controle de Compras")
             col_cp3, col_cp4 = st.columns(2)
             with col_cp3: nome_produto_compra = st.text_input("Nome do Produto", key="compra_nome_produto")
