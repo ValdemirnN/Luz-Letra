@@ -2044,9 +2044,24 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                 st.rerun()
                         else:
                             st.warning("⏳ Pagamento ainda não confirmado.")
-                            metodo_confirmacao = st.selectbox("Como foi feito o pagamento?", ["Pix","Dinheiro","Cartão","Boleto","Outro"], key=f"metodo_pag_{ev['id']}")
+                            formas_opcoes = ["Dinheiro","Pix","Cartão de Crédito","Cartão de Débito","Boleto","Outro"]
+                            num_formas = st.number_input("Quantas formas de pagamento?", min_value=1, max_value=5, value=1, step=1, key=f"num_formas_{ev['id']}")
+                            pagamentos_registrar = []
+                            for i in range(int(num_formas)):
+                                col_p1, col_p2 = st.columns(2)
+                                with col_p1:
+                                    forma_i = st.selectbox(f"Forma {i+1}", formas_opcoes, key=f"forma_{ev['id']}_{i}")
+                                with col_p2:
+                                    valor_i = st.number_input(f"Valor (R$) — Forma {i+1}", min_value=0.0, value=0.0, format="%.2f", key=f"valor_{ev['id']}_{i}")
+                                pagamentos_registrar.append({"forma": forma_i, "valor": valor_i})
+                            resumo_pag = " + ".join([f"{p['forma']}: R$ {formatar_moeda(p['valor'])}" for p in pagamentos_registrar if p['valor'] > 0])
                             if st.button("✅ Confirmar Pagamento", key=f"btn_conf_pag_{ev['id']}"):
-                                supabase.table("eventos").update({"pagamento_confirmado": True, "metodo_confirmacao_pagamento": metodo_confirmacao, "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")}).eq("id", ev['id']).execute()
+                                supabase.table("eventos").update({
+                                    "pagamento_confirmado": True,
+                                    "metodo_confirmacao_pagamento": resumo_pag or "Não informado",
+                                    "pagamentos_json": json.dumps(pagamentos_registrar),
+                                    "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")
+                                }).eq("id", ev['id']).execute()
                                 mostrar_popup("PAGAMENTO CONFIRMADO COM SUCESSO!")
                                 st.rerun()
 
@@ -2352,9 +2367,24 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                     st.rerun()
                             else:
                                 st.warning("⏳ Pagamento ainda não confirmado.")
-                                metodo_pag_h = st.selectbox("Como foi feito o pagamento?", ["Pix","Dinheiro","Cartão","Boleto","Outro"], key=f"hist_metodo_pag_{ev_h['id']}")
+                                formas_opcoes_h = ["Dinheiro","Pix","Cartão de Crédito","Cartão de Débito","Boleto","Outro"]
+                                num_formas_h = st.number_input("Quantas formas de pagamento?", min_value=1, max_value=5, value=1, step=1, key=f"num_formas_h_{ev_h['id']}")
+                                pagamentos_hist = []
+                                for i in range(int(num_formas_h)):
+                                    col_h1, col_h2 = st.columns(2)
+                                    with col_h1:
+                                        forma_h_i = st.selectbox(f"Forma {i+1}", formas_opcoes_h, key=f"forma_h_{ev_h['id']}_{i}")
+                                    with col_h2:
+                                        valor_h_i = st.number_input(f"Valor (R$) — Forma {i+1}", min_value=0.0, value=0.0, format="%.2f", key=f"valor_h_{ev_h['id']}_{i}")
+                                    pagamentos_hist.append({"forma": forma_h_i, "valor": valor_h_i})
+                                resumo_pag_h = " + ".join([f"{p['forma']}: R$ {formatar_moeda(p['valor'])}" for p in pagamentos_hist if p['valor'] > 0])
                                 if st.button("✅ Confirmar Pagamento", key=f"hist_btn_pag_{ev_h['id']}"):
-                                    supabase.table("eventos").update({"pagamento_confirmado": True, "metodo_confirmacao_pagamento": metodo_pag_h, "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")}).eq("id", ev_h['id']).execute()
+                                    supabase.table("eventos").update({
+                                        "pagamento_confirmado": True,
+                                        "metodo_confirmacao_pagamento": resumo_pag_h or "Não informado",
+                                        "pagamentos_json": json.dumps(pagamentos_hist),
+                                        "data_confirmacao_pagamento": datetime.now().strftime("%d/%m/%Y às %H:%M")
+                                    }).eq("id", ev_h['id']).execute()
                                     mostrar_popup("PAGAMENTO CONFIRMADO!")
                                     st.rerun()
 
