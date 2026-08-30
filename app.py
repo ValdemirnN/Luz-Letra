@@ -3824,18 +3824,27 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                 obs_orc = st.text_area("Observações", key="orc_obs")
 
             valor_total_orc = max(0.0, valor_itens_orc + valor_frete_orc - desconto_orc)
-            st.success(f"### 💰 Valor Total do Orçamento: R$ {formatar_moeda(valor_total_orc)}")
+            st.markdown(f"""
+            <div style="background:#1B5E20;border-radius:8px;padding:10px 16px;margin:10px 0;display:flex;justify-content:space-between;align-items:center;">
+                <span style="color:#B9F6CA;font-size:13px;font-weight:600;">💰 Valor Total do Orçamento</span>
+                <span style="color:#FFFFFF;font-size:20px;font-weight:800;">R$ {formatar_moeda(valor_total_orc)}</span>
+            </div>""", unsafe_allow_html=True)
+
+            confirmar_evento_ja = st.checkbox("✅ Cliente já confirmou — criar o evento automaticamente ao salvar", key="orc_confirmar_ja")
+            st.caption("Desmarcado: fica salvo como orçamento (pré-cadastro) na aba 'Orçamentos Salvos', sem virar evento ainda. Marcado: já cria o evento direto, igual ao cadastro manual em Agendamento.")
 
             col_sv1, col_sv2 = st.columns(2)
             with col_sv1:
-                if st.button("💾 Salvar Orçamento", key="btn_salvar_orc", use_container_width=True):
+                texto_btn_salvar = "✅ Salvar e Confirmar Evento" if confirmar_evento_ja else "💾 Salvar como Orçamento (Rascunho)"
+                if st.button(texto_btn_salvar, key="btn_salvar_orc", use_container_width=True):
                     if not nome_cliente_orc.strip() or not titulo_orc.strip():
                         mostrar_popup("Preencha ao menos o nome do cliente e o título do evento.", tipo="erro")
                     elif not itens_selecionados_orc:
                         mostrar_popup("Selecione ao menos um item.", tipo="erro")
                     else:
                         try:
-                            supabase.table("orcamentos").insert({
+                            status_inicial_orc = "Convertido" if confirmar_evento_ja else "Rascunho"
+                            novo_orc = supabase.table("orcamentos").insert({
                                 "empresa_id": emp_id, "nome_cliente": nome_cliente_orc, "contato_cliente": contato_cliente_orc,
                                 "titulo_evento": titulo_orc, "endereco_evento": endereco_evento_orc,
                                 "data_inicio": str(data_ini_orc), "data_fim": str(data_fim_orc),
@@ -3844,9 +3853,40 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                 "origem_endereco": origem_orc, "distancia_km": distancia_manual, "duracao_min": dur_atual,
                                 "consumo_veiculo": consumo_veic, "preco_combustivel": preco_comb, "valor_frete": valor_frete_orc,
                                 "desconto": desconto_orc, "valor_total": valor_total_orc, "validade_dias": int(validade_orc),
-                                "status": "Rascunho", "observacoes": obs_orc
+                                "status": status_inicial_orc, "observacoes": obs_orc
                             }).execute()
-                            mostrar_popup("ORÇAMENTO SALVO COM SUCESSO!")
+
+                            if confirmar_evento_ja:
+                                orc_id_novo = novo_orc.data[0]['id']
+                                novo_cliente_direto = supabase.table("clientes_eventos").insert({
+                                    "empresa_id": emp_id, "nome": nome_cliente_orc, "contato": contato_cliente_orc
+                                }).execute()
+                                cliente_id_direto = novo_cliente_direto.data[0]['id']
+                                novo_evento_direto = supabase.table("eventos").insert({
+                                    "empresa_id": emp_id, "cliente_id": cliente_id_direto,
+                                    "titulo": titulo_orc, "descricao": titulo_orc,
+                                    "data_inicio": str(data_ini_orc), "data_fim": str(data_fim_orc),
+                                    "data_fim_alocacao": str(data_fim_orc), "hora_inicio": str(hora_ini_orc),
+                                    "hora_fim": str(hora_fim_orc), "status": "Agendado",
+                                    "observacao": f"Local: {endereco_evento_orc or '-'} | {obs_orc or ''}",
+                                    "valor_total": valor_total_orc
+                                }).execute()
+                                evento_id_direto = novo_evento_direto.data[0]['id']
+                                data_hora_direto = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+                                for pid, item in itens_selecionados_orc.items():
+                                    supabase.table("itens_evento").insert({
+                                        "empresa_id": emp_id, "evento_id": evento_id_direto, "produto_id": int(pid),
+                                        "quantidade": item['quantidade'], "observacao": "", "valor_cobrado": item['valor_total']
+                                    }).execute()
+                                supabase.table("historico_eventos").insert({
+                                    "empresa_id": emp_id, "evento_id": evento_id_direto,
+                                    "descricao": f"🟢 Evento criado direto do Orçamento #{orc_id_novo} (confirmado na hora). Revise o detalhamento de kits (letras/números) se houver.",
+                                    "data_registro": data_hora_direto
+                                }).execute()
+                                supabase.table("orcamentos").update({"evento_id": evento_id_direto}).eq("id", orc_id_novo).execute()
+                                mostrar_popup("ORÇAMENTO SALVO E EVENTO CRIADO COM SUCESSO!")
+                            else:
+                                mostrar_popup("ORÇAMENTO SALVO COMO RASCUNHO!")
                             st.rerun()
                         except Exception as e:
                             mostrar_popup(f"Erro ao salvar: {e}", tipo="erro")
