@@ -1445,6 +1445,48 @@ else:
         buffer.seek(0)
         return buffer
 
+    def buscar_devolucoes_pendentes():
+        """Retorna lista de eventos já encerrados (data fim < hoje) com itens ainda não
+        marcados como devolvidos ao estoque."""
+        pendentes = []
+        try:
+            hoje_dev = datetime.now().date()
+            eventos_enc = supabase.table("eventos").select("id, descricao, data_fim_alocacao, cliente_id, status").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
+            if not eventos_enc.data: return pendentes
+            ids_encerrados = []
+            mapa_ev_enc = {}
+            for ev_e in eventos_enc.data:
+                if not ev_e.get('data_fim_alocacao'): continue
+                try:
+                    d_fim_e = datetime.strptime(ev_e['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date()
+                except Exception: continue
+                if d_fim_e < hoje_dev:
+                    ids_encerrados.append(ev_e['id'])
+                    mapa_ev_enc[ev_e['id']] = {**ev_e, 'data_fim_dt': d_fim_e}
+            if not ids_encerrados: return pendentes
+            try:
+                itens_enc = supabase.table("itens_evento").select("id, evento_id, produto_id, quantidade, devolvido").in_("evento_id", ids_encerrados).execute()
+            except Exception:
+                # coluna 'devolvido' pode não existir ainda no banco
+                itens_enc = supabase.table("itens_evento").select("id, evento_id, produto_id, quantidade").in_("evento_id", ids_encerrados).execute()
+            if not itens_enc.data: return pendentes
+            por_evento = {}
+            for it_e in (itens_enc.data or []):
+                if not it_e.get('devolvido'):
+                    por_evento.setdefault(it_e['evento_id'], []).append(it_e)
+            for ev_id, itens_pend in por_evento.items():
+                info_ev = mapa_ev_enc.get(ev_id, {})
+                dias_atraso_dev = (hoje_dev - info_ev.get('data_fim_dt', hoje_dev)).days
+                pendentes.append({
+                    'evento_id': ev_id,
+                    'descricao': info_ev.get('descricao') or 'Evento',
+                    'dias_atraso': dias_atraso_dev,
+                    'itens': itens_pend
+                })
+            return pendentes
+        except Exception:
+            return pendentes
+
     def _criar_modal_exclusao():
         def modal(produto_info, tipo, total_remover=0, qtds_json=None, motivo=""):
             if tipo == "parcial":
@@ -1744,7 +1786,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
             st.info("Agenda livre! Nenhum evento futuro programado.")
         st.markdown("---")
 
-        col_alerta1, col_alerta2 = st.columns(2)
+        col_alerta1, col_alerta2, col_alerta3 = st.columns(3)
         with col_alerta1:
             try:
                 manutencao_check = supabase.table("manutencao").select("quantidade, produtos(nome), data_envio, data_prevista_retorno, local_manutencao").eq("empresa_id", emp_id).eq("status", "Em Manutenção").execute()
@@ -1783,6 +1825,25 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                     st.success("✅ Nenhum item em manutenção no momento.")
             except: pass
         with col_alerta2:
+            devolucoes_pend_dash = buscar_devolucoes_pendentes()
+            if devolucoes_pend_dash:
+                total_itens_pend_dash = sum(len(d['itens']) for d in devolucoes_pend_dash)
+                st.markdown(f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                    <span style="font-size:20px;">🔁</span>
+                    <span style="font-size:15px;font-weight:700;color:#EDEDED;">Equipamentos Não Devolvidos</span>
+                    <span style="background:#B3261E;color:#EDEDED;font-size:12px;font-weight:700;border-radius:20px;padding:2px 10px;margin-left:auto;">{total_itens_pend_dash}</span>
+                </div>""", unsafe_allow_html=True)
+                for dev in devolucoes_pend_dash[:5]:
+                    total_qtd_dev = sum(i['quantidade'] for i in dev['itens'])
+                    st.markdown(f"""
+                    <div style="border-left:4px solid #B3261E;background:#1B1B1D;border-radius:8px;padding:10px 14px;margin-bottom:8px;">
+                        <div style="font-weight:700;color:#EDEDED;font-size:14px;">{dev['descricao']}</div>
+                        <div style="color:#FF6B6B;font-size:12px;font-weight:600;">⚠ encerrado há {dev['dias_atraso']} dia(s) — {total_qtd_dev} peça(s) pendente(s)</div>
+                    </div>""", unsafe_allow_html=True)
+                st.caption("Confirme a devolução na aba 📅 Agendamento, dentro do evento.")
+            else:
+                st.success("✅ Nenhum equipamento pendente de devolução.")
+        with col_alerta3:
             try:
                 estoque_check = supabase.table("produtos").select("nome, quantidade_estoque").eq("empresa_id", emp_id).execute()
                 if estoque_check.data:
@@ -1993,10 +2054,23 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                 except: pass
 
         st.markdown("#### 📊 Visão Operacional")
-        col_k1, col_k2, col_k3 = st.columns(3)
+        col_k1, col_k2, col_k3, col_k4 = st.columns(4)
         col_k1.metric("📍 Eventos Hoje", eventos_hoje)
         col_k2.metric("🔜 Próximos 7 Dias", eventos_proximos_7_dias)
         col_k3.metric("📑 Total na Base", len(lista_todos_eventos))
+        devolucoes_pend_agenda = buscar_devolucoes_pendentes()
+        total_itens_pend_agenda = sum(len(d['itens']) for d in devolucoes_pend_agenda)
+        col_k4.metric("🔁 Equip. Não Devolvidos", total_itens_pend_agenda, delta="Atenção" if total_itens_pend_agenda > 0 else None, delta_color="inverse")
+        if devolucoes_pend_agenda:
+            with st.expander(f"⚠️ {len(devolucoes_pend_agenda)} evento(s) com equipamentos não devolvidos ao estoque", expanded=False):
+                for dev_ag in devolucoes_pend_agenda:
+                    total_qtd_ag = sum(i['quantidade'] for i in dev_ag['itens'])
+                    st.markdown(f"""
+                    <div style="border-left:4px solid #B3261E;background:#1B1B1D;border-radius:8px;padding:10px 14px;margin-bottom:8px;">
+                        <div style="font-weight:700;color:#EDEDED;font-size:14px;">{dev_ag['descricao']}</div>
+                        <div style="color:#FF6B6B;font-size:12px;font-weight:600;">⚠ encerrado há {dev_ag['dias_atraso']} dia(s) — {total_qtd_ag} peça(s) pendente(s)</div>
+                    </div>""", unsafe_allow_html=True)
+                st.caption("Abra o evento correspondente na lista abaixo ou no histórico para confirmar a devolução.")
         st.markdown("---")
 
         st.markdown("#### 🔍 Filtrar Eventos")
@@ -2049,7 +2123,10 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                 hora_fim_fmt = ev.get('hora_fim')[:5] if ev.get('hora_fim') else "23:59"
 
                 with st.expander(f"🎉 {titulo_ev} — {nome_cliente_ev} | {data_ini_br} ({hora_ini_fmt}) até {data_fim_br} ({hora_fim_fmt}) | Status: {status_ev}"):
-                    itens_ev = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao, valor_cobrado").eq("evento_id", ev['id']).execute()
+                    try:
+                        itens_ev = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao, valor_cobrado, devolvido").eq("evento_id", ev['id']).execute()
+                    except Exception:
+                        itens_ev = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao, valor_cobrado").eq("evento_id", ev['id']).execute()
                     tab_detalhes, tab_add, tab_rem, tab_valores, tab_editar, tab_hist = st.tabs(["📋 Detalhes & Recibo","➕ Adicionar Itens","➖ Remover Itens","💲 Valores","✏️ Editar Evento","🕒 Histórico"])
 
                     with tab_detalhes:
@@ -2073,8 +2150,44 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                             for it in itens_ev.data:
                                 nome_prod = dict_produtos.get(it['produto_id'], {}).get('nome', f"Produto #{it['produto_id']}")
                                 detalhe = f" ({it['observacao']})" if it.get('observacao') else ""
-                                st.write(f"- {it['quantidade']}x {nome_prod}{detalhe}")
+                                devolvido_tag = " ✅ devolvido" if it.get('devolvido') else " ⏳ não devolvido"
+                                st.write(f"- {it['quantidade']}x {nome_prod}{detalhe}{devolvido_tag}")
                         st.markdown("---")
+
+                        # --- DEVOLUÇÃO DE EQUIPAMENTOS AO ESTOQUE ---
+                        try:
+                            data_fim_ev_dt = datetime.strptime(data_fim_fmt, "%Y-%m-%d").date() if data_fim_fmt != "-" else None
+                        except Exception:
+                            data_fim_ev_dt = None
+                        itens_nao_devolvidos = [it for it in (itens_ev.data or []) if not it.get('devolvido')]
+                        if itens_nao_devolvidos:
+                            evento_encerrado = data_fim_ev_dt is not None and data_fim_ev_dt < datetime.now().date()
+                            if evento_encerrado:
+                                dias_atraso_ev = (datetime.now().date() - data_fim_ev_dt).days
+                                st.error(f"⚠️ Este evento terminou há {dias_atraso_ev} dia(s) e ainda tem equipamentos não devolvidos ao estoque!")
+                            else:
+                                st.info("🔁 Marque abaixo os itens já devolvidos ao estoque quando o evento terminar.")
+                            marcar_devolvidos = {}
+                            for it_dev in itens_nao_devolvidos:
+                                nome_prod_dev = dict_produtos.get(it_dev['produto_id'], {}).get('nome', f"Produto #{it_dev['produto_id']}")
+                                marcar_devolvidos[it_dev['id']] = st.checkbox(f"{it_dev['quantidade']}x {nome_prod_dev} — devolvido ao estoque", key=f"chk_dev_{ev['id']}_{it_dev['id']}")
+                            if st.button("✅ Confirmar Devolução dos Itens Marcados", key=f"btn_confirmar_dev_{ev['id']}"):
+                                selecionados = [iid for iid, marcado in marcar_devolvidos.items() if marcado]
+                                if not selecionados:
+                                    mostrar_popup("Marque ao menos um item como devolvido.", tipo="erro")
+                                else:
+                                    try:
+                                        for iid in selecionados:
+                                            supabase.table("itens_evento").update({"devolvido": True, "data_devolucao": str(datetime.now().date())}).eq("id", iid).execute()
+                                        mostrar_popup("DEVOLUÇÃO REGISTRADA COM SUCESSO!")
+                                        st.rerun()
+                                    except Exception as e:
+                                        mostrar_popup(f"Erro ao registrar devolução — verifique se a coluna 'devolvido' existe na tabela itens_evento: {e}", tipo="erro")
+                        else:
+                            if itens_ev.data:
+                                st.success("✅ Todos os itens deste evento já foram devolvidos ao estoque.")
+                        st.markdown("---")
+
                         if REPORTLAB_DISPONIVEL:
                             nome_usuario_pdf = st.session_state.get('nome_usuario') or "Usuário do Sistema"
                             buffer_pdf = gerar_recibo_evento_pdf(ev, itens_ev.data or [], dict_produtos, nome_cliente_ev, contato_cliente_ev, nome_usuario_pdf)
@@ -2351,7 +2464,10 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                     valor_h = float(ev_h.get('valor_total') or 0)
                     icone_h = "✅" if status_h == "Concluído" else ("❌" if status_h == "Cancelado" else "🟡")
                     with st.expander(f"{icone_h} {titulo_h} — {nome_cli_h} | {data_ini_h} → {data_fim_h} | R$ {formatar_moeda(valor_h)} | {status_h}"):
-                        itens_h = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao, valor_cobrado").eq("evento_id", ev_h['id']).execute()
+                        try:
+                            itens_h = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao, valor_cobrado, devolvido").eq("evento_id", ev_h['id']).execute()
+                        except Exception:
+                            itens_h = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao, valor_cobrado").eq("evento_id", ev_h['id']).execute()
                         contato_h = cliente_h.get('contato') or '-'
 
                         tab_det_h, tab_status_h, tab_pag_h, tab_edit_h, tab_log_h = st.tabs([
@@ -2380,7 +2496,38 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                     det_h = ""
                                     js_h = safe_json_load(it_h.get('observacao'))
                                     if js_h: det_h = " — " + ", ".join([f"{k}: {v}x" for k,v in js_h.items()])
-                                    st.write(f"  • {it_h['quantidade']}x {nome_p_h}{det_h}")
+                                    devolvido_tag_h = " ✅ devolvido" if it_h.get('devolvido') else " ⏳ não devolvido"
+                                    st.write(f"  • {it_h['quantidade']}x {nome_p_h}{det_h}{devolvido_tag_h}")
+
+                            # --- DEVOLUÇÃO DE EQUIPAMENTOS (HISTÓRICO) ---
+                            itens_h_pendentes = [it for it in (itens_h.data or []) if not it.get('devolvido')]
+                            if itens_h_pendentes:
+                                try:
+                                    data_fim_h_dt = datetime.strptime(ev_h.get('data_fim_alocacao','').split("T")[0], "%Y-%m-%d").date()
+                                except Exception:
+                                    data_fim_h_dt = None
+                                if data_fim_h_dt and data_fim_h_dt < datetime.now().date():
+                                    dias_atraso_h = (datetime.now().date() - data_fim_h_dt).days
+                                    st.error(f"⚠️ Evento encerrado há {dias_atraso_h} dia(s) — ainda há equipamentos não devolvidos ao estoque!")
+                                st.markdown("**🔁 Registrar devolução:**")
+                                marcar_dev_h = {}
+                                for it_dev_h in itens_h_pendentes:
+                                    nome_prod_dev_h = dict_produtos.get(it_dev_h['produto_id'], {}).get('nome', f"Produto #{it_dev_h['produto_id']}")
+                                    marcar_dev_h[it_dev_h['id']] = st.checkbox(f"{it_dev_h['quantidade']}x {nome_prod_dev_h} — devolvido ao estoque", key=f"chk_dev_h_{ev_h['id']}_{it_dev_h['id']}")
+                                if st.button("✅ Confirmar Devolução", key=f"btn_confirmar_dev_h_{ev_h['id']}"):
+                                    selecionados_h = [iid for iid, marcado in marcar_dev_h.items() if marcado]
+                                    if not selecionados_h:
+                                        mostrar_popup("Marque ao menos um item como devolvido.", tipo="erro")
+                                    else:
+                                        try:
+                                            for iid in selecionados_h:
+                                                supabase.table("itens_evento").update({"devolvido": True, "data_devolucao": str(datetime.now().date())}).eq("id", iid).execute()
+                                            mostrar_popup("DEVOLUÇÃO REGISTRADA COM SUCESSO!")
+                                            st.rerun()
+                                        except Exception as e:
+                                            mostrar_popup(f"Erro ao registrar devolução — verifique se a coluna 'devolvido' existe na tabela itens_evento: {e}", tipo="erro")
+                            elif itens_h.data:
+                                st.success("✅ Todos os itens deste evento já foram devolvidos ao estoque.")
                             if REPORTLAB_DISPONIVEL:
                                 nome_usuario_pdf_h = st.session_state.get('nome_usuario') or 'Usuário'
                                 buffer_pdf_h = gerar_recibo_evento_pdf(ev_h, itens_h.data or [], dict_produtos, nome_cli_h, contato_h, nome_usuario_pdf_h)
