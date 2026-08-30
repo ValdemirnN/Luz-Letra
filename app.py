@@ -2608,33 +2608,14 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                 df_produtos = pd.DataFrame(produtos_lista.data)
                 df_produtos['Categoria'] = df_produtos['nome'].apply(definir_categoria)
                 df_produtos['Ícone'] = df_produtos['nome'].apply(prever_icone)
-                df_produtos['Item'] = df_produtos['Ícone'] + " " + df_produtos['nome']
                 df_produtos['Estoque Total'] = df_produtos['quantidade_estoque']
-                def format_obs(val):
-                    js = safe_json_load(val)
-                    if js: return ", ".join([f"{k}: {v}x" for k,v in js.items()])
-                    return val if val else ""
-                df_produtos['Detalhes/Inventário'] = df_produtos['observacao'].apply(format_obs)
-                df_produtos['Status'] = df_produtos['quantidade_estoque'].apply(status_cor)
                 try: qtd_alugada, detalhe_alugado = calcular_disponibilidade_periodo(data_inicio_f, data_fim_f)
                 except Exception as e:
                     st.exception(e)
                     qtd_alugada, detalhe_alugado = {}, {}
                 def calcular_disponivel(row): return row['quantidade_estoque'] - qtd_alugada.get(row['id'],0)
-                def calc_livres_detalhe(row):
-                    js_estoque = safe_json_load(row['observacao'])
-                    if js_estoque:
-                        alugados = detalhe_alugado.get(row['id'],{})
-                        livres = []
-                        for k, v in js_estoque.items():
-                            restante = v - alugados.get(k,0)
-                            if restante > 0: livres.append(f"{k}: {restante}x")
-                        return ", ".join(livres) if livres else "Tudo alugado"
-                    return ""
                 df_produtos['Reservado na Data'] = df_produtos['id'].map(lambda x: qtd_alugada.get(x,0))
                 df_produtos['Disponível Livre'] = df_produtos.apply(calcular_disponivel, axis=1)
-                df_produtos['Sub-Itens Livres na Data'] = df_produtos.apply(calc_livres_detalhe, axis=1)
-                colunas_mostrar = ['Item','Status','Detalhes/Inventário','Estoque Total','Reservado na Data','Disponível Livre','Sub-Itens Livres na Data']
                 total_geral_estoque = int(df_produtos['Estoque Total'].sum())
                 total_geral_reservado = int(df_produtos['Reservado na Data'].sum())
                 total_geral_livre = int(df_produtos['Disponível Livre'].sum())
@@ -2644,6 +2625,14 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                 col_m2.metric("🔒 Reservado no Período", total_geral_reservado)
                 col_m3.metric("✅ Disponível no Período", total_geral_livre)
                 st.markdown("---")
+
+                def _cor_barra(disponivel, total):
+                    if total <= 0: return "#555"
+                    pct_livre = disponivel / total
+                    if pct_livre >= 0.5: return "#2E7D32"
+                    if pct_livre > 0.2: return "#FFC107"
+                    return "#B3261E"
+
                 categorias = sorted(df_produtos['Categoria'].unique())
                 for cat in categorias:
                     df_cat = df_produtos[df_produtos['Categoria'] == cat]
@@ -2656,14 +2645,52 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                     col_c1.metric("Físico Geral", total_fisico)
                     col_c2.metric("Reservado/Locado", total_reservado_cat)
                     col_c3.metric(f"{icone_status} Livres no Período", total_livre)
-                    st.dataframe(df_cat[colunas_mostrar], use_container_width=True, hide_index=True)
-                    produtos_cat_com_reserva = df_cat[df_cat['Reservado na Data'] > 0]
-                    if not produtos_cat_com_reserva.empty:
-                        st.caption("🕐 Detalhamento por dia e horário:")
-                        for _, prod_row in produtos_cat_com_reserva.iterrows():
-                            linhas_detalhe = calcular_detalhamento_periodo_produto(data_inicio_f, data_fim_f, prod_row['id'], prod_row['Estoque Total'])
+
+                    for _, prod_row in df_cat.iterrows():
+                        total_p = int(prod_row['Estoque Total'])
+                        reservado_p = int(prod_row['Reservado na Data'])
+                        livre_p = int(prod_row['Disponível Livre'])
+                        pct_reservado = (reservado_p / total_p * 100) if total_p > 0 else 0
+                        cor_barra = _cor_barra(livre_p, total_p)
+                        status_label = status_cor(prod_row['quantidade_estoque'])
+                        js_kit = safe_json_load(prod_row.get('observacao'))
+
+                        st.markdown(f"""
+                        <div style="background:#1B1B1D;border-radius:10px;padding:12px 16px;margin-bottom:8px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                                <span style="font-size:14.5px;font-weight:700;color:#EDEDED;">{prod_row['Ícone']} {prod_row['nome']}</span>
+                                <span style="font-size:12px;color:#9A9A9A;">{status_label}</span>
+                            </div>
+                            <div style="background:#2E2E30;border-radius:6px;height:10px;width:100%;overflow:hidden;">
+                                <div style="background:{cor_barra};height:10px;width:{pct_reservado:.1f}%;"></div>
+                            </div>
+                            <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:12.5px;">
+                                <span style="color:#9A9A9A;">📦 Total: <b style="color:#EDEDED;">{total_p}</b></span>
+                                <span style="color:#9A9A9A;">🔒 Reservado: <b style="color:#EDEDED;">{reservado_p}</b></span>
+                                <span style="color:{cor_barra};">✅ Livre: <b>{livre_p}</b></span>
+                            </div>
+                        </div>""", unsafe_allow_html=True)
+
+                        if js_kit:
+                            alugados_kit = detalhe_alugado.get(prod_row['id'], {})
+                            with st.expander(f"Ver detalhamento de {prod_row['nome']} ({len(js_kit)} peças)", expanded=False):
+                                itens_kit_ordenados = sorted(js_kit.items())
+                                n_col_kit = 6
+                                cols_kit_view = st.columns(n_col_kit)
+                                for idx_kv, (k, max_v) in enumerate(itens_kit_ordenados):
+                                    livre_k = max(0, max_v - alugados_kit.get(k, 0))
+                                    cor_k = "#2E7D32" if livre_k > 0 else "#B3261E"
+                                    with cols_kit_view[idx_kv % n_col_kit]:
+                                        st.markdown(f"""
+                                        <div style="text-align:center;background:#2A2A2C;border-radius:6px;padding:6px 2px;margin-bottom:6px;">
+                                            <div style="font-size:13px;font-weight:700;color:#EDEDED;">{k}</div>
+                                            <div style="font-size:12px;color:{cor_k};font-weight:600;">{livre_k}/{max_v}</div>
+                                        </div>""", unsafe_allow_html=True)
+
+                        if reservado_p > 0:
+                            linhas_detalhe = calcular_detalhamento_periodo_produto(data_inicio_f, data_fim_f, prod_row['id'], total_p)
                             if linhas_detalhe:
-                                with st.expander(f"{prod_row['Ícone']} {prod_row['nome']}", expanded=False):
+                                with st.expander(f"🕐 Detalhamento por dia e horário — {prod_row['nome']}", expanded=False):
                                     st.dataframe(pd.DataFrame(linhas_detalhe), use_container_width=True, hide_index=True)
                     st.markdown("---")
             else: st.info("Nenhum produto cadastrado no estoque ainda.")
