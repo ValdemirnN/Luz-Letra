@@ -2758,7 +2758,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
         with st.expander("🔧 Controle de Manutenção", expanded=False):
             tab_enviar_manut, tab_extrato_manut = st.tabs(["Enviar para Manutenção", "📋 Histórico de Manutenção"])
 
-with tab_enviar_manut:
+            with tab_enviar_manut:
                 if produtos_lista.data:
                     opcoes_manut = {p['nome']: p for p in produtos_lista.data}
                     prod_manut_nome = st.selectbox("Selecione o Produto", list(opcoes_manut.keys()), key="sel_manut")
@@ -2848,7 +2848,8 @@ with tab_enviar_manut:
                             st.rerun()
                 else:
                     st.info("Nenhum produto cadastrado.")
-                with tab_extrato_manut:
+
+            with tab_extrato_manut:
                     try:
                         manut_lista = supabase.table("manutencao").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_envio", desc=True).execute()
     
@@ -3080,655 +3081,655 @@ with tab_enviar_manut:
                     except Exception as e:
                         st.error(f"Erro ao carregar manutenção: {e}")
 
-                with st.expander("🗑️ Controle de Itens Quebrados", expanded=False):
-                    tab_reg_quebrado, tab_lista_quebrados = st.tabs(["Registrar Quebra", "📋 Histórico de Quebrados"])
-        
-                    with tab_reg_quebrado:
-                        if produtos_lista.data:
-                            opcoes_quebrado = {p['nome']: p for p in produtos_lista.data}
-                            prod_quebra_nome = st.selectbox("Selecione o Produto", list(opcoes_quebrado.keys()), key="sel_quebrado")
-                            prod_quebrado = opcoes_quebrado[prod_quebra_nome]
-        
-                            js_quebrado = safe_json_load(prod_quebrado.get('observacao'))
-        
-                            col_q1, col_q2 = st.columns(2)
-                            with col_q1:
-                                if js_quebrado:
-                                    st.markdown(f"**Especifique quais peças de {prod_quebrado['nome']} foram quebradas/perdidas:**")
-                                    cols_qkit = st.columns(6)
-                                    idx_qkit = 0
-                                    qtds_quebra_kit = {}
-                                    for k, max_v in js_quebrado.items():
-                                        if max_v > 0:
-                                            v_qk = cols_qkit[idx_qkit % 6].number_input(
-                                                f"{k} (Tem: {max_v})", min_value=0, max_value=max_v,
-                                                value=None, key=f"quebra_kit_{prod_quebrado['id']}_{k}"
-                                            )
-                                            if (v_qk or 0) > 0:
-                                                qtds_quebra_kit[k] = v_qk
-                                            idx_qkit += 1
-                                    qtd_quebrada = sum(qtds_quebra_kit.values())
-                                else:
-                                    qtd_quebrada = st.number_input(
-                                        "Quantidade Quebrada/Perdida",
-                                        min_value=1, max_value=prod_quebrado['quantidade_estoque'], step=1,
-                                        key="qtd_quebrada_normal"
-                                    )
-                                    qtds_quebra_kit = {}
-        
-                            with col_q2:
-                                motivo_quebra = st.text_input("Detalhes (Ex: Quebrou na festa X)", key="motivo_quebra")
-        
-                            st.error("⚠️ **Atenção:** Itens quebrados são **removidos permanentemente** do estoque. Esta ação não pode ser desfeita.")
-        
-                            if st.button("🗑️ Registrar Quebra / Perda Definitiva", key="btn_reg_quebra"):
-                                if not motivo_quebra.strip():
-                                    mostrar_popup("Informe os detalhes da quebra.", tipo="erro")
-                                elif (qtd_quebrada or 0) <= 0:
-                                    mostrar_popup("Informe a quantidade quebrada.", tipo="erro")
-                                else:
-                                    # Remove permanentemente do estoque
-                                    novo_estoque_q = prod_quebrado['quantidade_estoque'] - qtd_quebrada
-        
-                                    if js_quebrado and qtds_quebra_kit:
-                                        novo_json_q = dict(js_quebrado)
-                                        for k, v in qtds_quebra_kit.items():
-                                            novo_json_q[k] = max(0, novo_json_q.get(k, 0) - v)
-                                        supabase.table("produtos").update({
-                                            "quantidade_estoque": max(0, novo_estoque_q),
-                                            "observacao": json.dumps(novo_json_q)
-                                        }).eq("id", prod_quebrado['id']).execute()
-                                    else:
-                                        supabase.table("produtos").update({
-                                            "quantidade_estoque": max(0, novo_estoque_q)
-                                        }).eq("id", prod_quebrado['id']).execute()
-        
-                                    supabase.table("itens_quebrados").insert({
-                                        "empresa_id": emp_id,
-                                        "produto_id": prod_quebrado['id'],
-                                        "quantidade": qtd_quebrada,
-                                        "motivo": motivo_quebra,
-                                        "data_registro": str(datetime.now().date()),
-                                        "detalhes_kit": json.dumps(qtds_quebra_kit) if qtds_quebra_kit else None
-                                    }).execute()
-        
-                                    mostrar_popup("Baixa de estoque registrada permanentemente.")
-                                    st.rerun()
-                        else:
-                            st.info("Nenhum produto cadastrado.")
+        with st.expander("🗑️ Controle de Itens Quebrados", expanded=False):
+            tab_reg_quebrado, tab_lista_quebrados = st.tabs(["Registrar Quebra", "📋 Histórico de Quebrados"])
 
-                with tab_lista_quebrados:
-                    try:
-                        quebrados_lista = supabase.table("itens_quebrados").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_registro", desc=True).execute()
-    
-                        if quebrados_lista.data:
-                            total_quebrados = len(quebrados_lista.data)
-                            total_pecas_perdidas = sum(q['quantidade'] for q in quebrados_lista.data)
-                            col_qk1, col_qk2 = st.columns(2)
-                            col_qk1.metric("📋 Total de Registros", total_quebrados)
-                            col_qk2.metric("📦 Total de Peças Perdidas", total_pecas_perdidas)
-                            st.markdown("---")
-    
-                            for q in quebrados_lista.data:
-                                nome_pq = q['produtos']['nome'] if q.get('produtos') else f"Produto #{q['produto_id']}"
-                                detalhes_kit_q = ""
-                                if q.get('detalhes_kit'):
-                                    try:
-                                        dkq = json.loads(q['detalhes_kit'])
-                                        detalhes_kit_q = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dkq.items()])
-                                    except Exception:
-                                        pass
-                                st.error(
-                                    f"❌ **{nome_pq}** — {q['quantidade']} un. perdidas em "
-                                    f"{q['data_registro']}{detalhes_kit_q}"
-                                )
-                                st.caption(f"Motivo: {q['motivo']}")
-                                st.markdown("<hr style='border-color:#333;margin:6px 0'>", unsafe_allow_html=True)
+            with tab_reg_quebrado:
+                if produtos_lista.data:
+                    opcoes_quebrado = {p['nome']: p for p in produtos_lista.data}
+                    prod_quebra_nome = st.selectbox("Selecione o Produto", list(opcoes_quebrado.keys()), key="sel_quebrado")
+                    prod_quebrado = opcoes_quebrado[prod_quebra_nome]
+
+                    js_quebrado = safe_json_load(prod_quebrado.get('observacao'))
+
+                    col_q1, col_q2 = st.columns(2)
+                    with col_q1:
+                        if js_quebrado:
+                            st.markdown(f"**Especifique quais peças de {prod_quebrado['nome']} foram quebradas/perdidas:**")
+                            cols_qkit = st.columns(6)
+                            idx_qkit = 0
+                            qtds_quebra_kit = {}
+                            for k, max_v in js_quebrado.items():
+                                if max_v > 0:
+                                    v_qk = cols_qkit[idx_qkit % 6].number_input(
+                                        f"{k} (Tem: {max_v})", min_value=0, max_value=max_v,
+                                        value=None, key=f"quebra_kit_{prod_quebrado['id']}_{k}"
+                                    )
+                                    if (v_qk or 0) > 0:
+                                        qtds_quebra_kit[k] = v_qk
+                                    idx_qkit += 1
+                            qtd_quebrada = sum(qtds_quebra_kit.values())
                         else:
-                            st.info("Nenhum item quebrado registrado.")
-                    except Exception as e:
-                        st.error(f"Erro ao carregar itens quebrados: {e}")
+                            qtd_quebrada = st.number_input(
+                                "Quantidade Quebrada/Perdida",
+                                min_value=1, max_value=prod_quebrado['quantidade_estoque'], step=1,
+                                key="qtd_quebrada_normal"
+                            )
+                            qtds_quebra_kit = {}
+
+                    with col_q2:
+                        motivo_quebra = st.text_input("Detalhes (Ex: Quebrou na festa X)", key="motivo_quebra")
+
+                    st.error("⚠️ **Atenção:** Itens quebrados são **removidos permanentemente** do estoque. Esta ação não pode ser desfeita.")
+
+                    if st.button("🗑️ Registrar Quebra / Perda Definitiva", key="btn_reg_quebra"):
+                        if not motivo_quebra.strip():
+                            mostrar_popup("Informe os detalhes da quebra.", tipo="erro")
+                        elif (qtd_quebrada or 0) <= 0:
+                            mostrar_popup("Informe a quantidade quebrada.", tipo="erro")
+                        else:
+                            # Remove permanentemente do estoque
+                            novo_estoque_q = prod_quebrado['quantidade_estoque'] - qtd_quebrada
+
+                            if js_quebrado and qtds_quebra_kit:
+                                novo_json_q = dict(js_quebrado)
+                                for k, v in qtds_quebra_kit.items():
+                                    novo_json_q[k] = max(0, novo_json_q.get(k, 0) - v)
+                                supabase.table("produtos").update({
+                                    "quantidade_estoque": max(0, novo_estoque_q),
+                                    "observacao": json.dumps(novo_json_q)
+                                }).eq("id", prod_quebrado['id']).execute()
+                            else:
+                                supabase.table("produtos").update({
+                                    "quantidade_estoque": max(0, novo_estoque_q)
+                                }).eq("id", prod_quebrado['id']).execute()
+
+                            supabase.table("itens_quebrados").insert({
+                                "empresa_id": emp_id,
+                                "produto_id": prod_quebrado['id'],
+                                "quantidade": qtd_quebrada,
+                                "motivo": motivo_quebra,
+                                "data_registro": str(datetime.now().date()),
+                                "detalhes_kit": json.dumps(qtds_quebra_kit) if qtds_quebra_kit else None
+                            }).execute()
+
+                            mostrar_popup("Baixa de estoque registrada permanentemente.")
+                            st.rerun()
+                else:
+                    st.info("Nenhum produto cadastrado.")
+
+            with tab_lista_quebrados:
+                try:
+                    quebrados_lista = supabase.table("itens_quebrados").select("*, produtos(nome)").eq("empresa_id", emp_id).order("data_registro", desc=True).execute()
+
+                    if quebrados_lista.data:
+                        total_quebrados = len(quebrados_lista.data)
+                        total_pecas_perdidas = sum(q['quantidade'] for q in quebrados_lista.data)
+                        col_qk1, col_qk2 = st.columns(2)
+                        col_qk1.metric("📋 Total de Registros", total_quebrados)
+                        col_qk2.metric("📦 Total de Peças Perdidas", total_pecas_perdidas)
+                        st.markdown("---")
+
+                        for q in quebrados_lista.data:
+                            nome_pq = q['produtos']['nome'] if q.get('produtos') else f"Produto #{q['produto_id']}"
+                            detalhes_kit_q = ""
+                            if q.get('detalhes_kit'):
+                                try:
+                                    dkq = json.loads(q['detalhes_kit'])
+                                    detalhes_kit_q = " | Peças: " + ", ".join([f"{k}: {v}x" for k, v in dkq.items()])
+                                except Exception:
+                                    pass
+                            st.error(
+                                f"❌ **{nome_pq}** — {q['quantidade']} un. perdidas em "
+                                f"{q['data_registro']}{detalhes_kit_q}"
+                            )
+                            st.caption(f"Motivo: {q['motivo']}")
+                            st.markdown("<hr style='border-color:#333;margin:6px 0'>", unsafe_allow_html=True)
+                    else:
+                        st.info("Nenhum item quebrado registrado.")
+                except Exception as e:
+                    st.error(f"Erro ao carregar itens quebrados: {e}")
 
 
     # ==========================================
     # MENU: COMPRAS
     # ==========================================
     elif menu == "🛒 Compras":
-            st.title("Controle de Compras")
-            col_cp3, col_cp4 = st.columns(2)
-            with col_cp3: nome_produto_compra = st.text_input("Nome do Produto", key="compra_nome_produto")
-            with col_cp4: tipo_aquisicao = st.radio("Comprado onde?", ["Presencial","Site"], horizontal=True, key="compra_tipo_aquisicao")
-            fornecedor = st.text_input("Nome do Site / Loja", key="compra_nome_site")
-            with st.form("form_compras"):
-                col_cp5a, col_cp5b, col_cp5c = st.columns(3)
-                with col_cp5a: quantidade_compra = st.number_input("Quantidade Comprada", min_value=1, step=1, value=None)
-                with col_cp5b: valor_unit_compra = st.number_input("Valor Unitário (R$)", min_value=0.0, value=None, format="%.2f")
-                with col_cp5c:
-                    st.write("")
-                    st.info("Valor Total é calculado automaticamente ao Registrar.")
-                col_cp5, col_cp6 = st.columns(2)
-                with col_cp5: data_compra_input = st.date_input("Data da Compra", value=datetime.now().date(), format="DD/MM/YYYY")
-                with col_cp6: data_chegada_input = st.date_input("Previsão de Chegada", value=datetime.now().date(), format="DD/MM/YYYY")
-                col_cp7, col_cp8 = st.columns(2)
-                with col_cp7: forma_pagamento_compra = st.selectbox("Forma de Pagamento", ["Não informado","Pix","Cartão","Dinheiro","Boleto","Outro"])
-                with col_cp8: numero_pedido_compra = st.text_input("Nº do Pedido / Nota Fiscal (opcional)")
-                observacao_compra = st.text_area("Observação (opcional)")
-                if st.form_submit_button("Registrar Compra"):
-                    if not nome_produto_compra.strip() or not fornecedor.strip(): mostrar_popup("Informe o nome do produto e a loja.", tipo="erro")
-                    else:
-                        qtd_calc = quantidade_compra or 0
-                        vlr_calc = valor_unit_compra or 0.0
-                        valor_total_calc = qtd_calc * vlr_calc
-                        supabase.table("compras").insert({"empresa_id": emp_id,"nome_produto": nome_produto_compra,"fornecedor": fornecedor,"tipo_aquisicao": tipo_aquisicao,"local_detalhe": fornecedor,"quantidade": qtd_calc,"valor_total": valor_total_calc,"data_compra": str(data_compra_input),"data_prevista_chegada": str(data_chegada_input),"status_chegada": "Aguardando","forma_pagamento": forma_pagamento_compra,"numero_pedido": numero_pedido_compra,"observacao": observacao_compra}).execute()
-                        mostrar_popup("COMPRA CADASTRADA COM SUCESSO!")
-                        st.rerun()
-            st.markdown("---")
-            st.markdown("### 📋 Histórico de Compras")
-            compras_lista = supabase.table("compras").select("*").eq("empresa_id", emp_id).order("data_compra", desc=True).execute()
-            if compras_lista.data:
-                df_compras = pd.DataFrame(compras_lista.data)
-                df_compras['valor_unitario'] = df_compras['valor_total'] / df_compras['quantidade']
-                df_compras['valor_unitario'] = df_compras['valor_unitario'].fillna(0)
-                colunas_exibir_compras = [c for c in ["nome_produto","quantidade","valor_unitario","valor_total","fornecedor","tipo_aquisicao","forma_pagamento","numero_pedido","data_compra","data_prevista_chegada","status_chegada","observacao"] if c in df_compras.columns or c == "valor_unitario"]
-                st.dataframe(df_compras[colunas_exibir_compras], use_container_width=True, hide_index=True)
-                with st.expander("🔄 Atualizar Status de Chegada", expanded=False):
-                    pendentes = df_compras[df_compras['status_chegada'] != 'Chegou'] if 'status_chegada' in df_compras.columns else df_compras
-                    if len(pendentes) > 0:
-                        opcoes_pend = {f"{r['nome_produto']} — {r.get('fornecedor','')} (Previsão: {r.get('data_prevista_chegada','-')})": r['id'] for _, r in pendentes.iterrows()}
-                        escolha_pend = st.selectbox("Selecione o item que chegou", list(opcoes_pend.keys()), key="select_compra_chegou")
-                        if st.button("✅ Marcar como Chegou", key="btn_marcar_chegou"):
-                            supabase.table("compras").update({"status_chegada": "Chegou"}).eq("id", opcoes_pend[escolha_pend]).execute()
-                            mostrar_popup("ITEM MARCADO COMO CHEGOU!")
-                            st.rerun()
-                    else: st.caption("Nenhuma compra pendente de chegada.")
-                with st.expander("✏️ Editar ou Excluir uma Compra", expanded=False):
-                    opcoes_edit_compra = {f"{r.get('data_compra','')} — {r.get('nome_produto','Produto')} (R$ {float(r.get('valor_total',0)):.2f})": r['id'] for _, r in df_compras.iterrows()}
-                    escolha_compra_txt = st.selectbox("Selecione a compra para editar", list(opcoes_edit_compra.keys()), key="select_editar_compra")
-                    compra_id_sel = opcoes_edit_compra[escolha_compra_txt]
-                    comp_sel = next(c for c in compras_lista.data if c['id'] == compra_id_sel)
-                    col_ec1, col_ec2 = st.columns(2)
-                    with col_ec1: edit_nome_c = st.text_input("Nome do Produto", value=comp_sel.get('nome_produto',''), key="ed_nome_c")
-                    with col_ec2: edit_loja_c = st.text_input("Loja/Site", value=comp_sel.get('fornecedor',''), key="ed_loja_c")
-                    col_ec3, col_ec4, col_ec5 = st.columns(3)
-                    with col_ec3: edit_qtd_c = st.number_input("Quantidade", min_value=1, value=int(comp_sel.get('quantidade') or 1), key="ed_qtd_c")
-                    with col_ec4:
-                        q_atual = int(comp_sel.get('quantidade') or 1)
-                        v_tot_atual = float(comp_sel.get('valor_total') or 0)
-                        v_unit_atual = v_tot_atual / q_atual if q_atual > 0 else 0.0
-                        edit_vunit_c = st.number_input("Valor Unitário (R$)", min_value=0.0, value=v_unit_atual, format="%.2f", key="ed_vunit_c")
-                    with col_ec5:
-                        tipos_aq = ["Presencial","Site"]
-                        idx_aq = tipos_aq.index(comp_sel.get('tipo_aquisicao')) if comp_sel.get('tipo_aquisicao') in tipos_aq else 0
-                        edit_tipo_c = st.selectbox("Comprado onde?", tipos_aq, index=idx_aq, key="ed_tipo_c")
-                    col_ec6, col_ec7 = st.columns(2)
-                    with col_ec6:
-                        try: dt_c = datetime.strptime(str(comp_sel.get('data_compra')).split("T")[0], "%Y-%m-%d").date()
-                        except: dt_c = datetime.now().date()
-                        edit_dt_c = st.date_input("Data da Compra", value=dt_c, format="DD/MM/YYYY", key="ed_dt_c")
-                    with col_ec7:
-                        try: dt_prev = datetime.strptime(str(comp_sel.get('data_prevista_chegada')).split("T")[0], "%Y-%m-%d").date()
-                        except: dt_prev = datetime.now().date()
-                        edit_dt_prev = st.date_input("Previsão de Chegada", value=dt_prev, format="DD/MM/YYYY", key="ed_dt_prev")
-                    col_ec8, col_ec9 = st.columns(2)
-                    with col_ec8:
-                        formas_pg = ["Não informado","Pix","Cartão","Dinheiro","Boleto","Outro"]
-                        idx_pg = formas_pg.index(comp_sel.get('forma_pagamento')) if comp_sel.get('forma_pagamento') in formas_pg else 0
-                        edit_forma_pg = st.selectbox("Forma de Pagamento", formas_pg, index=idx_pg, key="ed_forma_pg")
-                    with col_ec9: edit_num_ped = st.text_input("Nº Pedido", value=comp_sel.get('numero_pedido') or "", key="ed_num_ped")
-                    edit_obs_c = st.text_area("Observação", value=comp_sel.get('observacao') or "", key="ed_obs_c")
-                    col_b1, col_b2 = st.columns(2)
-                    with col_b1:
-                        if st.button("💾 Salvar Alterações", key="btn_salvar_edit_compra"):
-                            if not edit_nome_c.strip() or not edit_loja_c.strip(): mostrar_popup("Informe o nome e loja.", tipo="erro")
-                            else:
-                                novo_tot_c = edit_qtd_c * edit_vunit_c
-                                supabase.table("compras").update({"nome_produto": edit_nome_c,"fornecedor": edit_loja_c,"local_detalhe": edit_loja_c,"quantidade": edit_qtd_c,"valor_total": novo_tot_c,"tipo_aquisicao": edit_tipo_c,"data_compra": str(edit_dt_c),"data_prevista_chegada": str(edit_dt_prev),"forma_pagamento": edit_forma_pg,"numero_pedido": edit_num_ped,"observacao": edit_obs_c}).eq("id", compra_id_sel).execute()
-                                mostrar_popup("COMPRA ATUALIZADA COM SUCESSO!")
-                                st.rerun()
-                    with col_b2:
-                        if st.button("🗑️ Excluir Compra", key="btn_excluir_edit_compra"):
-                            supabase.table("compras").delete().eq("id", compra_id_sel).execute()
-                            mostrar_popup("COMPRA EXCLUÍDA!")
-                            st.rerun()
-            else: st.info("Nenhuma compra registrada ainda.")
-    
-    
-        # ==========================================
-        # MENU: FATURAMENTO
-        # ==========================================
-        elif menu == "💰 Faturamento":
-            st.title("Fluxo de Caixa (Faturamento)")
-            st.markdown("#### 🗓️ Selecione o Período do Relatório")
-            col_f1, col_f2 = st.columns([1,3])
-            ano_atual = datetime.now().year
-            with col_f1: ano_selecionado = st.number_input("Ano", min_value=2020, max_value=2100, value=ano_atual, step=1, key="fat_ano")
-            nomes_meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
-            with col_f2: meses_selecionados_nomes = st.multiselect("Mês (ou meses) — deixe vazio para ver o ano inteiro", nomes_meses, default=[nomes_meses[datetime.now().month-1]], key="fat_meses")
-            meses_selecionados = [nomes_meses.index(m)+1 for m in meses_selecionados_nomes] if meses_selecionados_nomes else list(range(1,13))
-            def _dentro_do_periodo(data_str):
-                if not data_str: return False
-                try:
-                    d = datetime.strptime(str(data_str).split("T")[0], "%Y-%m-%d").date()
-                    return d.year == ano_selecionado and d.month in meses_selecionados
-                except Exception: return False
-            eventos_fat = supabase.table("eventos").select("id, data_inicio, valor_total, status, descricao").eq("empresa_id", emp_id).neq("status","Cancelado").execute()
-            eventos_periodo = [e for e in (eventos_fat.data or []) if _dentro_do_periodo(e.get('data_inicio'))]
-            receita_eventos = sum(float(e.get('valor_total') or 0) for e in eventos_periodo)
-            qtd_eventos_periodo = len(eventos_periodo)
-            try:
-                despesas_viagem_resp = supabase.table("despesas_viagem").select("*").eq("empresa_id", emp_id).execute()
-                despesas_viagem_periodo = [d for d in (despesas_viagem_resp.data or []) if _dentro_do_periodo(d.get('data_despesa'))]
-            except Exception: despesas_viagem_periodo = []
-            total_despesas_viagem = sum(float(d.get('valor') or 0) for d in despesas_viagem_periodo)
-            try:
-                compras_resp = supabase.table("compras").select("*").eq("empresa_id", emp_id).execute()
-                compras_periodo = [c for c in (compras_resp.data or []) if _dentro_do_periodo(c.get('data_compra'))]
-            except Exception: compras_periodo = []
-            total_investimento_compras = sum(float(c.get('valor_total') or 0) for c in compras_periodo)
-            fat_manual_resp = supabase.table("faturamento").select("*").eq("empresa_id", emp_id).execute()
-            fat_manual_periodo = [f for f in (fat_manual_resp.data or []) if _dentro_do_periodo(f.get('data_pagamento'))]
-            receita_manual = sum(float(f.get('valor') or 0) for f in fat_manual_periodo if f.get('tipo') == 'receita')
-            despesa_manual = sum(float(f.get('valor') or 0) for f in fat_manual_periodo if f.get('tipo') == 'despesa')
-            lucro_liquido = (receita_eventos + receita_manual) - (total_despesas_viagem + total_investimento_compras + despesa_manual)
-            st.markdown("---")
-            st.markdown(f"#### 📊 Resumo — {', '.join(meses_selecionados_nomes) if meses_selecionados_nomes else 'Ano inteiro'} de {ano_selecionado}")
-            col_r1, col_r2, col_r3, col_r4 = st.columns(4)
-            col_r1.metric("🎉 Receita de Eventos", formatar_moeda(receita_eventos), help=f"{qtd_eventos_periodo} evento(s)")
-            col_r2.metric("⛽ Gastos de Viagem", formatar_moeda(total_despesas_viagem))
-            col_r3.metric("🛒 Investimento em Compras", formatar_moeda(total_investimento_compras))
-            col_r4.metric("💰 Lucro Líquido", formatar_moeda(lucro_liquido))
-            st.markdown("---")
-            with st.expander("⛽ Registrar Gasto de Viagem", expanded=False):
-                with st.form("form_despesa_viagem"):
-                    categoria_despesa = st.selectbox("Categoria", ["Combustível","Alimentação","Outros"])
-                    valor_despesa = st.number_input("Valor (R$)", min_value=0.0, step=5.0, value=None, format="%.2f")
-                    obs_despesa = st.text_input("Observação (opcional)")
-                    data_despesa_input = st.date_input("Data do Gasto", value=datetime.now().date(), format="DD/MM/YYYY")
-                    if st.form_submit_button("Registrar Gasto"):
-                        if (valor_despesa or 0.0) <= 0: mostrar_popup("Informe um valor maior que zero.", tipo="erro")
-                        else:
-                            supabase.table("despesas_viagem").insert({"empresa_id": emp_id,"categoria": categoria_despesa,"valor": (valor_despesa or 0.0),"observacao": obs_despesa,"data_despesa": str(data_despesa_input)}).execute()
-                            mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
-                            st.rerun()
-            with st.expander("📄 Extrato de Gastos de Viagem do Período", expanded=False):
-                if despesas_viagem_periodo:
-                    df_despesas_viagem = pd.DataFrame(despesas_viagem_periodo)
-                    colunas_desp = [c for c in ["data_despesa","categoria","valor","observacao"] if c in df_despesas_viagem.columns]
-                    df_despesas_viagem_show = df_despesas_viagem[colunas_desp].sort_values("data_despesa", ascending=False).copy()
-                    df_despesas_viagem_show["data_despesa"] = df_despesas_viagem_show["data_despesa"].apply(lambda d: datetime.strptime(str(d).split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y"))
-                    st.dataframe(df_despesas_viagem_show, use_container_width=True, hide_index=True)
-                else: st.caption("Nenhum gasto de viagem registrado neste período.")
-            def _fmt_data_br_simples(d):
-                try: return datetime.strptime(str(d).split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
-                except Exception: return str(d)
-            if despesas_viagem_periodo:
-                with st.expander("✏️ Editar ou Excluir um Gasto de Viagem", expanded=False):
-                    opcoes_desp = {f"{_fmt_data_br_simples(d.get('data_despesa'))} — {d.get('categoria','-')} — R$ {float(d.get('valor',0)):.2f}" + (f" ({d.get('observacao')})" if d.get('observacao') else ""): d['id'] for d in sorted(despesas_viagem_periodo, key=lambda x: x.get('data_despesa') or '', reverse=True)}
-                    escolha_desp_txt = st.selectbox("Selecione o lançamento", list(opcoes_desp.keys()), key="select_editar_despesa")
-                    desp_selecionada = next(d for d in despesas_viagem_periodo if d['id'] == opcoes_desp[escolha_desp_txt])
-                    col_ed_d1, col_ed_d2 = st.columns(2)
-                    with col_ed_d1:
-                        categoria_edit_desp = st.selectbox("Categoria", ["Combustível","Alimentação","Outros"], index=["Combustível","Alimentação","Outros"].index(desp_selecionada.get('categoria')) if desp_selecionada.get('categoria') in ["Combustível","Alimentação","Outros"] else 0, key="edit_categoria_despesa")
-                    with col_ed_d2: valor_edit_desp = st.number_input("Valor (R$)", min_value=0.0, step=5.0, value=float(desp_selecionada.get('valor') or 0), format="%.2f", key="edit_valor_despesa")
-                    obs_edit_desp = st.text_input("Observação", value=desp_selecionada.get('observacao') or "", key="edit_obs_despesa")
-                    data_edit_desp = st.date_input("Data do Gasto", value=datetime.strptime(str(desp_selecionada.get('data_despesa')).split("T")[0], "%Y-%m-%d").date(), format="DD/MM/YYYY", key="edit_data_despesa")
-                    motivo_edit_desp = st.text_input("Motivo da Edição (obrigatório)", key="motivo_edit_despesa")
-                    col_btn_d1, col_btn_d2 = st.columns(2)
-                    with col_btn_d1:
-                        if st.button("💾 Salvar Alteração", key="btn_salvar_despesa"):
-                            if not motivo_edit_desp.strip(): mostrar_popup("Informe o motivo da edição.", tipo="erro")
-                            else:
-                                data_hora_edit_desp = datetime.now().strftime("%d/%m/%Y às %H:%M")
-                                nova_obs_desp = f"{obs_edit_desp} [Editado em {data_hora_edit_desp} — Motivo: {motivo_edit_desp}]".strip()
-                                supabase.table("despesas_viagem").update({"categoria": categoria_edit_desp,"valor": valor_edit_desp,"observacao": nova_obs_desp,"data_despesa": str(data_edit_desp)}).eq("id", desp_selecionada['id']).execute()
-                                mostrar_popup("ALTERAÇÃO CONCLUÍDA COM SUCESSO!")
-                                st.rerun()
-                    with col_btn_d2:
-                        if st.button("🗑️ Excluir Lançamento", key="btn_excluir_despesa"):
-                            supabase.table("despesas_viagem").delete().eq("id", desp_selecionada['id']).execute()
-                            mostrar_popup("LANÇAMENTO EXCLUÍDO!")
-                            st.rerun()
-            with st.expander("➕ Outro Lançamento no Caixa (Receita ou Despesa Avulsa)", expanded=False):
-                with st.form("form_fat"):
-                    desc_fat = st.text_input("Descrição")
-                    tipo_fat = st.radio("Tipo de Movimentação", ["receita","despesa"], horizontal=True)
-                    valor_fat = st.number_input("Valor (R$)", min_value=0.0, value=None, format="%.2f")
-                    data_fat_input = st.date_input("Data", value=datetime.now().date(), format="DD/MM/YYYY", key="data_fat_manual")
-                    if st.form_submit_button("Lançar no Caixa"):
-                        supabase.table("faturamento").insert({"empresa_id": emp_id,"descricao": desc_fat,"tipo": tipo_fat,"valor": (valor_fat or 0.0),"data_pagamento": str(data_fat_input),"pago": True}).execute()
-                        mostrar_popup("LANÇAMENTO CONCLUÍDO COM SUCESSO!")
-                        st.rerun()
-            st.markdown("### 📜 Extrato Financeiro Completo (Lançamentos Avulsos)")
-            fat_lista = supabase.table("faturamento").select("id, data_pagamento, tipo, descricao, valor").eq("empresa_id", emp_id).order("data_pagamento", desc=True).execute()
-            if fat_lista.data:
-                df_fat_show = pd.DataFrame(fat_lista.data)[["data_pagamento","tipo","descricao","valor"]].copy()
-                df_fat_show["data_pagamento"] = df_fat_show["data_pagamento"].apply(lambda d: datetime.strptime(str(d).split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y"))
-                st.dataframe(df_fat_show, use_container_width=True, hide_index=True)
-                with st.expander("✏️ Editar ou Excluir um Lançamento Avulso", expanded=False):
-                    opcoes_fat = {f"{_fmt_data_br_simples(f.get('data_pagamento'))} — {f.get('tipo','-')} — {f.get('descricao','-')} — R$ {float(f.get('valor',0)):.2f}": f['id'] for f in fat_lista.data}
-                    escolha_fat_txt = st.selectbox("Selecione o lançamento", list(opcoes_fat.keys()), key="select_editar_fat")
-                    fat_selecionado = next(f for f in fat_lista.data if f['id'] == opcoes_fat[escolha_fat_txt])
-                    desc_edit_fat = st.text_input("Descrição", value=fat_selecionado.get('descricao') or "", key="edit_desc_fat")
-                    col_ef1, col_ef2 = st.columns(2)
-                    with col_ef1: tipo_edit_fat = st.radio("Tipo", ["receita","despesa"], horizontal=True, index=["receita","despesa"].index(fat_selecionado.get('tipo')) if fat_selecionado.get('tipo') in ["receita","despesa"] else 0, key="edit_tipo_fat")
-                    with col_ef2: valor_edit_fat = st.number_input("Valor (R$)", min_value=0.0, value=float(fat_selecionado.get('valor') or 0), format="%.2f", key="edit_valor_fat")
-                    data_edit_fat = st.date_input("Data", value=datetime.strptime(str(fat_selecionado.get('data_pagamento')).split("T")[0], "%Y-%m-%d").date(), format="DD/MM/YYYY", key="edit_data_fat")
-                    motivo_edit_fat = st.text_input("Motivo da Edição (obrigatório)", key="motivo_edit_fat")
-                    col_btn_f1, col_btn_f2 = st.columns(2)
-                    with col_btn_f1:
-                        if st.button("💾 Salvar Alteração", key="btn_salvar_fat"):
-                            if not motivo_edit_fat.strip(): mostrar_popup("Informe o motivo da edição.", tipo="erro")
-                            else:
-                                data_hora_edit_fat = datetime.now().strftime("%d/%m/%Y às %H:%M")
-                                nova_desc_fat = f"{desc_edit_fat} [Editado em {data_hora_edit_fat} — Motivo: {motivo_edit_fat}]"
-                                supabase.table("faturamento").update({"descricao": nova_desc_fat,"tipo": tipo_edit_fat,"valor": valor_edit_fat,"data_pagamento": str(data_edit_fat)}).eq("id", fat_selecionado['id']).execute()
-                                mostrar_popup("ALTERAÇÃO CONCLUÍDA COM SUCESSO!")
-                                st.rerun()
-                    with col_btn_f2:
-                        if st.button("🗑️ Excluir Lançamento", key="btn_excluir_fat"):
-                            supabase.table("faturamento").delete().eq("id", fat_selecionado['id']).execute()
-                            mostrar_popup("LANÇAMENTO EXCLUÍDO!")
-                            st.rerun()
-            st.markdown("---")
-            st.markdown("#### 📤 Exportar Relatório do Período Selecionado")
-            def montar_dataframe_mensal():
-                linhas = []
-                for mes_num in meses_selecionados:
-                    receita_mes = sum(float(e.get('valor_total') or 0) for e in eventos_periodo if datetime.strptime(e['data_inicio'].split("T")[0], "%Y-%m-%d").month == mes_num)
-                    qtd_mes = sum(1 for e in eventos_periodo if datetime.strptime(e['data_inicio'].split("T")[0], "%Y-%m-%d").month == mes_num)
-                    viagem_mes = sum(float(d.get('valor') or 0) for d in despesas_viagem_periodo if datetime.strptime(str(d['data_despesa']).split("T")[0], "%Y-%m-%d").month == mes_num)
-                    compras_mes = sum(float(c.get('valor_total') or 0) for c in compras_periodo if datetime.strptime(str(c['data_compra']).split("T")[0], "%Y-%m-%d").month == mes_num)
-                    linhas.append({"Mês": nomes_meses[mes_num-1],"Nº Eventos": qtd_mes,"Receita de Eventos (R$)": receita_mes,"Gastos de Viagem (R$)": viagem_mes,"Investimento em Compras (R$)": compras_mes,"Lucro Líquido (R$)": receita_mes - viagem_mes - compras_mes})
-                return pd.DataFrame(linhas)
-            df_mensal_export = montar_dataframe_mensal()
-            st.dataframe(df_mensal_export, use_container_width=True, hide_index=True)
-            col_exp1, col_exp2 = st.columns(2)
-            with col_exp1:
-                buffer_excel = io.BytesIO()
-                with pd.ExcelWriter(buffer_excel, engine="openpyxl") as writer:
-                    df_mensal_export.to_excel(writer, index=False, sheet_name="Resumo Mensal")
-                    if despesas_viagem_periodo: pd.DataFrame(despesas_viagem_periodo)[[c for c in ["data_despesa","categoria","valor","observacao"] if c in pd.DataFrame(despesas_viagem_periodo).columns]].to_excel(writer, index=False, sheet_name="Gastos de Viagem")
-                    if compras_periodo: pd.DataFrame(compras_periodo).to_excel(writer, index=False, sheet_name="Compras")
-                buffer_excel.seek(0)
-                st.download_button("📊 Baixar Excel do Período", data=buffer_excel, file_name=f"faturamento_{ano_selecionado}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            with col_exp2:
-                if REPORTLAB_DISPONIVEL:
-                    buffer_pdf_fat = io.BytesIO()
-                    styles_fat = getSampleStyleSheet()
-                    story_fat = []
-                    import os as _os
-                    caminho_logo_fat = "logo_sem_fundo.png" if _os.path.exists("logo_sem_fundo.png") else ("logo.jpg" if _os.path.exists("logo.jpg") else None)
-                    COR_DOURADO_F = colors.HexColor("#FFC107")
-                    COR_PRETO_F = colors.HexColor("#0E0E0E")
-                    COR_CINZA_CLARO_F = colors.HexColor("#F2F2F2")
-                    COR_VERDE_F = colors.HexColor("#1B7F3A")
-                    COR_VERMELHO_F = colors.HexColor("#B3261E")
-                    COR_AZUL_F = colors.HexColor("#1A5FB4")
-                    periodo_txt = f"{', '.join(meses_selecionados_nomes) if meses_selecionados_nomes else 'Ano inteiro'} de {ano_selecionado}"
-                    def _desenhar_moldura(canvas_obj, doc_obj):
-                        canvas_obj.saveState()
-                        largura_pagina, altura_pagina = A4
-                        altura_faixa = 3.2 * cm
-                        canvas_obj.setFillColor(COR_PRETO_F)
-                        canvas_obj.rect(0, altura_pagina-altura_faixa, largura_pagina, altura_faixa, fill=1, stroke=0)
-                        if caminho_logo_fat:
-                            try: canvas_obj.drawImage(caminho_logo_fat, 2*cm, altura_pagina-altura_faixa+0.35*cm, width=3.6*cm, height=2.5*cm, preserveAspectRatio=True, mask='auto')
-                            except Exception: pass
-                        canvas_obj.setFillColor(COR_DOURADO_F)
-                        canvas_obj.setFont("Helvetica-Bold", 16)
-                        canvas_obj.drawString(6.2*cm, altura_pagina-1.5*cm, "EXTRATO FINANCEIRO")
-                        canvas_obj.setFillColor(colors.white)
-                        canvas_obj.setFont("Helvetica", 10)
-                        canvas_obj.drawString(6.2*cm, altura_pagina-2.15*cm, f"Período: {periodo_txt}")
-                        canvas_obj.setFillColor(colors.grey)
-                        canvas_obj.setFont("Helvetica", 8)
-                        canvas_obj.drawString(2*cm, 1.2*cm, f"Luz & Letra — Emitido em {datetime.now().strftime('%d/%m/%Y às %H:%M')}")
-                        canvas_obj.drawRightString(largura_pagina-2*cm, 1.2*cm, f"Página {doc_obj.page}")
-                        canvas_obj.restoreState()
-                    frame_fat = Frame(2*cm, 1.8*cm, A4[0]-4*cm, A4[1]-5.4*cm, id='corpo')
-                    doc_fat = BaseDocTemplate(buffer_pdf_fat, pagesize=A4)
-                    doc_fat.addPageTemplates([PageTemplate(id='ComMoldura', frames=[frame_fat], onPage=_desenhar_moldura)])
-                    story_fat.append(Spacer(1, 10))
-                    estilo_kpi_label = ParagraphStyle('KpiLabel', fontSize=8.5, textColor=colors.white, alignment=TA_CENTER, fontName="Helvetica-Bold")
-                    estilo_kpi_valor = ParagraphStyle('KpiValor', fontSize=14, textColor=colors.white, alignment=TA_CENTER, fontName="Helvetica-Bold", spaceBefore=4)
-                    cartoes = [("🎉 RECEITA DE EVENTOS", formatar_moeda(receita_eventos), COR_DOURADO_F),("⛽ GASTOS DE VIAGEM", formatar_moeda(total_despesas_viagem), COR_VERMELHO_F),("🛒 INVESTIMENTO EM COMPRAS", formatar_moeda(total_investimento_compras), COR_AZUL_F),("💰 LUCRO LÍQUIDO", formatar_moeda(lucro_liquido), COR_VERDE_F if lucro_liquido >= 0 else COR_VERMELHO_F)]
-                    linha_kpi = [[Table([[Paragraph(label, estilo_kpi_label)],[Paragraph(valor, estilo_kpi_valor)]], colWidths=[4.0*cm], style=TableStyle([('BACKGROUND',(0,0),(-1,-1),cor),('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),10)])) for label, valor, cor in cartoes]]
-                    tabela_kpi = Table(linha_kpi, colWidths=[4.1*cm]*4, spaceAfter=18)
-                    tabela_kpi.setStyle(TableStyle([('LEFTPADDING',(0,0),(-1,-1),3),('RIGHTPADDING',(0,0),(-1,-1),3)]))
-                    story_fat.append(tabela_kpi)
-                    story_fat.append(Spacer(1,20))
-                    story_fat.append(Paragraph("Detalhamento por Mês", ParagraphStyle('SubTit',fontSize=12,fontName="Helvetica-Bold",textColor=COR_PRETO_F,spaceAfter=8)))
-                    tabela_fat_dados = [["Mês","Nº Eventos","Receita Eventos","Gastos Viagem","Compras","Lucro Líquido"]]
-                    for _, row in df_mensal_export.iterrows():
-                        tabela_fat_dados.append([row["Mês"],str(row["Nº Eventos"]),formatar_moeda(row['Receita de Eventos (R$)']),formatar_moeda(row['Gastos de Viagem (R$)']),formatar_moeda(row['Investimento em Compras (R$)']),formatar_moeda(row['Lucro Líquido (R$)'])])
-                    tabela_fat_pdf = Table(tabela_fat_dados, colWidths=[2.6*cm,2.2*cm,3.2*cm,3*cm,2.8*cm,3.2*cm])
-                    estilo_tabela_fat = [('BACKGROUND',(0,0),(-1,0),COR_PRETO_F),('TEXTCOLOR',(0,0),(-1,0),COR_DOURADO_F),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('GRID',(0,0),(-1,-1),0.5,colors.grey),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('ALIGN',(1,0),(-1,-1),'CENTER'),('FONTSIZE',(0,0),(-1,-1),8.5),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]
-                    for i in range(1, len(tabela_fat_dados)):
-                        if i % 2 == 0: estilo_tabela_fat.append(('BACKGROUND',(0,i),(-1,i),COR_CINZA_CLARO_F))
-                    tabela_fat_pdf.setStyle(TableStyle(estilo_tabela_fat))
-                    story_fat.append(tabela_fat_pdf)
-                    story_fat.append(Spacer(1,14))
-                    story_fat.append(Paragraph(f"<b>Lucro Líquido Total do Período:</b> {formatar_moeda(lucro_liquido)}", ParagraphStyle('Resumo',fontSize=11,textColor=COR_PRETO_F)))
-                    doc_fat.build(story_fat)
-                    buffer_pdf_fat.seek(0)
-                    st.download_button("📄 Baixar PDF do Período", data=buffer_pdf_fat, file_name=f"faturamento_{ano_selecionado}.pdf", mime="application/pdf")
-                else: st.caption("⚠️ Para gerar o PDF, instale a biblioteca: `pip install reportlab`")
-    
-        # ==========================================
-        # MENU: ORÇAMENTO
-        # ==========================================
-        elif menu == "🧳 Orçamento":
-            st.title("🧳 Orçamento de Evento")
-    
-            ENDERECO_BASE_EMPRESA = st.secrets.get("ENDERECO_BASE_EMPRESA", "")
-    
-            produtos_orc = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao, valor_locacao").eq("empresa_id", emp_id).order("nome").execute()
-            dict_produtos_orc = {p['id']: p for p in produtos_orc.data} if produtos_orc.data else {}
-    
-            tab_criar_orc, tab_lista_orc = st.tabs(["📝 Criar Orçamento", "📋 Orçamentos Salvos"])
-    
-            # ==========================================
-            # CRIAR NOVO ORÇAMENTO
-            # ==========================================
-            with tab_criar_orc:
-                st.markdown("#### 👤 Dados do Cliente e Evento")
-                col_o1, col_o2 = st.columns(2)
-                with col_o1: nome_cliente_orc = st.text_input("Nome do Cliente", key="orc_nome_cliente")
-                with col_o2: contato_cliente_orc = st.text_input("Contato", key="orc_contato_cliente")
-                titulo_orc = st.text_input("Título / Descrição do Evento", key="orc_titulo")
-                endereco_evento_orc = st.text_input("Endereço do Evento", key="orc_endereco_evento", placeholder="Rua, número, bairro, cidade")
-    
-                col_od1, col_od2, col_oh1, col_oh2 = st.columns(4)
-                with col_od1: data_ini_orc = st.date_input("Data Início", format="DD/MM/YYYY", key="orc_data_ini")
-                with col_od2: data_fim_orc = st.date_input("Data Fim", value=data_ini_orc, min_value=data_ini_orc, format="DD/MM/YYYY", key="orc_data_fim")
-                with col_oh1: hora_ini_orc = st.time_input("Hora Início", key="orc_hora_ini")
-                with col_oh2: hora_fim_orc = st.time_input("Hora Fim", key="orc_hora_fim")
-    
-                st.markdown("---")
-                st.markdown("#### 🛒 Itens do Orçamento")
-                st.caption("Quantidades aproximadas. O detalhamento exato (ex: letras específicas) é feito na hora de confirmar o evento.")
-                itens_selecionados_orc = {}
-                if produtos_orc.data:
-                    for p in produtos_orc.data:
-                        js_p = safe_json_load(p.get('observacao'))
-                        valor_ref = float(p.get('valor_locacao') or 0)
-                        col_p1, col_p2 = st.columns([2,1])
-                        with col_p1:
-                            qtd_p = st.number_input(f"{p['nome']} (Estoque: {p['quantidade_estoque']})", min_value=0, value=0, key=f"orc_qtd_{p['id']}")
-                        with col_p2:
-                            valor_unit_p = st.number_input("Valor unit. (R$)", min_value=0.0, value=valor_ref, format="%.2f", key=f"orc_valor_{p['id']}")
-                        if qtd_p > 0:
-                            itens_selecionados_orc[p['id']] = {"nome": p['nome'], "quantidade": qtd_p, "valor_unit": valor_unit_p, "valor_total": qtd_p * valor_unit_p, "kit": bool(js_p)}
-    
-                valor_itens_orc = sum(it['valor_total'] for it in itens_selecionados_orc.values())
-                st.info(f"💲 Subtotal dos Itens: **R$ {formatar_moeda(valor_itens_orc)}**")
-    
-                st.markdown("---")
-                st.markdown("#### 🚗 Frete / Deslocamento")
-                col_fr1, col_fr2 = st.columns(2)
-                with col_fr1: origem_orc = st.text_input("Endereço de Origem (sua base)", value="", placeholder=ENDERECO_BASE_EMPRESA, key="orc_origem")
-                with col_fr2:
-                    if st.button("📍 Calcular Distância", key="btn_calc_dist_orc"):
-                        if not origem_orc.strip() or not endereco_evento_orc.strip():
-                            mostrar_popup("Preencha o endereço de origem e o do evento.", tipo="erro")
-                        else:
-                            try:
-                                km_calc, dur_calc = calcular_distancia_google_maps(origem_orc, endereco_evento_orc)
-                                st.session_state['orc_km_calc'] = km_calc
-                                st.session_state['orc_dur_calc'] = dur_calc
-                                mostrar_popup(f"Distância calculada: {km_calc:.1f} km")
-                            except Exception as e:
-                                mostrar_popup(f"Erro ao calcular distância: {e}", tipo="erro")
-    
-                km_atual = st.session_state.get('orc_km_calc', 0.0)
-                dur_atual = st.session_state.get('orc_dur_calc', 0.0)
-                if km_atual:
-                    st.caption(f"📏 {km_atual:.1f} km (ida) — aprox. {dur_atual:.0f} min de trajeto")
-    
-                col_c1, col_c2, col_c3 = st.columns(3)
-                with col_c1: distancia_manual = st.number_input("Distância (km, ida)", min_value=0.0, value=float(km_atual), format="%.1f", key="orc_dist_manual")
-                with col_c2: consumo_veic = st.number_input("Consumo do veículo (km/l)", min_value=0.1, value=10.0, format="%.1f", key="orc_consumo")
-                with col_c3: preco_comb = st.number_input("Preço do combustível (R$/l)", min_value=0.0, value=6.20, format="%.2f", key="orc_preco_comb")
-    
-                valor_frete_sugerido = (distancia_manual * 2 / consumo_veic) * preco_comb if consumo_veic > 0 else 0.0
-                st.caption(f"⛽ Sugestão automática (ida e volta): R$ {formatar_moeda(valor_frete_sugerido)}")
-                valor_frete_orc = st.number_input("Valor final do Frete (R$)", min_value=0.0, value=valor_frete_sugerido, format="%.2f", key="orc_frete_final")
-    
-                st.markdown("---")
-                col_d1, col_d2 = st.columns(2)
-                with col_d1: desconto_orc = st.number_input("Desconto (R$)", min_value=0.0, value=0.0, format="%.2f", key="orc_desconto")
-                with col_d2: validade_orc = st.number_input("Validade da Proposta (dias)", min_value=1, value=7, key="orc_validade")
-                obs_orc = st.text_area("Observações", key="orc_obs")
-    
-                valor_total_orc = max(0.0, valor_itens_orc + valor_frete_orc - desconto_orc)
-                st.success(f"### 💰 Valor Total do Orçamento: R$ {formatar_moeda(valor_total_orc)}")
-    
-                col_sv1, col_sv2 = st.columns(2)
-                with col_sv1:
-                    if st.button("💾 Salvar Orçamento", key="btn_salvar_orc", use_container_width=True):
-                        if not nome_cliente_orc.strip() or not titulo_orc.strip():
-                            mostrar_popup("Preencha ao menos o nome do cliente e o título do evento.", tipo="erro")
-                        elif not itens_selecionados_orc:
-                            mostrar_popup("Selecione ao menos um item.", tipo="erro")
-                        else:
-                            try:
-                                supabase.table("orcamentos").insert({
-                                    "empresa_id": emp_id, "nome_cliente": nome_cliente_orc, "contato_cliente": contato_cliente_orc,
-                                    "titulo_evento": titulo_orc, "endereco_evento": endereco_evento_orc,
-                                    "data_inicio": str(data_ini_orc), "data_fim": str(data_fim_orc),
-                                    "hora_inicio": str(hora_ini_orc), "hora_fim": str(hora_fim_orc),
-                                    "itens_json": json.dumps(itens_selecionados_orc), "valor_itens": valor_itens_orc,
-                                    "origem_endereco": origem_orc, "distancia_km": distancia_manual, "duracao_min": dur_atual,
-                                    "consumo_veiculo": consumo_veic, "preco_combustivel": preco_comb, "valor_frete": valor_frete_orc,
-                                    "desconto": desconto_orc, "valor_total": valor_total_orc, "validade_dias": int(validade_orc),
-                                    "status": "Rascunho", "observacoes": obs_orc
-                                }).execute()
-                                mostrar_popup("ORÇAMENTO SALVO COM SUCESSO!")
-                                st.rerun()
-                            except Exception as e:
-                                mostrar_popup(f"Erro ao salvar: {e}", tipo="erro")
-                with col_sv2:
-                    if REPORTLAB_DISPONIVEL and st.button("📄 Gerar PDF (sem salvar)", key="btn_pdf_orc_direto", use_container_width=True):
-                        orc_temp = {"titulo_evento": titulo_orc, "data_inicio": str(data_ini_orc), "data_fim": str(data_fim_orc),
-                            "endereco_evento": endereco_evento_orc, "validade_dias": validade_orc, "valor_itens": valor_itens_orc,
-                            "valor_frete": valor_frete_orc, "desconto": desconto_orc, "valor_total": valor_total_orc, "observacoes": obs_orc}
-                        buffer_orc = gerar_pdf_orcamento(orc_temp, list(itens_selecionados_orc.values()), nome_cliente_orc, contato_cliente_orc)
-                        st.download_button("⬇️ Baixar PDF Gerado", data=buffer_orc, file_name=f"orcamento_{nome_cliente_orc}.pdf", mime="application/pdf", key="download_pdf_orc_direto")
-    
-            # ==========================================
-            # ORÇAMENTOS SALVOS
-            # ==========================================
-            with tab_lista_orc:
-                try:
-                    orcamentos_lista = supabase.table("orcamentos").select("*").eq("empresa_id", emp_id).order("data_criacao", desc=True).execute()
-                except Exception as e:
-                    st.error(f"Erro ao carregar orçamentos: {e}")
-                    orcamentos_lista = type('obj',(object,),{'data':[]})
-    
-                if orcamentos_lista.data:
-                    for orc in orcamentos_lista.data:
-                        itens_orc = safe_json_load(orc.get('itens_json')) or {}
-                        itens_orc_lista = list(itens_orc.values()) if isinstance(itens_orc, dict) else []
-                        status_orc = orc.get('status', 'Rascunho')
-                        icone_status = {"Rascunho":"📝","Enviado":"📤","Aprovado":"✅","Recusado":"❌","Convertido":"🎉"}.get(status_orc, "📝")
-    
-                        with st.expander(f"{icone_status} {orc.get('titulo_evento','-')} — {orc.get('nome_cliente','-')} | R$ {formatar_moeda(orc.get('valor_total',0))} | {status_orc}"):
-                            col_i1, col_i2 = st.columns(2)
-                            with col_i1:
-                                st.write(f"**Cliente:** {orc.get('nome_cliente','-')}")
-                                st.write(f"**Contato:** {orc.get('contato_cliente','-')}")
-                                st.write(f"**Período:** {orc.get('data_inicio','-')} até {orc.get('data_fim','-')}")
-                                st.write(f"**Endereço:** {orc.get('endereco_evento','-')}")
-                            with col_i2:
-                                st.write(f"**Itens:** R$ {formatar_moeda(orc.get('valor_itens',0))}")
-                                st.write(f"**Frete:** R$ {formatar_moeda(orc.get('valor_frete',0))} ({orc.get('distancia_km',0)} km)")
-                                st.write(f"**Desconto:** R$ {formatar_moeda(orc.get('desconto',0))}")
-                                st.write(f"**Total:** R$ {formatar_moeda(orc.get('valor_total',0))}")
-    
-                            if itens_orc_lista:
-                                st.markdown("**Itens:**")
-                                for it in itens_orc_lista:
-                                    st.write(f"- {it['quantidade']}x {it['nome']} — R$ {formatar_moeda(it['valor_total'])}")
-    
-                            if REPORTLAB_DISPONIVEL:
-                                buffer_orc_salvo = gerar_pdf_orcamento(orc, itens_orc_lista, orc.get('nome_cliente','-'), orc.get('contato_cliente','-'))
-                                st.download_button("📄 Baixar PDF", data=buffer_orc_salvo, file_name=f"orcamento_{orc['id']}.pdf", mime="application/pdf", key=f"pdf_orc_salvo_{orc['id']}")
-    
-                            st.markdown("---")
-                            col_st1, col_st2, col_st3, col_st4 = st.columns(4)
-                            with col_st1:
-                                if status_orc not in ["Convertido"] and st.button("📤 Marcar Enviado", key=f"btn_enviado_{orc['id']}"):
-                                    supabase.table("orcamentos").update({"status": "Enviado"}).eq("id", orc['id']).execute()
-                                    st.rerun()
-                            with col_st2:
-                                if status_orc not in ["Convertido"] and st.button("✅ Marcar Aprovado", key=f"btn_aprovado_{orc['id']}"):
-                                    supabase.table("orcamentos").update({"status": "Aprovado"}).eq("id", orc['id']).execute()
-                                    st.rerun()
-                            with col_st3:
-                                if status_orc not in ["Convertido"] and st.button("❌ Marcar Recusado", key=f"btn_recusado_{orc['id']}"):
-                                    supabase.table("orcamentos").update({"status": "Recusado"}).eq("id", orc['id']).execute()
-                                    st.rerun()
-                            with col_st4:
-                                if st.button("🗑️ Excluir", key=f"btn_del_orc_{orc['id']}"):
-                                    supabase.table("orcamentos").delete().eq("id", orc['id']).execute()
-                                    mostrar_popup("ORÇAMENTO EXCLUÍDO!")
-                                    st.rerun()
-    
-                            if status_orc == "Aprovado":
-                                st.markdown("---")
-                                if st.button("🔄 Converter em Evento", key=f"btn_converter_{orc['id']}", type="primary"):
-                                    try:
-                                        novo_cliente_orc = supabase.table("clientes_eventos").insert({
-                                            "empresa_id": emp_id, "nome": orc.get('nome_cliente'), "contato": orc.get('contato_cliente')
-                                        }).execute()
-                                        cliente_id_novo = novo_cliente_orc.data[0]['id']
-                                        novo_evento_orc = supabase.table("eventos").insert({
-                                            "empresa_id": emp_id, "cliente_id": cliente_id_novo,
-                                            "titulo": orc.get('titulo_evento'), "descricao": orc.get('titulo_evento'),
-                                            "data_inicio": orc.get('data_inicio'), "data_fim": orc.get('data_fim'),
-                                            "data_fim_alocacao": orc.get('data_fim'), "hora_inicio": orc.get('hora_inicio'),
-                                            "hora_fim": orc.get('hora_fim'), "status": "Agendado",
-                                            "observacao": f"Local: {orc.get('endereco_evento','-')} | {orc.get('observacoes','')}",
-                                            "valor_total": orc.get('valor_total')
-                                        }).execute()
-                                        evento_id_novo = novo_evento_orc.data[0]['id']
-                                        data_hora_conv = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
-                                        for pid_str, item in itens_orc.items():
-                                            supabase.table("itens_evento").insert({
-                                                "empresa_id": emp_id, "evento_id": evento_id_novo, "produto_id": int(pid_str),
-                                                "quantidade": item['quantidade'], "observacao": "", "valor_cobrado": item['valor_total']
-                                            }).execute()
-                                        supabase.table("historico_eventos").insert({
-                                            "empresa_id": emp_id, "evento_id": evento_id_novo,
-                                            "descricao": f"🔄 Evento criado a partir do Orçamento #{orc['id']}. Revise o detalhamento de kits (letras/números) se houver.",
-                                            "data_registro": data_hora_conv
-                                        }).execute()
-                                        supabase.table("orcamentos").update({"status": "Convertido", "evento_id": evento_id_novo}).eq("id", orc['id']).execute()
-                                        mostrar_popup("EVENTO CRIADO COM SUCESSO A PARTIR DO ORÇAMENTO!")
-                                        st.rerun()
-                                    except Exception as e:
-                                        mostrar_popup(f"Erro ao converter: {e}", tipo="erro")
-                            elif status_orc == "Convertido":
-                                st.success(f"🎉 Já convertido no Evento #{orc.get('evento_id')} — confira em Agendamento.")
+        st.title("Controle de Compras")
+        col_cp3, col_cp4 = st.columns(2)
+        with col_cp3: nome_produto_compra = st.text_input("Nome do Produto", key="compra_nome_produto")
+        with col_cp4: tipo_aquisicao = st.radio("Comprado onde?", ["Presencial","Site"], horizontal=True, key="compra_tipo_aquisicao")
+        fornecedor = st.text_input("Nome do Site / Loja", key="compra_nome_site")
+        with st.form("form_compras"):
+            col_cp5a, col_cp5b, col_cp5c = st.columns(3)
+            with col_cp5a: quantidade_compra = st.number_input("Quantidade Comprada", min_value=1, step=1, value=None)
+            with col_cp5b: valor_unit_compra = st.number_input("Valor Unitário (R$)", min_value=0.0, value=None, format="%.2f")
+            with col_cp5c:
+                st.write("")
+                st.info("Valor Total é calculado automaticamente ao Registrar.")
+            col_cp5, col_cp6 = st.columns(2)
+            with col_cp5: data_compra_input = st.date_input("Data da Compra", value=datetime.now().date(), format="DD/MM/YYYY")
+            with col_cp6: data_chegada_input = st.date_input("Previsão de Chegada", value=datetime.now().date(), format="DD/MM/YYYY")
+            col_cp7, col_cp8 = st.columns(2)
+            with col_cp7: forma_pagamento_compra = st.selectbox("Forma de Pagamento", ["Não informado","Pix","Cartão","Dinheiro","Boleto","Outro"])
+            with col_cp8: numero_pedido_compra = st.text_input("Nº do Pedido / Nota Fiscal (opcional)")
+            observacao_compra = st.text_area("Observação (opcional)")
+            if st.form_submit_button("Registrar Compra"):
+                if not nome_produto_compra.strip() or not fornecedor.strip(): mostrar_popup("Informe o nome do produto e a loja.", tipo="erro")
                 else:
-                    st.info("Nenhum orçamento cadastrado ainda. Crie um na aba 'Criar Orçamento'.")
+                    qtd_calc = quantidade_compra or 0
+                    vlr_calc = valor_unit_compra or 0.0
+                    valor_total_calc = qtd_calc * vlr_calc
+                    supabase.table("compras").insert({"empresa_id": emp_id,"nome_produto": nome_produto_compra,"fornecedor": fornecedor,"tipo_aquisicao": tipo_aquisicao,"local_detalhe": fornecedor,"quantidade": qtd_calc,"valor_total": valor_total_calc,"data_compra": str(data_compra_input),"data_prevista_chegada": str(data_chegada_input),"status_chegada": "Aguardando","forma_pagamento": forma_pagamento_compra,"numero_pedido": numero_pedido_compra,"observacao": observacao_compra}).execute()
+                    mostrar_popup("COMPRA CADASTRADA COM SUCESSO!")
+                    st.rerun()
+        st.markdown("---")
+        st.markdown("### 📋 Histórico de Compras")
+        compras_lista = supabase.table("compras").select("*").eq("empresa_id", emp_id).order("data_compra", desc=True).execute()
+        if compras_lista.data:
+            df_compras = pd.DataFrame(compras_lista.data)
+            df_compras['valor_unitario'] = df_compras['valor_total'] / df_compras['quantidade']
+            df_compras['valor_unitario'] = df_compras['valor_unitario'].fillna(0)
+            colunas_exibir_compras = [c for c in ["nome_produto","quantidade","valor_unitario","valor_total","fornecedor","tipo_aquisicao","forma_pagamento","numero_pedido","data_compra","data_prevista_chegada","status_chegada","observacao"] if c in df_compras.columns or c == "valor_unitario"]
+            st.dataframe(df_compras[colunas_exibir_compras], use_container_width=True, hide_index=True)
+            with st.expander("🔄 Atualizar Status de Chegada", expanded=False):
+                pendentes = df_compras[df_compras['status_chegada'] != 'Chegou'] if 'status_chegada' in df_compras.columns else df_compras
+                if len(pendentes) > 0:
+                    opcoes_pend = {f"{r['nome_produto']} — {r.get('fornecedor','')} (Previsão: {r.get('data_prevista_chegada','-')})": r['id'] for _, r in pendentes.iterrows()}
+                    escolha_pend = st.selectbox("Selecione o item que chegou", list(opcoes_pend.keys()), key="select_compra_chegou")
+                    if st.button("✅ Marcar como Chegou", key="btn_marcar_chegou"):
+                        supabase.table("compras").update({"status_chegada": "Chegou"}).eq("id", opcoes_pend[escolha_pend]).execute()
+                        mostrar_popup("ITEM MARCADO COMO CHEGOU!")
+                        st.rerun()
+                else: st.caption("Nenhuma compra pendente de chegada.")
+            with st.expander("✏️ Editar ou Excluir uma Compra", expanded=False):
+                opcoes_edit_compra = {f"{r.get('data_compra','')} — {r.get('nome_produto','Produto')} (R$ {float(r.get('valor_total',0)):.2f})": r['id'] for _, r in df_compras.iterrows()}
+                escolha_compra_txt = st.selectbox("Selecione a compra para editar", list(opcoes_edit_compra.keys()), key="select_editar_compra")
+                compra_id_sel = opcoes_edit_compra[escolha_compra_txt]
+                comp_sel = next(c for c in compras_lista.data if c['id'] == compra_id_sel)
+                col_ec1, col_ec2 = st.columns(2)
+                with col_ec1: edit_nome_c = st.text_input("Nome do Produto", value=comp_sel.get('nome_produto',''), key="ed_nome_c")
+                with col_ec2: edit_loja_c = st.text_input("Loja/Site", value=comp_sel.get('fornecedor',''), key="ed_loja_c")
+                col_ec3, col_ec4, col_ec5 = st.columns(3)
+                with col_ec3: edit_qtd_c = st.number_input("Quantidade", min_value=1, value=int(comp_sel.get('quantidade') or 1), key="ed_qtd_c")
+                with col_ec4:
+                    q_atual = int(comp_sel.get('quantidade') or 1)
+                    v_tot_atual = float(comp_sel.get('valor_total') or 0)
+                    v_unit_atual = v_tot_atual / q_atual if q_atual > 0 else 0.0
+                    edit_vunit_c = st.number_input("Valor Unitário (R$)", min_value=0.0, value=v_unit_atual, format="%.2f", key="ed_vunit_c")
+                with col_ec5:
+                    tipos_aq = ["Presencial","Site"]
+                    idx_aq = tipos_aq.index(comp_sel.get('tipo_aquisicao')) if comp_sel.get('tipo_aquisicao') in tipos_aq else 0
+                    edit_tipo_c = st.selectbox("Comprado onde?", tipos_aq, index=idx_aq, key="ed_tipo_c")
+                col_ec6, col_ec7 = st.columns(2)
+                with col_ec6:
+                    try: dt_c = datetime.strptime(str(comp_sel.get('data_compra')).split("T")[0], "%Y-%m-%d").date()
+                    except: dt_c = datetime.now().date()
+                    edit_dt_c = st.date_input("Data da Compra", value=dt_c, format="DD/MM/YYYY", key="ed_dt_c")
+                with col_ec7:
+                    try: dt_prev = datetime.strptime(str(comp_sel.get('data_prevista_chegada')).split("T")[0], "%Y-%m-%d").date()
+                    except: dt_prev = datetime.now().date()
+                    edit_dt_prev = st.date_input("Previsão de Chegada", value=dt_prev, format="DD/MM/YYYY", key="ed_dt_prev")
+                col_ec8, col_ec9 = st.columns(2)
+                with col_ec8:
+                    formas_pg = ["Não informado","Pix","Cartão","Dinheiro","Boleto","Outro"]
+                    idx_pg = formas_pg.index(comp_sel.get('forma_pagamento')) if comp_sel.get('forma_pagamento') in formas_pg else 0
+                    edit_forma_pg = st.selectbox("Forma de Pagamento", formas_pg, index=idx_pg, key="ed_forma_pg")
+                with col_ec9: edit_num_ped = st.text_input("Nº Pedido", value=comp_sel.get('numero_pedido') or "", key="ed_num_ped")
+                edit_obs_c = st.text_area("Observação", value=comp_sel.get('observacao') or "", key="ed_obs_c")
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
+                    if st.button("💾 Salvar Alterações", key="btn_salvar_edit_compra"):
+                        if not edit_nome_c.strip() or not edit_loja_c.strip(): mostrar_popup("Informe o nome e loja.", tipo="erro")
+                        else:
+                            novo_tot_c = edit_qtd_c * edit_vunit_c
+                            supabase.table("compras").update({"nome_produto": edit_nome_c,"fornecedor": edit_loja_c,"local_detalhe": edit_loja_c,"quantidade": edit_qtd_c,"valor_total": novo_tot_c,"tipo_aquisicao": edit_tipo_c,"data_compra": str(edit_dt_c),"data_prevista_chegada": str(edit_dt_prev),"forma_pagamento": edit_forma_pg,"numero_pedido": edit_num_ped,"observacao": edit_obs_c}).eq("id", compra_id_sel).execute()
+                            mostrar_popup("COMPRA ATUALIZADA COM SUCESSO!")
+                            st.rerun()
+                with col_b2:
+                    if st.button("🗑️ Excluir Compra", key="btn_excluir_edit_compra"):
+                        supabase.table("compras").delete().eq("id", compra_id_sel).execute()
+                        mostrar_popup("COMPRA EXCLUÍDA!")
+                        st.rerun()
+        else: st.info("Nenhuma compra registrada ainda.")
+
+
+    # ==========================================
+    # MENU: FATURAMENTO
+    # ==========================================
+    elif menu == "💰 Faturamento":
+        st.title("Fluxo de Caixa (Faturamento)")
+        st.markdown("#### 🗓️ Selecione o Período do Relatório")
+        col_f1, col_f2 = st.columns([1,3])
+        ano_atual = datetime.now().year
+        with col_f1: ano_selecionado = st.number_input("Ano", min_value=2020, max_value=2100, value=ano_atual, step=1, key="fat_ano")
+        nomes_meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+        with col_f2: meses_selecionados_nomes = st.multiselect("Mês (ou meses) — deixe vazio para ver o ano inteiro", nomes_meses, default=[nomes_meses[datetime.now().month-1]], key="fat_meses")
+        meses_selecionados = [nomes_meses.index(m)+1 for m in meses_selecionados_nomes] if meses_selecionados_nomes else list(range(1,13))
+        def _dentro_do_periodo(data_str):
+            if not data_str: return False
+            try:
+                d = datetime.strptime(str(data_str).split("T")[0], "%Y-%m-%d").date()
+                return d.year == ano_selecionado and d.month in meses_selecionados
+            except Exception: return False
+        eventos_fat = supabase.table("eventos").select("id, data_inicio, valor_total, status, descricao").eq("empresa_id", emp_id).neq("status","Cancelado").execute()
+        eventos_periodo = [e for e in (eventos_fat.data or []) if _dentro_do_periodo(e.get('data_inicio'))]
+        receita_eventos = sum(float(e.get('valor_total') or 0) for e in eventos_periodo)
+        qtd_eventos_periodo = len(eventos_periodo)
+        try:
+            despesas_viagem_resp = supabase.table("despesas_viagem").select("*").eq("empresa_id", emp_id).execute()
+            despesas_viagem_periodo = [d for d in (despesas_viagem_resp.data or []) if _dentro_do_periodo(d.get('data_despesa'))]
+        except Exception: despesas_viagem_periodo = []
+        total_despesas_viagem = sum(float(d.get('valor') or 0) for d in despesas_viagem_periodo)
+        try:
+            compras_resp = supabase.table("compras").select("*").eq("empresa_id", emp_id).execute()
+            compras_periodo = [c for c in (compras_resp.data or []) if _dentro_do_periodo(c.get('data_compra'))]
+        except Exception: compras_periodo = []
+        total_investimento_compras = sum(float(c.get('valor_total') or 0) for c in compras_periodo)
+        fat_manual_resp = supabase.table("faturamento").select("*").eq("empresa_id", emp_id).execute()
+        fat_manual_periodo = [f for f in (fat_manual_resp.data or []) if _dentro_do_periodo(f.get('data_pagamento'))]
+        receita_manual = sum(float(f.get('valor') or 0) for f in fat_manual_periodo if f.get('tipo') == 'receita')
+        despesa_manual = sum(float(f.get('valor') or 0) for f in fat_manual_periodo if f.get('tipo') == 'despesa')
+        lucro_liquido = (receita_eventos + receita_manual) - (total_despesas_viagem + total_investimento_compras + despesa_manual)
+        st.markdown("---")
+        st.markdown(f"#### 📊 Resumo — {', '.join(meses_selecionados_nomes) if meses_selecionados_nomes else 'Ano inteiro'} de {ano_selecionado}")
+        col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+        col_r1.metric("🎉 Receita de Eventos", formatar_moeda(receita_eventos), help=f"{qtd_eventos_periodo} evento(s)")
+        col_r2.metric("⛽ Gastos de Viagem", formatar_moeda(total_despesas_viagem))
+        col_r3.metric("🛒 Investimento em Compras", formatar_moeda(total_investimento_compras))
+        col_r4.metric("💰 Lucro Líquido", formatar_moeda(lucro_liquido))
+        st.markdown("---")
+        with st.expander("⛽ Registrar Gasto de Viagem", expanded=False):
+            with st.form("form_despesa_viagem"):
+                categoria_despesa = st.selectbox("Categoria", ["Combustível","Alimentação","Outros"])
+                valor_despesa = st.number_input("Valor (R$)", min_value=0.0, step=5.0, value=None, format="%.2f")
+                obs_despesa = st.text_input("Observação (opcional)")
+                data_despesa_input = st.date_input("Data do Gasto", value=datetime.now().date(), format="DD/MM/YYYY")
+                if st.form_submit_button("Registrar Gasto"):
+                    if (valor_despesa or 0.0) <= 0: mostrar_popup("Informe um valor maior que zero.", tipo="erro")
+                    else:
+                        supabase.table("despesas_viagem").insert({"empresa_id": emp_id,"categoria": categoria_despesa,"valor": (valor_despesa or 0.0),"observacao": obs_despesa,"data_despesa": str(data_despesa_input)}).execute()
+                        mostrar_popup("CADASTRO CONCLUÍDO COM SUCESSO!")
+                        st.rerun()
+        with st.expander("📄 Extrato de Gastos de Viagem do Período", expanded=False):
+            if despesas_viagem_periodo:
+                df_despesas_viagem = pd.DataFrame(despesas_viagem_periodo)
+                colunas_desp = [c for c in ["data_despesa","categoria","valor","observacao"] if c in df_despesas_viagem.columns]
+                df_despesas_viagem_show = df_despesas_viagem[colunas_desp].sort_values("data_despesa", ascending=False).copy()
+                df_despesas_viagem_show["data_despesa"] = df_despesas_viagem_show["data_despesa"].apply(lambda d: datetime.strptime(str(d).split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y"))
+                st.dataframe(df_despesas_viagem_show, use_container_width=True, hide_index=True)
+            else: st.caption("Nenhum gasto de viagem registrado neste período.")
+        def _fmt_data_br_simples(d):
+            try: return datetime.strptime(str(d).split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
+            except Exception: return str(d)
+        if despesas_viagem_periodo:
+            with st.expander("✏️ Editar ou Excluir um Gasto de Viagem", expanded=False):
+                opcoes_desp = {f"{_fmt_data_br_simples(d.get('data_despesa'))} — {d.get('categoria','-')} — R$ {float(d.get('valor',0)):.2f}" + (f" ({d.get('observacao')})" if d.get('observacao') else ""): d['id'] for d in sorted(despesas_viagem_periodo, key=lambda x: x.get('data_despesa') or '', reverse=True)}
+                escolha_desp_txt = st.selectbox("Selecione o lançamento", list(opcoes_desp.keys()), key="select_editar_despesa")
+                desp_selecionada = next(d for d in despesas_viagem_periodo if d['id'] == opcoes_desp[escolha_desp_txt])
+                col_ed_d1, col_ed_d2 = st.columns(2)
+                with col_ed_d1:
+                    categoria_edit_desp = st.selectbox("Categoria", ["Combustível","Alimentação","Outros"], index=["Combustível","Alimentação","Outros"].index(desp_selecionada.get('categoria')) if desp_selecionada.get('categoria') in ["Combustível","Alimentação","Outros"] else 0, key="edit_categoria_despesa")
+                with col_ed_d2: valor_edit_desp = st.number_input("Valor (R$)", min_value=0.0, step=5.0, value=float(desp_selecionada.get('valor') or 0), format="%.2f", key="edit_valor_despesa")
+                obs_edit_desp = st.text_input("Observação", value=desp_selecionada.get('observacao') or "", key="edit_obs_despesa")
+                data_edit_desp = st.date_input("Data do Gasto", value=datetime.strptime(str(desp_selecionada.get('data_despesa')).split("T")[0], "%Y-%m-%d").date(), format="DD/MM/YYYY", key="edit_data_despesa")
+                motivo_edit_desp = st.text_input("Motivo da Edição (obrigatório)", key="motivo_edit_despesa")
+                col_btn_d1, col_btn_d2 = st.columns(2)
+                with col_btn_d1:
+                    if st.button("💾 Salvar Alteração", key="btn_salvar_despesa"):
+                        if not motivo_edit_desp.strip(): mostrar_popup("Informe o motivo da edição.", tipo="erro")
+                        else:
+                            data_hora_edit_desp = datetime.now().strftime("%d/%m/%Y às %H:%M")
+                            nova_obs_desp = f"{obs_edit_desp} [Editado em {data_hora_edit_desp} — Motivo: {motivo_edit_desp}]".strip()
+                            supabase.table("despesas_viagem").update({"categoria": categoria_edit_desp,"valor": valor_edit_desp,"observacao": nova_obs_desp,"data_despesa": str(data_edit_desp)}).eq("id", desp_selecionada['id']).execute()
+                            mostrar_popup("ALTERAÇÃO CONCLUÍDA COM SUCESSO!")
+                            st.rerun()
+                with col_btn_d2:
+                    if st.button("🗑️ Excluir Lançamento", key="btn_excluir_despesa"):
+                        supabase.table("despesas_viagem").delete().eq("id", desp_selecionada['id']).execute()
+                        mostrar_popup("LANÇAMENTO EXCLUÍDO!")
+                        st.rerun()
+        with st.expander("➕ Outro Lançamento no Caixa (Receita ou Despesa Avulsa)", expanded=False):
+            with st.form("form_fat"):
+                desc_fat = st.text_input("Descrição")
+                tipo_fat = st.radio("Tipo de Movimentação", ["receita","despesa"], horizontal=True)
+                valor_fat = st.number_input("Valor (R$)", min_value=0.0, value=None, format="%.2f")
+                data_fat_input = st.date_input("Data", value=datetime.now().date(), format="DD/MM/YYYY", key="data_fat_manual")
+                if st.form_submit_button("Lançar no Caixa"):
+                    supabase.table("faturamento").insert({"empresa_id": emp_id,"descricao": desc_fat,"tipo": tipo_fat,"valor": (valor_fat or 0.0),"data_pagamento": str(data_fat_input),"pago": True}).execute()
+                    mostrar_popup("LANÇAMENTO CONCLUÍDO COM SUCESSO!")
+                    st.rerun()
+        st.markdown("### 📜 Extrato Financeiro Completo (Lançamentos Avulsos)")
+        fat_lista = supabase.table("faturamento").select("id, data_pagamento, tipo, descricao, valor").eq("empresa_id", emp_id).order("data_pagamento", desc=True).execute()
+        if fat_lista.data:
+            df_fat_show = pd.DataFrame(fat_lista.data)[["data_pagamento","tipo","descricao","valor"]].copy()
+            df_fat_show["data_pagamento"] = df_fat_show["data_pagamento"].apply(lambda d: datetime.strptime(str(d).split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y"))
+            st.dataframe(df_fat_show, use_container_width=True, hide_index=True)
+            with st.expander("✏️ Editar ou Excluir um Lançamento Avulso", expanded=False):
+                opcoes_fat = {f"{_fmt_data_br_simples(f.get('data_pagamento'))} — {f.get('tipo','-')} — {f.get('descricao','-')} — R$ {float(f.get('valor',0)):.2f}": f['id'] for f in fat_lista.data}
+                escolha_fat_txt = st.selectbox("Selecione o lançamento", list(opcoes_fat.keys()), key="select_editar_fat")
+                fat_selecionado = next(f for f in fat_lista.data if f['id'] == opcoes_fat[escolha_fat_txt])
+                desc_edit_fat = st.text_input("Descrição", value=fat_selecionado.get('descricao') or "", key="edit_desc_fat")
+                col_ef1, col_ef2 = st.columns(2)
+                with col_ef1: tipo_edit_fat = st.radio("Tipo", ["receita","despesa"], horizontal=True, index=["receita","despesa"].index(fat_selecionado.get('tipo')) if fat_selecionado.get('tipo') in ["receita","despesa"] else 0, key="edit_tipo_fat")
+                with col_ef2: valor_edit_fat = st.number_input("Valor (R$)", min_value=0.0, value=float(fat_selecionado.get('valor') or 0), format="%.2f", key="edit_valor_fat")
+                data_edit_fat = st.date_input("Data", value=datetime.strptime(str(fat_selecionado.get('data_pagamento')).split("T")[0], "%Y-%m-%d").date(), format="DD/MM/YYYY", key="edit_data_fat")
+                motivo_edit_fat = st.text_input("Motivo da Edição (obrigatório)", key="motivo_edit_fat")
+                col_btn_f1, col_btn_f2 = st.columns(2)
+                with col_btn_f1:
+                    if st.button("💾 Salvar Alteração", key="btn_salvar_fat"):
+                        if not motivo_edit_fat.strip(): mostrar_popup("Informe o motivo da edição.", tipo="erro")
+                        else:
+                            data_hora_edit_fat = datetime.now().strftime("%d/%m/%Y às %H:%M")
+                            nova_desc_fat = f"{desc_edit_fat} [Editado em {data_hora_edit_fat} — Motivo: {motivo_edit_fat}]"
+                            supabase.table("faturamento").update({"descricao": nova_desc_fat,"tipo": tipo_edit_fat,"valor": valor_edit_fat,"data_pagamento": str(data_edit_fat)}).eq("id", fat_selecionado['id']).execute()
+                            mostrar_popup("ALTERAÇÃO CONCLUÍDA COM SUCESSO!")
+                            st.rerun()
+                with col_btn_f2:
+                    if st.button("🗑️ Excluir Lançamento", key="btn_excluir_fat"):
+                        supabase.table("faturamento").delete().eq("id", fat_selecionado['id']).execute()
+                        mostrar_popup("LANÇAMENTO EXCLUÍDO!")
+                        st.rerun()
+        st.markdown("---")
+        st.markdown("#### 📤 Exportar Relatório do Período Selecionado")
+        def montar_dataframe_mensal():
+            linhas = []
+            for mes_num in meses_selecionados:
+                receita_mes = sum(float(e.get('valor_total') or 0) for e in eventos_periodo if datetime.strptime(e['data_inicio'].split("T")[0], "%Y-%m-%d").month == mes_num)
+                qtd_mes = sum(1 for e in eventos_periodo if datetime.strptime(e['data_inicio'].split("T")[0], "%Y-%m-%d").month == mes_num)
+                viagem_mes = sum(float(d.get('valor') or 0) for d in despesas_viagem_periodo if datetime.strptime(str(d['data_despesa']).split("T")[0], "%Y-%m-%d").month == mes_num)
+                compras_mes = sum(float(c.get('valor_total') or 0) for c in compras_periodo if datetime.strptime(str(c['data_compra']).split("T")[0], "%Y-%m-%d").month == mes_num)
+                linhas.append({"Mês": nomes_meses[mes_num-1],"Nº Eventos": qtd_mes,"Receita de Eventos (R$)": receita_mes,"Gastos de Viagem (R$)": viagem_mes,"Investimento em Compras (R$)": compras_mes,"Lucro Líquido (R$)": receita_mes - viagem_mes - compras_mes})
+            return pd.DataFrame(linhas)
+        df_mensal_export = montar_dataframe_mensal()
+        st.dataframe(df_mensal_export, use_container_width=True, hide_index=True)
+        col_exp1, col_exp2 = st.columns(2)
+        with col_exp1:
+            buffer_excel = io.BytesIO()
+            with pd.ExcelWriter(buffer_excel, engine="openpyxl") as writer:
+                df_mensal_export.to_excel(writer, index=False, sheet_name="Resumo Mensal")
+                if despesas_viagem_periodo: pd.DataFrame(despesas_viagem_periodo)[[c for c in ["data_despesa","categoria","valor","observacao"] if c in pd.DataFrame(despesas_viagem_periodo).columns]].to_excel(writer, index=False, sheet_name="Gastos de Viagem")
+                if compras_periodo: pd.DataFrame(compras_periodo).to_excel(writer, index=False, sheet_name="Compras")
+            buffer_excel.seek(0)
+            st.download_button("📊 Baixar Excel do Período", data=buffer_excel, file_name=f"faturamento_{ano_selecionado}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        with col_exp2:
+            if REPORTLAB_DISPONIVEL:
+                buffer_pdf_fat = io.BytesIO()
+                styles_fat = getSampleStyleSheet()
+                story_fat = []
+                import os as _os
+                caminho_logo_fat = "logo_sem_fundo.png" if _os.path.exists("logo_sem_fundo.png") else ("logo.jpg" if _os.path.exists("logo.jpg") else None)
+                COR_DOURADO_F = colors.HexColor("#FFC107")
+                COR_PRETO_F = colors.HexColor("#0E0E0E")
+                COR_CINZA_CLARO_F = colors.HexColor("#F2F2F2")
+                COR_VERDE_F = colors.HexColor("#1B7F3A")
+                COR_VERMELHO_F = colors.HexColor("#B3261E")
+                COR_AZUL_F = colors.HexColor("#1A5FB4")
+                periodo_txt = f"{', '.join(meses_selecionados_nomes) if meses_selecionados_nomes else 'Ano inteiro'} de {ano_selecionado}"
+                def _desenhar_moldura(canvas_obj, doc_obj):
+                    canvas_obj.saveState()
+                    largura_pagina, altura_pagina = A4
+                    altura_faixa = 3.2 * cm
+                    canvas_obj.setFillColor(COR_PRETO_F)
+                    canvas_obj.rect(0, altura_pagina-altura_faixa, largura_pagina, altura_faixa, fill=1, stroke=0)
+                    if caminho_logo_fat:
+                        try: canvas_obj.drawImage(caminho_logo_fat, 2*cm, altura_pagina-altura_faixa+0.35*cm, width=3.6*cm, height=2.5*cm, preserveAspectRatio=True, mask='auto')
+                        except Exception: pass
+                    canvas_obj.setFillColor(COR_DOURADO_F)
+                    canvas_obj.setFont("Helvetica-Bold", 16)
+                    canvas_obj.drawString(6.2*cm, altura_pagina-1.5*cm, "EXTRATO FINANCEIRO")
+                    canvas_obj.setFillColor(colors.white)
+                    canvas_obj.setFont("Helvetica", 10)
+                    canvas_obj.drawString(6.2*cm, altura_pagina-2.15*cm, f"Período: {periodo_txt}")
+                    canvas_obj.setFillColor(colors.grey)
+                    canvas_obj.setFont("Helvetica", 8)
+                    canvas_obj.drawString(2*cm, 1.2*cm, f"Luz & Letra — Emitido em {datetime.now().strftime('%d/%m/%Y às %H:%M')}")
+                    canvas_obj.drawRightString(largura_pagina-2*cm, 1.2*cm, f"Página {doc_obj.page}")
+                    canvas_obj.restoreState()
+                frame_fat = Frame(2*cm, 1.8*cm, A4[0]-4*cm, A4[1]-5.4*cm, id='corpo')
+                doc_fat = BaseDocTemplate(buffer_pdf_fat, pagesize=A4)
+                doc_fat.addPageTemplates([PageTemplate(id='ComMoldura', frames=[frame_fat], onPage=_desenhar_moldura)])
+                story_fat.append(Spacer(1, 10))
+                estilo_kpi_label = ParagraphStyle('KpiLabel', fontSize=8.5, textColor=colors.white, alignment=TA_CENTER, fontName="Helvetica-Bold")
+                estilo_kpi_valor = ParagraphStyle('KpiValor', fontSize=14, textColor=colors.white, alignment=TA_CENTER, fontName="Helvetica-Bold", spaceBefore=4)
+                cartoes = [("🎉 RECEITA DE EVENTOS", formatar_moeda(receita_eventos), COR_DOURADO_F),("⛽ GASTOS DE VIAGEM", formatar_moeda(total_despesas_viagem), COR_VERMELHO_F),("🛒 INVESTIMENTO EM COMPRAS", formatar_moeda(total_investimento_compras), COR_AZUL_F),("💰 LUCRO LÍQUIDO", formatar_moeda(lucro_liquido), COR_VERDE_F if lucro_liquido >= 0 else COR_VERMELHO_F)]
+                linha_kpi = [[Table([[Paragraph(label, estilo_kpi_label)],[Paragraph(valor, estilo_kpi_valor)]], colWidths=[4.0*cm], style=TableStyle([('BACKGROUND',(0,0),(-1,-1),cor),('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),10)])) for label, valor, cor in cartoes]]
+                tabela_kpi = Table(linha_kpi, colWidths=[4.1*cm]*4, spaceAfter=18)
+                tabela_kpi.setStyle(TableStyle([('LEFTPADDING',(0,0),(-1,-1),3),('RIGHTPADDING',(0,0),(-1,-1),3)]))
+                story_fat.append(tabela_kpi)
+                story_fat.append(Spacer(1,20))
+                story_fat.append(Paragraph("Detalhamento por Mês", ParagraphStyle('SubTit',fontSize=12,fontName="Helvetica-Bold",textColor=COR_PRETO_F,spaceAfter=8)))
+                tabela_fat_dados = [["Mês","Nº Eventos","Receita Eventos","Gastos Viagem","Compras","Lucro Líquido"]]
+                for _, row in df_mensal_export.iterrows():
+                    tabela_fat_dados.append([row["Mês"],str(row["Nº Eventos"]),formatar_moeda(row['Receita de Eventos (R$)']),formatar_moeda(row['Gastos de Viagem (R$)']),formatar_moeda(row['Investimento em Compras (R$)']),formatar_moeda(row['Lucro Líquido (R$)'])])
+                tabela_fat_pdf = Table(tabela_fat_dados, colWidths=[2.6*cm,2.2*cm,3.2*cm,3*cm,2.8*cm,3.2*cm])
+                estilo_tabela_fat = [('BACKGROUND',(0,0),(-1,0),COR_PRETO_F),('TEXTCOLOR',(0,0),(-1,0),COR_DOURADO_F),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('GRID',(0,0),(-1,-1),0.5,colors.grey),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('ALIGN',(1,0),(-1,-1),'CENTER'),('FONTSIZE',(0,0),(-1,-1),8.5),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]
+                for i in range(1, len(tabela_fat_dados)):
+                    if i % 2 == 0: estilo_tabela_fat.append(('BACKGROUND',(0,i),(-1,i),COR_CINZA_CLARO_F))
+                tabela_fat_pdf.setStyle(TableStyle(estilo_tabela_fat))
+                story_fat.append(tabela_fat_pdf)
+                story_fat.append(Spacer(1,14))
+                story_fat.append(Paragraph(f"<b>Lucro Líquido Total do Período:</b> {formatar_moeda(lucro_liquido)}", ParagraphStyle('Resumo',fontSize=11,textColor=COR_PRETO_F)))
+                doc_fat.build(story_fat)
+                buffer_pdf_fat.seek(0)
+                st.download_button("📄 Baixar PDF do Período", data=buffer_pdf_fat, file_name=f"faturamento_{ano_selecionado}.pdf", mime="application/pdf")
+            else: st.caption("⚠️ Para gerar o PDF, instale a biblioteca: `pip install reportlab`")
+
+    # ==========================================
+    # MENU: ORÇAMENTO
+    # ==========================================
+    elif menu == "🧳 Orçamento":
+        st.title("🧳 Orçamento de Evento")
+
+        ENDERECO_BASE_EMPRESA = st.secrets.get("ENDERECO_BASE_EMPRESA", "")
+
+        produtos_orc = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao, valor_locacao").eq("empresa_id", emp_id).order("nome").execute()
+        dict_produtos_orc = {p['id']: p for p in produtos_orc.data} if produtos_orc.data else {}
+
+        tab_criar_orc, tab_lista_orc = st.tabs(["📝 Criar Orçamento", "📋 Orçamentos Salvos"])
+
+        # ==========================================
+        # CRIAR NOVO ORÇAMENTO
+        # ==========================================
+        with tab_criar_orc:
+            st.markdown("#### 👤 Dados do Cliente e Evento")
+            col_o1, col_o2 = st.columns(2)
+            with col_o1: nome_cliente_orc = st.text_input("Nome do Cliente", key="orc_nome_cliente")
+            with col_o2: contato_cliente_orc = st.text_input("Contato", key="orc_contato_cliente")
+            titulo_orc = st.text_input("Título / Descrição do Evento", key="orc_titulo")
+            endereco_evento_orc = st.text_input("Endereço do Evento", key="orc_endereco_evento", placeholder="Rua, número, bairro, cidade")
+
+            col_od1, col_od2, col_oh1, col_oh2 = st.columns(4)
+            with col_od1: data_ini_orc = st.date_input("Data Início", format="DD/MM/YYYY", key="orc_data_ini")
+            with col_od2: data_fim_orc = st.date_input("Data Fim", value=data_ini_orc, min_value=data_ini_orc, format="DD/MM/YYYY", key="orc_data_fim")
+            with col_oh1: hora_ini_orc = st.time_input("Hora Início", key="orc_hora_ini")
+            with col_oh2: hora_fim_orc = st.time_input("Hora Fim", key="orc_hora_fim")
+
+            st.markdown("---")
+            st.markdown("#### 🛒 Itens do Orçamento")
+            st.caption("Quantidades aproximadas. O detalhamento exato (ex: letras específicas) é feito na hora de confirmar o evento.")
+            itens_selecionados_orc = {}
+            if produtos_orc.data:
+                for p in produtos_orc.data:
+                    js_p = safe_json_load(p.get('observacao'))
+                    valor_ref = float(p.get('valor_locacao') or 0)
+                    col_p1, col_p2 = st.columns([2,1])
+                    with col_p1:
+                        qtd_p = st.number_input(f"{p['nome']} (Estoque: {p['quantidade_estoque']})", min_value=0, value=0, key=f"orc_qtd_{p['id']}")
+                    with col_p2:
+                        valor_unit_p = st.number_input("Valor unit. (R$)", min_value=0.0, value=valor_ref, format="%.2f", key=f"orc_valor_{p['id']}")
+                    if qtd_p > 0:
+                        itens_selecionados_orc[p['id']] = {"nome": p['nome'], "quantidade": qtd_p, "valor_unit": valor_unit_p, "valor_total": qtd_p * valor_unit_p, "kit": bool(js_p)}
+
+            valor_itens_orc = sum(it['valor_total'] for it in itens_selecionados_orc.values())
+            st.info(f"💲 Subtotal dos Itens: **R$ {formatar_moeda(valor_itens_orc)}**")
+
+            st.markdown("---")
+            st.markdown("#### 🚗 Frete / Deslocamento")
+            col_fr1, col_fr2 = st.columns(2)
+            with col_fr1: origem_orc = st.text_input("Endereço de Origem (sua base)", value="", placeholder=ENDERECO_BASE_EMPRESA, key="orc_origem")
+            with col_fr2:
+                if st.button("📍 Calcular Distância", key="btn_calc_dist_orc"):
+                    if not origem_orc.strip() or not endereco_evento_orc.strip():
+                        mostrar_popup("Preencha o endereço de origem e o do evento.", tipo="erro")
+                    else:
+                        try:
+                            km_calc, dur_calc = calcular_distancia_google_maps(origem_orc, endereco_evento_orc)
+                            st.session_state['orc_km_calc'] = km_calc
+                            st.session_state['orc_dur_calc'] = dur_calc
+                            mostrar_popup(f"Distância calculada: {km_calc:.1f} km")
+                        except Exception as e:
+                            mostrar_popup(f"Erro ao calcular distância: {e}", tipo="erro")
+
+            km_atual = st.session_state.get('orc_km_calc', 0.0)
+            dur_atual = st.session_state.get('orc_dur_calc', 0.0)
+            if km_atual:
+                st.caption(f"📏 {km_atual:.1f} km (ida) — aprox. {dur_atual:.0f} min de trajeto")
+
+            col_c1, col_c2, col_c3 = st.columns(3)
+            with col_c1: distancia_manual = st.number_input("Distância (km, ida)", min_value=0.0, value=float(km_atual), format="%.1f", key="orc_dist_manual")
+            with col_c2: consumo_veic = st.number_input("Consumo do veículo (km/l)", min_value=0.1, value=10.0, format="%.1f", key="orc_consumo")
+            with col_c3: preco_comb = st.number_input("Preço do combustível (R$/l)", min_value=0.0, value=6.20, format="%.2f", key="orc_preco_comb")
+
+            valor_frete_sugerido = (distancia_manual * 2 / consumo_veic) * preco_comb if consumo_veic > 0 else 0.0
+            st.caption(f"⛽ Sugestão automática (ida e volta): R$ {formatar_moeda(valor_frete_sugerido)}")
+            valor_frete_orc = st.number_input("Valor final do Frete (R$)", min_value=0.0, value=valor_frete_sugerido, format="%.2f", key="orc_frete_final")
+
+            st.markdown("---")
+            col_d1, col_d2 = st.columns(2)
+            with col_d1: desconto_orc = st.number_input("Desconto (R$)", min_value=0.0, value=0.0, format="%.2f", key="orc_desconto")
+            with col_d2: validade_orc = st.number_input("Validade da Proposta (dias)", min_value=1, value=7, key="orc_validade")
+            obs_orc = st.text_area("Observações", key="orc_obs")
+
+            valor_total_orc = max(0.0, valor_itens_orc + valor_frete_orc - desconto_orc)
+            st.success(f"### 💰 Valor Total do Orçamento: R$ {formatar_moeda(valor_total_orc)}")
+
+            col_sv1, col_sv2 = st.columns(2)
+            with col_sv1:
+                if st.button("💾 Salvar Orçamento", key="btn_salvar_orc", use_container_width=True):
+                    if not nome_cliente_orc.strip() or not titulo_orc.strip():
+                        mostrar_popup("Preencha ao menos o nome do cliente e o título do evento.", tipo="erro")
+                    elif not itens_selecionados_orc:
+                        mostrar_popup("Selecione ao menos um item.", tipo="erro")
+                    else:
+                        try:
+                            supabase.table("orcamentos").insert({
+                                "empresa_id": emp_id, "nome_cliente": nome_cliente_orc, "contato_cliente": contato_cliente_orc,
+                                "titulo_evento": titulo_orc, "endereco_evento": endereco_evento_orc,
+                                "data_inicio": str(data_ini_orc), "data_fim": str(data_fim_orc),
+                                "hora_inicio": str(hora_ini_orc), "hora_fim": str(hora_fim_orc),
+                                "itens_json": json.dumps(itens_selecionados_orc), "valor_itens": valor_itens_orc,
+                                "origem_endereco": origem_orc, "distancia_km": distancia_manual, "duracao_min": dur_atual,
+                                "consumo_veiculo": consumo_veic, "preco_combustivel": preco_comb, "valor_frete": valor_frete_orc,
+                                "desconto": desconto_orc, "valor_total": valor_total_orc, "validade_dias": int(validade_orc),
+                                "status": "Rascunho", "observacoes": obs_orc
+                            }).execute()
+                            mostrar_popup("ORÇAMENTO SALVO COM SUCESSO!")
+                            st.rerun()
+                        except Exception as e:
+                            mostrar_popup(f"Erro ao salvar: {e}", tipo="erro")
+            with col_sv2:
+                if REPORTLAB_DISPONIVEL and st.button("📄 Gerar PDF (sem salvar)", key="btn_pdf_orc_direto", use_container_width=True):
+                    orc_temp = {"titulo_evento": titulo_orc, "data_inicio": str(data_ini_orc), "data_fim": str(data_fim_orc),
+                        "endereco_evento": endereco_evento_orc, "validade_dias": validade_orc, "valor_itens": valor_itens_orc,
+                        "valor_frete": valor_frete_orc, "desconto": desconto_orc, "valor_total": valor_total_orc, "observacoes": obs_orc}
+                    buffer_orc = gerar_pdf_orcamento(orc_temp, list(itens_selecionados_orc.values()), nome_cliente_orc, contato_cliente_orc)
+                    st.download_button("⬇️ Baixar PDF Gerado", data=buffer_orc, file_name=f"orcamento_{nome_cliente_orc}.pdf", mime="application/pdf", key="download_pdf_orc_direto")
+
+        # ==========================================
+        # ORÇAMENTOS SALVOS
+        # ==========================================
+        with tab_lista_orc:
+            try:
+                orcamentos_lista = supabase.table("orcamentos").select("*").eq("empresa_id", emp_id).order("data_criacao", desc=True).execute()
+            except Exception as e:
+                st.error(f"Erro ao carregar orçamentos: {e}")
+                orcamentos_lista = type('obj',(object,),{'data':[]})
+
+            if orcamentos_lista.data:
+                for orc in orcamentos_lista.data:
+                    itens_orc = safe_json_load(orc.get('itens_json')) or {}
+                    itens_orc_lista = list(itens_orc.values()) if isinstance(itens_orc, dict) else []
+                    status_orc = orc.get('status', 'Rascunho')
+                    icone_status = {"Rascunho":"📝","Enviado":"📤","Aprovado":"✅","Recusado":"❌","Convertido":"🎉"}.get(status_orc, "📝")
+
+                    with st.expander(f"{icone_status} {orc.get('titulo_evento','-')} — {orc.get('nome_cliente','-')} | R$ {formatar_moeda(orc.get('valor_total',0))} | {status_orc}"):
+                        col_i1, col_i2 = st.columns(2)
+                        with col_i1:
+                            st.write(f"**Cliente:** {orc.get('nome_cliente','-')}")
+                            st.write(f"**Contato:** {orc.get('contato_cliente','-')}")
+                            st.write(f"**Período:** {orc.get('data_inicio','-')} até {orc.get('data_fim','-')}")
+                            st.write(f"**Endereço:** {orc.get('endereco_evento','-')}")
+                        with col_i2:
+                            st.write(f"**Itens:** R$ {formatar_moeda(orc.get('valor_itens',0))}")
+                            st.write(f"**Frete:** R$ {formatar_moeda(orc.get('valor_frete',0))} ({orc.get('distancia_km',0)} km)")
+                            st.write(f"**Desconto:** R$ {formatar_moeda(orc.get('desconto',0))}")
+                            st.write(f"**Total:** R$ {formatar_moeda(orc.get('valor_total',0))}")
+
+                        if itens_orc_lista:
+                            st.markdown("**Itens:**")
+                            for it in itens_orc_lista:
+                                st.write(f"- {it['quantidade']}x {it['nome']} — R$ {formatar_moeda(it['valor_total'])}")
+
+                        if REPORTLAB_DISPONIVEL:
+                            buffer_orc_salvo = gerar_pdf_orcamento(orc, itens_orc_lista, orc.get('nome_cliente','-'), orc.get('contato_cliente','-'))
+                            st.download_button("📄 Baixar PDF", data=buffer_orc_salvo, file_name=f"orcamento_{orc['id']}.pdf", mime="application/pdf", key=f"pdf_orc_salvo_{orc['id']}")
+
+                        st.markdown("---")
+                        col_st1, col_st2, col_st3, col_st4 = st.columns(4)
+                        with col_st1:
+                            if status_orc not in ["Convertido"] and st.button("📤 Marcar Enviado", key=f"btn_enviado_{orc['id']}"):
+                                supabase.table("orcamentos").update({"status": "Enviado"}).eq("id", orc['id']).execute()
+                                st.rerun()
+                        with col_st2:
+                            if status_orc not in ["Convertido"] and st.button("✅ Marcar Aprovado", key=f"btn_aprovado_{orc['id']}"):
+                                supabase.table("orcamentos").update({"status": "Aprovado"}).eq("id", orc['id']).execute()
+                                st.rerun()
+                        with col_st3:
+                            if status_orc not in ["Convertido"] and st.button("❌ Marcar Recusado", key=f"btn_recusado_{orc['id']}"):
+                                supabase.table("orcamentos").update({"status": "Recusado"}).eq("id", orc['id']).execute()
+                                st.rerun()
+                        with col_st4:
+                            if st.button("🗑️ Excluir", key=f"btn_del_orc_{orc['id']}"):
+                                supabase.table("orcamentos").delete().eq("id", orc['id']).execute()
+                                mostrar_popup("ORÇAMENTO EXCLUÍDO!")
+                                st.rerun()
+
+                        if status_orc == "Aprovado":
+                            st.markdown("---")
+                            if st.button("🔄 Converter em Evento", key=f"btn_converter_{orc['id']}", type="primary"):
+                                try:
+                                    novo_cliente_orc = supabase.table("clientes_eventos").insert({
+                                        "empresa_id": emp_id, "nome": orc.get('nome_cliente'), "contato": orc.get('contato_cliente')
+                                    }).execute()
+                                    cliente_id_novo = novo_cliente_orc.data[0]['id']
+                                    novo_evento_orc = supabase.table("eventos").insert({
+                                        "empresa_id": emp_id, "cliente_id": cliente_id_novo,
+                                        "titulo": orc.get('titulo_evento'), "descricao": orc.get('titulo_evento'),
+                                        "data_inicio": orc.get('data_inicio'), "data_fim": orc.get('data_fim'),
+                                        "data_fim_alocacao": orc.get('data_fim'), "hora_inicio": orc.get('hora_inicio'),
+                                        "hora_fim": orc.get('hora_fim'), "status": "Agendado",
+                                        "observacao": f"Local: {orc.get('endereco_evento','-')} | {orc.get('observacoes','')}",
+                                        "valor_total": orc.get('valor_total')
+                                    }).execute()
+                                    evento_id_novo = novo_evento_orc.data[0]['id']
+                                    data_hora_conv = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+                                    for pid_str, item in itens_orc.items():
+                                        supabase.table("itens_evento").insert({
+                                            "empresa_id": emp_id, "evento_id": evento_id_novo, "produto_id": int(pid_str),
+                                            "quantidade": item['quantidade'], "observacao": "", "valor_cobrado": item['valor_total']
+                                        }).execute()
+                                    supabase.table("historico_eventos").insert({
+                                        "empresa_id": emp_id, "evento_id": evento_id_novo,
+                                        "descricao": f"🔄 Evento criado a partir do Orçamento #{orc['id']}. Revise o detalhamento de kits (letras/números) se houver.",
+                                        "data_registro": data_hora_conv
+                                    }).execute()
+                                    supabase.table("orcamentos").update({"status": "Convertido", "evento_id": evento_id_novo}).eq("id", orc['id']).execute()
+                                    mostrar_popup("EVENTO CRIADO COM SUCESSO A PARTIR DO ORÇAMENTO!")
+                                    st.rerun()
+                                except Exception as e:
+                                    mostrar_popup(f"Erro ao converter: {e}", tipo="erro")
+                        elif status_orc == "Convertido":
+                            st.success(f"🎉 Já convertido no Evento #{orc.get('evento_id')} — confira em Agendamento.")
+            else:
+                st.info("Nenhum orçamento cadastrado ainda. Crie um na aba 'Criar Orçamento'.")
