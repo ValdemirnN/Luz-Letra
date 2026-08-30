@@ -1711,11 +1711,40 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
         col_alerta1, col_alerta2 = st.columns(2)
         with col_alerta1:
             try:
-                manutencao_check = supabase.table("manutencao").select("quantidade, produtos(nome)").eq("empresa_id", emp_id).eq("status", "Em Manutenção").execute()
+                manutencao_check = supabase.table("manutencao").select("quantidade, produtos(nome), data_envio, data_prevista_retorno, local_manutencao").eq("empresa_id", emp_id).eq("status", "Em Manutenção").execute()
                 if manutencao_check.data:
+                    hoje_manut_dash = datetime.now().date()
+                    st.markdown(f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                        <span style="font-size:20px;">🔧</span>
+                        <span style="font-size:15px;font-weight:700;color:#EDEDED;">Itens em Manutenção</span>
+                        <span style="background:#FFC107;color:#0E0E0E;font-size:12px;font-weight:700;border-radius:20px;padding:2px 10px;margin-left:auto;">{len(manutencao_check.data)}</span>
+                    </div>""", unsafe_allow_html=True)
                     for m in manutencao_check.data:
                         nome_p = m['produtos']['nome'] if m.get('produtos') else "Item"
-                        st.warning(f"🔧 **Reparo Pendente:** {m['quantidade']}x {nome_p} fora de circulação.")
+                        local_m_dash = m.get('local_manutencao') or "Local não informado"
+                        dias_fora = None
+                        try:
+                            dt_envio_dash = datetime.strptime(str(m.get('data_envio')).split("T")[0], "%Y-%m-%d").date()
+                            dias_fora = (hoje_manut_dash - dt_envio_dash).days
+                        except Exception: pass
+                        atrasado_dash = False
+                        try:
+                            dt_prev_dash = datetime.strptime(str(m.get('data_prevista_retorno')).split("T")[0], "%Y-%m-%d").date()
+                            atrasado_dash = hoje_manut_dash > dt_prev_dash
+                        except Exception: pass
+                        cor_borda = "#B3261E" if atrasado_dash else "#FFC107"
+                        tag_atraso = '<span style="color:#FF6B6B;font-size:11px;font-weight:700;">⚠ ATRASADO</span>' if atrasado_dash else ""
+                        dias_txt = f"há {dias_fora} dia(s)" if dias_fora is not None else ""
+                        st.markdown(f"""
+                        <div style="border-left:4px solid {cor_borda};background:#1B1B1D;border-radius:8px;padding:10px 14px;margin-bottom:8px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <span style="font-weight:700;color:#EDEDED;font-size:14px;">{m['quantidade']}x {nome_p}</span>
+                                {tag_atraso}
+                            </div>
+                            <div style="color:#9A9A9A;font-size:12.5px;margin-top:2px;">📍 {local_m_dash} {('· ' + dias_txt) if dias_txt else ''}</div>
+                        </div>""", unsafe_allow_html=True)
+                else:
+                    st.success("✅ Nenhum item em manutenção no momento.")
             except: pass
         with col_alerta2:
             try:
