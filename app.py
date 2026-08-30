@@ -1708,6 +1708,42 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
         col_kpi4.metric("💳 Ticket Médio", f"R$ {formatar_moeda(ticket_medio)}")
         col_kpi5.metric("🎉 Eventos Ativos", total_eventos_ativos)
         st.markdown("---")
+
+        # ==========================================
+        # PRÓXIMOS EVENTOS — em destaque no topo
+        # ==========================================
+        st.subheader("🗓️ Próximos Eventos")
+        st.caption("Seus compromissos iminentes.")
+        eventos_futuros_topo = []
+        if eventos_dash.data:
+            for ev in eventos_dash.data:
+                try:
+                    d_ini = datetime.strptime(ev['data_inicio'].split('T')[0], "%Y-%m-%d").date()
+                    if d_ini >= hoje_date and ev['status'] != "Concluído":
+                        eventos_futuros_topo.append({'Data': d_ini, 'DataStr': d_ini.strftime("%d/%m"),
+                            'Cliente': ev.get('clientes_eventos',{}).get('nome','Cliente') if ev.get('clientes_eventos') else 'Cliente',
+                            'Evento': ev.get('descricao','Evento')})
+                except: pass
+        eventos_futuros_topo = sorted(eventos_futuros_topo, key=lambda x: x['Data'])[:6]
+        if eventos_futuros_topo:
+            cols_prox_ev = st.columns(len(eventos_futuros_topo))
+            for col_pe, evf in zip(cols_prox_ev, eventos_futuros_topo):
+                dias_ate = (evf['Data'] - hoje_date).days
+                if dias_ate == 0: badge_pe = ("HOJE", "#FFC107")
+                elif dias_ate == 1: badge_pe = ("AMANHÃ", "#FF9800")
+                else: badge_pe = (f"em {dias_ate} dias", "#2E7D32")
+                with col_pe:
+                    st.markdown(f"""
+                    <div style="background:#1B1B1D;border-radius:10px;padding:12px 14px;border-top:3px solid {badge_pe[1]};">
+                        <div style="font-size:20px;font-weight:800;color:#EDEDED;">{evf['DataStr']}</div>
+                        <div style="font-size:11px;font-weight:700;color:{badge_pe[1]};margin-bottom:6px;">{badge_pe[0]}</div>
+                        <div style="font-size:13px;font-weight:600;color:#EDEDED;">{evf['Cliente']}</div>
+                        <div style="font-size:12px;color:#9A9A9A;">{evf['Evento'][:22]}{'...' if len(evf['Evento']) > 22 else ''}</div>
+                    </div>""", unsafe_allow_html=True)
+        else:
+            st.info("Agenda livre! Nenhum evento futuro programado.")
+        st.markdown("---")
+
         col_alerta1, col_alerta2 = st.columns(2)
         with col_alerta1:
             try:
@@ -1796,7 +1832,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                 st.plotly_chart(fig_status, use_container_width=True, height=350)
             else: st.info("Sem eventos para analisar.")
         st.markdown("---")
-        col_g3, col_g4, col_g5 = st.columns([1.2,1.2,1])
+        col_g3, col_g4 = st.columns([1,1.4])
         ids_ativos_hoje = []
         if eventos_dash.data:
             for ev in eventos_dash.data:
@@ -1929,26 +1965,6 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         st.info("Nenhuma receita encontrada. Cadastre o valor de locação dos produtos no Estoque.")
             else:
                 st.info("Dados insuficientes para ranking.")
-        with col_g5:
-            st.subheader("🗓️ Próximos Eventos")
-            st.caption("Seus compromissos iminentes.")
-            if eventos_dash.data:
-                eventos_futuros = []
-                for ev in eventos_dash.data:
-                    try:
-                        d_ini = datetime.strptime(ev['data_inicio'].split('T')[0], "%Y-%m-%d").date()
-                        if d_ini >= hoje_date and ev['status'] != "Concluído":
-                            eventos_futuros.append({'Data': d_ini, 'DataStr': d_ini.strftime("%d/%m"),
-                                'Cliente': ev.get('clientes_eventos',{}).get('nome','Cliente') if ev.get('clientes_eventos') else 'Cliente',
-                                'Evento': ev.get('descricao','Evento')[:15] + "..."})
-                    except: pass
-                eventos_futuros = sorted(eventos_futuros, key=lambda x: x['Data'])[:4]
-                if eventos_futuros:
-                    for evf in eventos_futuros:
-                        st.markdown(f"🟢 **{evf['DataStr']}** - {evf['Cliente']}<br><span style='color:gray;font-size:12px;'>{evf['Evento']}</span>", unsafe_allow_html=True)
-                        st.markdown("<hr style='margin:8px 0px;border-color:#333;'>", unsafe_allow_html=True)
-                else: st.info("Agenda livre! Nenhum evento futuro programado.")
-            else: st.info("Nenhum evento cadastrado.")
 
 
     # ==========================================
