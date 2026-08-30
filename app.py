@@ -3751,74 +3751,77 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
         # CRIAR NOVO ORÇAMENTO
         # ==========================================
         with tab_criar_orc:
-            st.markdown("#### 👤 Dados do Cliente e Evento")
-            col_o1, col_o2 = st.columns(2)
-            with col_o1: nome_cliente_orc = st.text_input("Nome do Cliente", key="orc_nome_cliente")
-            with col_o2: contato_cliente_orc = st.text_input("Contato", key="orc_contato_cliente")
-            titulo_orc = st.text_input("Título / Descrição do Evento", key="orc_titulo")
-            endereco_evento_orc = st.text_input("Endereço do Evento", key="orc_endereco_evento", placeholder="Rua, número, bairro, cidade")
+            with st.expander("👤 Dados do Cliente e Evento", expanded=True):
+                col_o1, col_o2 = st.columns(2)
+                with col_o1: nome_cliente_orc = st.text_input("Nome do Cliente", key="orc_nome_cliente")
+                with col_o2: contato_cliente_orc = st.text_input("Contato", key="orc_contato_cliente")
+                titulo_orc = st.text_input("Título / Descrição do Evento", key="orc_titulo")
+                endereco_evento_orc = st.text_input("Endereço do Evento", key="orc_endereco_evento", placeholder="Rua, número, bairro, cidade")
 
-            col_od1, col_od2, col_oh1, col_oh2 = st.columns(4)
-            with col_od1: data_ini_orc = st.date_input("Data Início", format="DD/MM/YYYY", key="orc_data_ini")
-            with col_od2: data_fim_orc = st.date_input("Data Fim", value=data_ini_orc, min_value=data_ini_orc, format="DD/MM/YYYY", key="orc_data_fim")
-            with col_oh1: hora_ini_orc = st.time_input("Hora Início", key="orc_hora_ini")
-            with col_oh2: hora_fim_orc = st.time_input("Hora Fim", key="orc_hora_fim")
+                col_od1, col_od2, col_oh1, col_oh2 = st.columns(4)
+                with col_od1: data_ini_orc = st.date_input("Data Início", format="DD/MM/YYYY", key="orc_data_ini")
+                with col_od2: data_fim_orc = st.date_input("Data Fim", value=data_ini_orc, min_value=data_ini_orc, format="DD/MM/YYYY", key="orc_data_fim")
+                with col_oh1: hora_ini_orc = st.time_input("Hora Início", key="orc_hora_ini")
+                with col_oh2: hora_fim_orc = st.time_input("Hora Fim", key="orc_hora_fim")
 
-            st.markdown("---")
-            st.markdown("#### 🛒 Itens do Orçamento")
-            st.caption("Quantidades aproximadas. O detalhamento exato (ex: letras específicas) é feito na hora de confirmar o evento.")
-            itens_selecionados_orc = {}
-            if produtos_orc.data:
-                for p in produtos_orc.data:
-                    js_p = safe_json_load(p.get('observacao'))
-                    valor_ref = float(p.get('valor_locacao') or 0)
-                    col_p1, col_p2 = st.columns([2,1])
-                    with col_p1:
-                        qtd_p = st.number_input(f"{p['nome']} (Estoque: {p['quantidade_estoque']})", min_value=0, value=None, placeholder="0", key=f"orc_qtd_{p['id']}") or 0
-                    with col_p2:
-                        valor_unit_p = st.number_input("Valor unit. (R$)", min_value=0.0, value=valor_ref, format="%.2f", key=f"orc_valor_{p['id']}")
-                    if qtd_p > 0:
-                        itens_selecionados_orc[p['id']] = {"nome": p['nome'], "quantidade": qtd_p, "valor_unit": valor_unit_p, "valor_total": qtd_p * valor_unit_p, "kit": bool(js_p)}
+            with st.expander("🛒 Itens do Orçamento", expanded=True):
+                st.caption("Quantidades aproximadas. O detalhamento exato (ex: letras específicas) é feito na hora de confirmar o evento.")
+                itens_selecionados_orc = {}
+                if produtos_orc.data:
+                    for p in produtos_orc.data:
+                        js_p = safe_json_load(p.get('observacao'))
+                        valor_ref = float(p.get('valor_locacao') or 0)
+                        col_p1, col_p2 = st.columns([2,1])
+                        with col_p1:
+                            qtd_p = st.number_input(f"{p['nome']} (Estoque: {p['quantidade_estoque']})", min_value=0, value=None, placeholder="0", key=f"orc_qtd_{p['id']}") or 0
+                        with col_p2:
+                            valor_unit_p = st.number_input("Valor unit. (R$)", min_value=0.0, value=None, placeholder=f"{valor_ref:.2f}".replace(".",","), format="%.2f", key=f"orc_valor_{p['id']}")
+                            valor_unit_p = valor_unit_p if valor_unit_p is not None else valor_ref
+                        if qtd_p > 0:
+                            itens_selecionados_orc[p['id']] = {"nome": p['nome'], "quantidade": qtd_p, "valor_unit": valor_unit_p, "valor_total": qtd_p * valor_unit_p, "kit": bool(js_p)}
 
-            valor_itens_orc = sum(it['valor_total'] for it in itens_selecionados_orc.values())
-            st.info(f"💲 Subtotal dos Itens: **R$ {formatar_moeda(valor_itens_orc)}**")
+                valor_itens_orc = sum(it['valor_total'] for it in itens_selecionados_orc.values())
+                st.info(f"💲 Subtotal dos Itens: **R$ {formatar_moeda(valor_itens_orc)}**")
 
-            st.markdown("---")
-            st.markdown("#### 🚗 Frete / Deslocamento")
-            col_fr1, col_fr2 = st.columns(2)
-            with col_fr1: origem_orc = st.text_input("Endereço de Origem (sua base)", value="", placeholder=ENDERECO_BASE_EMPRESA, key="orc_origem")
-            with col_fr2:
-                if st.button("📍 Calcular Distância", key="btn_calc_dist_orc"):
-                    if not origem_orc.strip() or not endereco_evento_orc.strip():
-                        mostrar_popup("Preencha o endereço de origem e o do evento.", tipo="erro")
-                    else:
-                        try:
-                            km_calc, dur_calc = calcular_distancia_google_maps(origem_orc, endereco_evento_orc)
-                            st.session_state['orc_km_calc'] = km_calc
-                            st.session_state['orc_dur_calc'] = dur_calc
-                            mostrar_popup(f"Distância calculada: {km_calc:.1f} km")
-                        except Exception as e:
-                            mostrar_popup(f"Erro ao calcular distância: {e}", tipo="erro")
+            with st.expander("🚗 Frete / Deslocamento", expanded=True):
+                col_fr1, col_fr2 = st.columns(2)
+                with col_fr1: origem_orc = st.text_input("Endereço de Origem (sua base)", value="", placeholder=ENDERECO_BASE_EMPRESA, key="orc_origem")
+                with col_fr2:
+                    if st.button("📍 Calcular Distância", key="btn_calc_dist_orc"):
+                        if not origem_orc.strip() or not endereco_evento_orc.strip():
+                            mostrar_popup("Preencha o endereço de origem e o do evento.", tipo="erro")
+                        else:
+                            try:
+                                km_calc, dur_calc = calcular_distancia_google_maps(origem_orc, endereco_evento_orc)
+                                st.session_state['orc_km_calc'] = km_calc
+                                st.session_state['orc_dur_calc'] = dur_calc
+                                mostrar_popup(f"Distância calculada: {km_calc:.1f} km")
+                            except Exception as e:
+                                mostrar_popup(f"Erro ao calcular distância: {e}", tipo="erro")
 
-            km_atual = st.session_state.get('orc_km_calc', 0.0)
-            dur_atual = st.session_state.get('orc_dur_calc', 0.0)
-            if km_atual:
-                st.caption(f"📏 {km_atual:.1f} km (ida) — aprox. {dur_atual:.0f} min de trajeto")
+                km_atual = st.session_state.get('orc_km_calc', 0.0)
+                dur_atual = st.session_state.get('orc_dur_calc', 0.0)
+                if km_atual:
+                    st.caption(f"📏 {km_atual:.1f} km (ida) — aprox. {dur_atual:.0f} min de trajeto")
 
-            col_c1, col_c2, col_c3 = st.columns(3)
-            with col_c1: distancia_manual = st.number_input("Distância (km, ida)", min_value=0.0, value=float(km_atual), format="%.1f", key="orc_dist_manual")
-            with col_c2: consumo_veic = st.number_input("Consumo do veículo (km/l)", min_value=0.1, value=10.0, format="%.1f", key="orc_consumo")
-            with col_c3: preco_comb = st.number_input("Preço do combustível (R$/l)", min_value=0.0, value=6.20, format="%.2f", key="orc_preco_comb")
+                col_c1, col_c2, col_c3 = st.columns(3)
+                with col_c1: distancia_manual = st.number_input("Distância (km, ida)", min_value=0.0, value=None, placeholder=f"{km_atual:.1f}".replace(".",","), format="%.1f", key="orc_dist_manual")
+                distancia_manual = distancia_manual if distancia_manual is not None else float(km_atual)
+                with col_c2: consumo_veic = st.number_input("Consumo do veículo (km/l)", min_value=0.1, value=None, placeholder="10,0", format="%.1f", key="orc_consumo")
+                consumo_veic = consumo_veic if consumo_veic is not None else 10.0
+                with col_c3: preco_comb = st.number_input("Preço do combustível (R$/l)", min_value=0.0, value=None, placeholder="6,20", format="%.2f", key="orc_preco_comb")
+                preco_comb = preco_comb if preco_comb is not None else 6.20
 
-            valor_frete_sugerido = (distancia_manual * 2 / consumo_veic) * preco_comb if consumo_veic > 0 else 0.0
-            st.caption(f"⛽ Sugestão automática (ida e volta): R$ {formatar_moeda(valor_frete_sugerido)}")
-            valor_frete_orc = st.number_input("Valor final do Frete (R$)", min_value=0.0, value=valor_frete_sugerido, format="%.2f", key="orc_frete_final")
+                valor_frete_sugerido = (distancia_manual * 2 / consumo_veic) * preco_comb if consumo_veic > 0 else 0.0
+                st.caption(f"⛽ Sugestão automática (ida e volta): R$ {formatar_moeda(valor_frete_sugerido)}")
+                valor_frete_orc = st.number_input("Valor final do Frete (R$)", min_value=0.0, value=None, placeholder=f"{valor_frete_sugerido:.2f}".replace(".",","), format="%.2f", key="orc_frete_final")
+                valor_frete_orc = valor_frete_orc if valor_frete_orc is not None else valor_frete_sugerido
 
-            st.markdown("---")
-            col_d1, col_d2 = st.columns(2)
-            with col_d1: desconto_orc = st.number_input("Desconto (R$)", min_value=0.0, value=None, placeholder="0,00", format="%.2f", key="orc_desconto") or 0.0
-            with col_d2: validade_orc = st.number_input("Validade da Proposta (dias)", min_value=1, value=7, key="orc_validade")
-            obs_orc = st.text_area("Observações", key="orc_obs")
+            with st.expander("💲 Desconto, Validade e Observações", expanded=True):
+                col_d1, col_d2 = st.columns(2)
+                with col_d1: desconto_orc = st.number_input("Desconto (R$)", min_value=0.0, value=None, placeholder="0,00", format="%.2f", key="orc_desconto") or 0.0
+                with col_d2: validade_orc = st.number_input("Validade da Proposta (dias)", min_value=1, value=None, placeholder="7", key="orc_validade") or 7
+                obs_orc = st.text_area("Observações", key="orc_obs")
 
             valor_total_orc = max(0.0, valor_itens_orc + valor_frete_orc - desconto_orc)
             st.success(f"### 💰 Valor Total do Orçamento: R$ {formatar_moeda(valor_total_orc)}")
