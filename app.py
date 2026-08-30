@@ -2081,7 +2081,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                 with col_p1:
                                     forma_i = st.selectbox(f"Forma {i+1}", formas_opcoes, key=f"forma_{ev['id']}_{i}")
                                 with col_p2:
-                                    valor_i = st.number_input(f"Valor (R$) — Forma {i+1}", min_value=0.0, value=0.0, format="%.2f", key=f"valor_{ev['id']}_{i}")
+                                    valor_i = st.number_input(f"Valor (R$) — Forma {i+1}", min_value=0.0, value=None, placeholder="0,00", format="%.2f", key=f"valor_{ev['id']}_{i}") or 0.0
                                 pagamentos_registrar.append({"forma": forma_i, "valor": valor_i})
                             resumo_pag = " + ".join([f"{p['forma']}: R$ {formatar_moeda(p['valor'])}" for p in pagamentos_registrar if p['valor'] > 0])
                             if st.button("✅ Confirmar Pagamento", key=f"btn_conf_pag_{ev['id']}"):
@@ -2404,7 +2404,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                                     with col_h1:
                                         forma_h_i = st.selectbox(f"Forma {i+1}", formas_opcoes_h, key=f"forma_h_{ev_h['id']}_{i}")
                                     with col_h2:
-                                        valor_h_i = st.number_input(f"Valor (R$) — Forma {i+1}", min_value=0.0, value=0.0, format="%.2f", key=f"valor_h_{ev_h['id']}_{i}")
+                                        valor_h_i = st.number_input(f"Valor (R$) — Forma {i+1}", min_value=0.0, value=None, placeholder="0,00", format="%.2f", key=f"valor_h_{ev_h['id']}_{i}") or 0.0
                                     pagamentos_hist.append({"forma": forma_h_i, "valor": valor_h_i})
                                 resumo_pag_h = " + ".join([f"{p['forma']}: R$ {formatar_moeda(p['valor'])}" for p in pagamentos_hist if p['valor'] > 0])
                                 if st.button("✅ Confirmar Pagamento", key=f"hist_btn_pag_{ev_h['id']}"):
@@ -2761,7 +2761,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                     idx_add = 0
                     qtds_adicionar_kit = {}
                     for k, v_atual in js_estoque_add.items():
-                        val_add_k = cols_add_kit[idx_add%10].number_input(f"{k} (Tem: {v_atual})", min_value=0, value=0, key=f"add_kit_{prod_alvo_add['id']}_{k}")
+                        val_add_k = cols_add_kit[idx_add%10].number_input(f"{k} (Tem: {v_atual})", min_value=0, value=None, placeholder="0", key=f"add_kit_{prod_alvo_add['id']}_{k}") or 0
                         if val_add_k > 0: qtds_adicionar_kit[k] = val_add_k
                         idx_add += 1
                     if st.button("➕ Confirmar Adição ao Estoque", key="btn_add_kit_estoque"):
@@ -3584,7 +3584,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                     valor_ref = float(p.get('valor_locacao') or 0)
                     col_p1, col_p2 = st.columns([2,1])
                     with col_p1:
-                        qtd_p = st.number_input(f"{p['nome']} (Estoque: {p['quantidade_estoque']})", min_value=0, value=0, key=f"orc_qtd_{p['id']}")
+                        qtd_p = st.number_input(f"{p['nome']} (Estoque: {p['quantidade_estoque']})", min_value=0, value=None, placeholder="0", key=f"orc_qtd_{p['id']}") or 0
                     with col_p2:
                         valor_unit_p = st.number_input("Valor unit. (R$)", min_value=0.0, value=valor_ref, format="%.2f", key=f"orc_valor_{p['id']}")
                     if qtd_p > 0:
@@ -3626,7 +3626,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
 
             st.markdown("---")
             col_d1, col_d2 = st.columns(2)
-            with col_d1: desconto_orc = st.number_input("Desconto (R$)", min_value=0.0, value=0.0, format="%.2f", key="orc_desconto")
+            with col_d1: desconto_orc = st.number_input("Desconto (R$)", min_value=0.0, value=None, placeholder="0,00", format="%.2f", key="orc_desconto") or 0.0
             with col_d2: validade_orc = st.number_input("Validade da Proposta (dias)", min_value=1, value=7, key="orc_validade")
             obs_orc = st.text_area("Observações", key="orc_obs")
 
