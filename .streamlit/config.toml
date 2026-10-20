@@ -8,6 +8,7 @@ primaryColor = "#FFC107"
 [server]
 headless = true
 enableCORS = false
+enableStaticServing = true
 
 [browser]
 gatherUsageStats = false
