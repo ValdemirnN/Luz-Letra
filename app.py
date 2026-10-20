@@ -614,6 +614,7 @@ if not st.session_state['logado']:
                         if 'bloqueio_usuario_id' in st.session_state: del st.session_state['bloqueio_usuario_id']
                         cookie_manager.set("tk", novo_token, key="set_tk_login", expires_at=datetime.now() + relativedelta(days=7), same_site="lax")
                         cookie_manager.set("uid", str(usuario['id']), key="set_uid_login", expires_at=datetime.now() + relativedelta(days=7), same_site="lax")
+                        time.sleep(1.5)  # dá tempo do navegador gravar o cookie antes de recarregar a tela
                         st.rerun()
         except Exception as e: mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
 
