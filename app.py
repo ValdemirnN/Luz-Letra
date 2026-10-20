@@ -1900,17 +1900,32 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
             for f in (fat_dash.data or []):
                 if f.get('data_pagamento') and f.get('tipo') == 'despesa': timeline_data.append({'Data': f['data_pagamento'].split("T")[0], 'Receita': 0.0, 'Despesa': float(f.get('valor') or 0)})
             if timeline_data:
+                import plotly.graph_objects as go
                 df_tl = pd.DataFrame(timeline_data)
                 df_tl['Data'] = pd.to_datetime(df_tl['Data'])
-                df_tl['Mês/Ano'] = df_tl['Data'].dt.to_period('M').dt.strftime('%m/%Y')
-                df_agrupado = df_tl.groupby('Mês/Ano')[['Receita','Despesa']].sum().reset_index()
-                df_agrupado['sort_date'] = pd.to_datetime(df_agrupado['Mês/Ano'], format='%m/%Y')
-                df_agrupado = df_agrupado.sort_values('sort_date')
-                fig_evolucao = px.area(df_agrupado, x="Mês/Ano", y=["Receita","Despesa"], template="plotly_dark", color_discrete_map={"Receita":"#2E7D32","Despesa":"#C62828"})
-                fig_evolucao.update_layout(plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO,
-                    yaxis=dict(title="", showgrid=True, gridcolor="#333"), xaxis=dict(title="", showgrid=False),
-                    legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), margin=dict(t=40,b=0,l=0,r=0))
-                st.plotly_chart(fig_evolucao, use_container_width=True, height=350, config={'displayModeBar': False})
+                df_tl['Mes'] = df_tl['Data'].dt.to_period('M')
+                df_m = df_tl.groupby('Mes')[['Receita','Despesa']].sum()
+                # preenche meses sem lançamento com zero, para a linha do tempo ficar contínua
+                df_m = df_m.reindex(pd.period_range(df_m.index.min(), df_m.index.max(), freq='M'), fill_value=0.0)
+                df_m = df_m.tail(12).reset_index()
+                df_m.columns = ['Mes','Receita','Despesa']
+                df_m['Lucro'] = df_m['Receita'] - df_m['Despesa']
+                df_m['Rotulo'] = df_m['Mes'].dt.strftime('%m/%Y')
+                fig_evolucao = go.Figure()
+                fig_evolucao.add_bar(x=df_m['Rotulo'], y=df_m['Receita'], name="Receita", marker_color="#2E7D32",
+                    hovertemplate="Receita: R$ %{y:,.2f}<extra></extra>")
+                fig_evolucao.add_bar(x=df_m['Rotulo'], y=df_m['Despesa'], name="Despesa", marker_color="#C62828",
+                    hovertemplate="Despesa: R$ %{y:,.2f}<extra></extra>")
+                fig_evolucao.add_scatter(x=df_m['Rotulo'], y=df_m['Lucro'], name="Lucro", mode="lines+markers",
+                    line=dict(color="#FFC107", width=3), marker=dict(size=8),
+                    hovertemplate="Lucro: R$ %{y:,.2f}<extra></extra>")
+                fig_evolucao.update_layout(template="plotly_dark", plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO,
+                    barmode="group", bargap=0.35, separators=",.", dragmode=False, hovermode="x unified", height=350,
+                    yaxis=dict(title="", showgrid=True, gridcolor="#333", fixedrange=True, tickformat=",.0f", zeroline=True, zerolinecolor="#555", automargin=True),
+                    xaxis=dict(title="", showgrid=False, fixedrange=True, type="category"),
+                    legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    margin=dict(t=40,b=0,l=0,r=0))
+                st.plotly_chart(fig_evolucao, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': False, 'doubleClick': False})
             else: st.info("Aguardando lançamentos financeiros para gerar a linha do tempo.")
         with col_g2:
             st.subheader("📊 Status dos Eventos")
@@ -1923,7 +1938,7 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                 fig_status.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color=COR_FUNDO_GRAFICO, width=3)))
                 fig_status.add_annotation(text=f"<b>{total_eventos_ativos}</b><br>Eventos", x=0.5, y=0.5, font_size=18, showarrow=False, align="center")
                 fig_status.update_layout(showlegend=False, plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO, margin=dict(t=20,b=20,l=0,r=0))
-                st.plotly_chart(fig_status, use_container_width=True, height=350)
+                st.plotly_chart(fig_status, use_container_width=True, config={'displayModeBar': False})
             else: st.info("Sem eventos para analisar.")
         st.markdown("---")
         col_g3, col_g4 = st.columns([1,1.4])
@@ -2008,9 +2023,9 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         df_top['Label'] = df_top['Locações'].astype(str) + " (" + df_top['Porcentagem'].round(1).astype(str) + "%)"
                         fig_top = px.bar(df_top, x="Locações", y="Produto", orientation='h', template="plotly_dark", text="Label", color_discrete_sequence=["#FFC107"])
                         fig_top.update_traces(textposition='inside', textfont_size=12, textfont_color="black")
-                        fig_top.update_layout(showlegend=False, plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO,
-                            xaxis=dict(showgrid=False,showticklabels=False,title="",zeroline=False),
-                            yaxis=dict(title="",showgrid=False,tickfont=dict(size=12,color='white')), margin=dict(t=10,b=0,l=0,r=0))
+                        fig_top.update_layout(dragmode=False, showlegend=False, plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO,
+                            xaxis=dict(showgrid=False,showticklabels=False,title="",zeroline=False,fixedrange=True),
+                            yaxis=dict(title="",showgrid=False,tickfont=dict(size=12,color='white'),fixedrange=True), margin=dict(t=10,b=0,l=0,r=0))
                         st.plotly_chart(fig_top, use_container_width=True, height=230, config={'displayModeBar': False})
 
                 with tab_lucro:
@@ -2051,9 +2066,9 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                         fig_lucro = px.bar(df_lucro, x="Receita", y="Produto", orientation='h',
                             template="plotly_dark", text="Label", color_discrete_sequence=["#2E7D32"])
                         fig_lucro.update_traces(textposition='inside', textfont_size=12, textfont_color="white")
-                        fig_lucro.update_layout(showlegend=False, plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO,
-                            xaxis=dict(showgrid=False,showticklabels=False,title="",zeroline=False),
-                            yaxis=dict(title="",showgrid=False,tickfont=dict(size=12,color='white')), margin=dict(t=10,b=0,l=0,r=0))
+                        fig_lucro.update_layout(dragmode=False, showlegend=False, plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO,
+                            xaxis=dict(showgrid=False,showticklabels=False,title="",zeroline=False,fixedrange=True),
+                            yaxis=dict(title="",showgrid=False,tickfont=dict(size=12,color='white'),fixedrange=True), margin=dict(t=10,b=0,l=0,r=0))
                         st.plotly_chart(fig_lucro, use_container_width=True, height=230, config={'displayModeBar': False})
                     else:
                         st.info("Nenhuma receita encontrada. Cadastre o valor de locação dos produtos no Estoque.")
