@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import json
 import hashlib
 import base64
@@ -36,6 +37,33 @@ meta.content = "BLsnKznEf1epekQKo6x3onFRT5C7hTLZDLdUfnXIFG4";
 document.getElementsByTagName('head')[0].appendChild(meta);
 </script>
 """, unsafe_allow_html=True)
+
+# --- Ajustes para "Adicionar à Tela de Início" no iPhone (web app) ---
+components.html("""
+<script>
+(function() {
+  try {
+    var d = window.parent.document;
+    var origem = window.parent.location.origin;
+    function addMeta(nome, conteudo) {
+      if (d.querySelector('meta[name="' + nome + '"]')) return;
+      var m = d.createElement('meta'); m.name = nome; m.content = conteudo; d.head.appendChild(m);
+    }
+    addMeta('apple-mobile-web-app-capable', 'yes');
+    addMeta('mobile-web-app-capable', 'yes');
+    addMeta('apple-mobile-web-app-title', 'Luz & Letras');
+    addMeta('apple-mobile-web-app-status-bar-style', 'black-translucent');
+    addMeta('theme-color', '#0E0E0E');
+    var vp = d.querySelector('meta[name="viewport"]');
+    if (vp && vp.content.indexOf('viewport-fit') === -1) vp.content = vp.content + ', viewport-fit=cover';
+    if (!d.querySelector('link[rel="apple-touch-icon"]')) {
+      var l = d.createElement('link'); l.rel = 'apple-touch-icon';
+      l.href = origem + '/app/static/apple-touch-icon.png'; d.head.appendChild(l);
+    }
+  } catch (e) {}
+})();
+</script>
+""", height=0)
 
 if st.query_params.get("privacidade") == "1":
     st.title("Política de Privacidade - Luz & Letras Sistema")
@@ -579,8 +607,8 @@ if not st.session_state['logado']:
                         st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'],
                             'usuario_id': usuario['id'], 'nome_usuario': nome_usuario_login, 'token_sessao': novo_token})
                         if 'bloqueio_usuario_id' in st.session_state: del st.session_state['bloqueio_usuario_id']
-                        cookie_manager.set("tk", novo_token, key="set_tk_login")
-                        cookie_manager.set("uid", str(usuario['id']), key="set_uid_login")
+                        cookie_manager.set("tk", novo_token, key="set_tk_login", expires_at=datetime.now() + relativedelta(days=7), same_site="lax")
+                        cookie_manager.set("uid", str(usuario['id']), key="set_uid_login", expires_at=datetime.now() + relativedelta(days=7), same_site="lax")
                         st.rerun()
         except Exception as e: mostrar_popup(f"Erro ao tentar logar: {e}", tipo="erro")
 
