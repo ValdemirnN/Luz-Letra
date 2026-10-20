@@ -239,7 +239,7 @@ def fazer_logout():
         cookie_manager.delete("uid", key="del_uid_logout")
     except Exception:
         pass
-    st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': '', 'token_sessao': None})
+    st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': '', 'token_sessao': None, 'tentativas_restauro': 99})
 
 def restaurar_sessao_por_token():
     try:
@@ -529,7 +529,12 @@ def calcular_distancia_google_maps(origem, destino):
     return km, duracao_min
 
 if 'logado' not in st.session_state:
-    st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': '', 'token_sessao': None})
+    st.session_state.update({'logado': False, 'perfil': '', 'empresa_id': None, 'usuario_id': None, 'nome_usuario': '', 'token_sessao': None, 'tentativas_restauro': 0})
+
+# Ao atualizar a página (F5) os cookies só chegam do navegador na 2ª execução do script.
+# Por isso tentamos restaurar a sessão por mais de uma execução, até os cookies carregarem.
+if not st.session_state['logado'] and st.session_state.get('tentativas_restauro', 0) < 3:
+    st.session_state['tentativas_restauro'] = st.session_state.get('tentativas_restauro', 0) + 1
     restaurar_sessao_por_token()
 def gerar_codigo_recuperacao():
     import random
