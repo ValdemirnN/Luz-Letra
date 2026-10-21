@@ -97,6 +97,14 @@ if st.query_params.get("privacidade") == "1":
 st.markdown("""
 <style>
 div[data-testid="InputInstructions"] { display: none !important; }
+/* Evita o efeito "transparente/apagado" do Streamlit enquanto a página recarrega ao trocar de aba */
+[data-stale="true"], .stale-element, [data-testid="stale-element"],
+div[data-testid="stElementContainer"][data-stale="true"],
+div[data-testid="stAppViewBlockContainer"] [data-stale="true"] {
+    opacity: 1 !important;
+    filter: none !important;
+    transition: none !important;
+}
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; }
