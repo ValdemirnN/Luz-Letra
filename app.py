@@ -937,7 +937,18 @@ else:
         st.sidebar.info("📦 Plano Básico Ativo")
         opcoes_menu = ["📊 Dashboard", "📅 Agendamento", "📦 Estoque"]
 
-    menu = st.sidebar.radio("Módulos do Sistema", opcoes_menu)
+    # 🚧 Módulo em desenvolvimento: só o admin_geral usa por enquanto (para testes)
+    MODULOS_EM_CONSTRUCAO = ["🧳 Orçamento"]
+    _eh_admin_geral = st.session_state.get('perfil') == 'admin_geral'
+
+    def _rotulo_menu(opcao):
+        if opcao in MODULOS_EM_CONSTRUCAO and not _eh_admin_geral:
+            return f"{opcao} 🚧 (em breve)"
+        if opcao in MODULOS_EM_CONSTRUCAO and _eh_admin_geral:
+            return f"{opcao} 🧪 (teste)"
+        return opcao
+
+    menu = st.sidebar.radio("Módulos do Sistema", opcoes_menu, format_func=_rotulo_menu)
     emp_id = st.session_state.get('empresa_id')
     if not emp_id: st.stop()
 
@@ -3788,6 +3799,14 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
     # ==========================================
     elif menu == "🧳 Orçamento":
         st.title("🧳 Orçamento de Evento")
+
+        # 🚧 Bloqueio temporário: só admin_geral enxerga o módulo enquanto está em criação
+        if st.session_state.get('perfil') != 'admin_geral':
+            st.warning("🚧 **Módulo em criação!** O Orçamento de Eventos está sendo desenvolvido e ficará disponível em breve.")
+            st.info("Assim que estiver pronto, você poderá montar orçamentos, gerar o PDF e converter em evento com um clique. Enquanto isso, use o **📅 Agendamento** normalmente.")
+            st.stop()
+        else:
+            st.caption("🧪 Modo de teste: este módulo está visível apenas para a conta admin.")
 
         ENDERECO_BASE_EMPRESA = st.secrets.get("ENDERECO_BASE_EMPRESA", "")
 
