@@ -2,6 +2,7 @@
 
 Recebe as dependências por parâmetro para não depender de variáveis globais do app.py.
 """
+from modulos.log import registrar_erro
 import io
 from datetime import datetime
 
@@ -17,6 +18,7 @@ try:
     from reportlab.lib.enums import TA_CENTER
     REPORTLAB_DISPONIVEL = True
 except ImportError:
+    registrar_erro("faturamento.py:21")
     REPORTLAB_DISPONIVEL = False
 
 
@@ -34,7 +36,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup):
         try:
             d = datetime.strptime(str(data_str).split("T")[0], "%Y-%m-%d").date()
             return d.year == ano_selecionado and d.month in meses_selecionados
-        except Exception: return False
+        except Exception: registrar_erro("faturamento.py:39"); return False
     eventos_fat = supabase.table("eventos").select("id, data_inicio, valor_total, status, descricao").eq("empresa_id", emp_id).neq("status","Cancelado").gte("data_inicio", f"{ano_selecionado}-01-01").lt("data_inicio", f"{ano_selecionado+1}-01-01").execute()
     eventos_periodo = [e for e in (eventos_fat.data or []) if _dentro_do_periodo(e.get('data_inicio'))]
     receita_eventos = sum(float(e.get('valor_total') or 0) for e in eventos_periodo)
@@ -42,12 +44,12 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup):
     try:
         despesas_viagem_resp = supabase.table("despesas_viagem").select("*").eq("empresa_id", emp_id).gte("data_despesa", f"{ano_selecionado}-01-01").lt("data_despesa", f"{ano_selecionado+1}-01-01").execute()
         despesas_viagem_periodo = [d for d in (despesas_viagem_resp.data or []) if _dentro_do_periodo(d.get('data_despesa'))]
-    except Exception: despesas_viagem_periodo = []
+    except Exception: registrar_erro("faturamento.py:47"); despesas_viagem_periodo = []
     total_despesas_viagem = sum(float(d.get('valor') or 0) for d in despesas_viagem_periodo)
     try:
         compras_resp = supabase.table("compras").select("*").eq("empresa_id", emp_id).gte("data_compra", f"{ano_selecionado}-01-01").lt("data_compra", f"{ano_selecionado+1}-01-01").execute()
         compras_periodo = [c for c in (compras_resp.data or []) if _dentro_do_periodo(c.get('data_compra'))]
-    except Exception: compras_periodo = []
+    except Exception: registrar_erro("faturamento.py:52"); compras_periodo = []
     total_investimento_compras = sum(float(c.get('valor_total') or 0) for c in compras_periodo)
     fat_manual_resp = supabase.table("faturamento").select("*").eq("empresa_id", emp_id).gte("data_pagamento", f"{ano_selecionado}-01-01").lt("data_pagamento", f"{ano_selecionado+1}-01-01").execute()
     fat_manual_periodo = [f for f in (fat_manual_resp.data or []) if _dentro_do_periodo(f.get('data_pagamento'))]
@@ -84,7 +86,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup):
         else: st.caption("Nenhum gasto de viagem registrado neste período.")
     def _fmt_data_br_simples(d):
         try: return datetime.strptime(str(d).split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
-        except Exception: return str(d)
+        except Exception: registrar_erro("faturamento.py:89"); return str(d)
     if despesas_viagem_periodo:
         with st.expander("✏️ Editar ou Excluir um Gasto de Viagem", expanded=False):
             opcoes_desp = {f"{_fmt_data_br_simples(d.get('data_despesa'))} — {d.get('categoria','-')} — R$ {float(d.get('valor',0)):.2f}" + (f" ({d.get('observacao')})" if d.get('observacao') else ""): d['id'] for d in sorted(despesas_viagem_periodo, key=lambda x: x.get('data_despesa') or '', reverse=True)}
@@ -197,7 +199,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup):
                 canvas_obj.rect(0, altura_pagina-altura_faixa, largura_pagina, altura_faixa, fill=1, stroke=0)
                 if caminho_logo_fat:
                     try: canvas_obj.drawImage(caminho_logo_fat, 2*cm, altura_pagina-altura_faixa+0.35*cm, width=3.6*cm, height=2.5*cm, preserveAspectRatio=True, mask='auto')
-                    except Exception: pass
+                    except Exception: registrar_erro("faturamento.py:202"); pass
                 canvas_obj.setFillColor(COR_DOURADO_F)
                 canvas_obj.setFont("Helvetica-Bold", 16)
                 canvas_obj.drawString(6.2*cm, altura_pagina-1.5*cm, "EXTRATO FINANCEIRO")

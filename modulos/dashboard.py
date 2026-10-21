@@ -2,6 +2,7 @@
 
 Recebe as dependências por parâmetro para não depender de variáveis globais do app.py.
 """
+from modulos.log import registrar_erro
 from datetime import datetime
 
 import pandas as pd
@@ -18,18 +19,18 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
     st.markdown("---")
     hoje_date = datetime.now().date()
     try: eventos_dash = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, valor_total, status, descricao, clientes_eventos(nome)").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
-    except: eventos_dash = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, valor_total, status, descricao").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
+    except Exception: registrar_erro("dashboard.py:22"); eventos_dash = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, valor_total, status, descricao").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
     receita_ev = sum(float(e.get('valor_total') or 0) for e in (eventos_dash.data or []))
     total_eventos_ativos = len(eventos_dash.data) if eventos_dash.data else 0
     ticket_medio = receita_ev / total_eventos_ativos if total_eventos_ativos > 0 else 0.0
     try: compras_dash = supabase.table("compras").select("valor_total, data_compra").eq("empresa_id", emp_id).execute()
-    except: compras_dash = type('obj',(object,),{'data':[]})
+    except Exception: registrar_erro("dashboard.py:27"); compras_dash = type('obj',(object,),{'data':[]})
     despesa_comp = sum(float(c.get('valor_total') or 0) for c in (compras_dash.data or []))
     try: viagens_dash = supabase.table("despesas_viagem").select("valor, data_despesa").eq("empresa_id", emp_id).execute()
-    except: viagens_dash = type('obj',(object,),{'data':[]})
+    except Exception: registrar_erro("dashboard.py:30"); viagens_dash = type('obj',(object,),{'data':[]})
     despesa_viagem = sum(float(v.get('valor') or 0) for v in (viagens_dash.data or []))
     try: fat_dash = supabase.table("faturamento").select("tipo, valor, data_pagamento").eq("empresa_id", emp_id).execute()
-    except: fat_dash = type('obj',(object,),{'data':[]})
+    except Exception: registrar_erro("dashboard.py:33"); fat_dash = type('obj',(object,),{'data':[]})
     receita_manual = sum(float(f.get('valor') or 0) for f in (fat_dash.data or []) if f.get('tipo') == 'receita')
     despesa_manual = sum(float(f.get('valor') or 0) for f in (fat_dash.data or []) if f.get('tipo') == 'despesa')
     total_receitas = receita_ev + receita_manual
@@ -57,7 +58,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
                     eventos_futuros_topo.append({'Data': d_ini, 'DataStr': d_ini.strftime("%d/%m"),
                         'Cliente': ev.get('clientes_eventos',{}).get('nome','Cliente') if ev.get('clientes_eventos') else 'Cliente',
                         'Evento': ev.get('descricao','Evento')})
-            except: pass
+            except Exception: registrar_erro("dashboard.py:61"); pass
     eventos_futuros_topo = sorted(eventos_futuros_topo, key=lambda x: x['Data'])[:6]
     if eventos_futuros_topo:
         cols_prox_ev = st.columns(len(eventos_futuros_topo))
@@ -96,12 +97,12 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
                     try:
                         dt_envio_dash = datetime.strptime(str(m.get('data_envio')).split("T")[0], "%Y-%m-%d").date()
                         dias_fora = (hoje_manut_dash - dt_envio_dash).days
-                    except Exception: pass
+                    except Exception: registrar_erro("dashboard.py:100"); pass
                     atrasado_dash = False
                     try:
                         dt_prev_dash = datetime.strptime(str(m.get('data_prevista_retorno')).split("T")[0], "%Y-%m-%d").date()
                         atrasado_dash = hoje_manut_dash > dt_prev_dash
-                    except Exception: pass
+                    except Exception: registrar_erro("dashboard.py:105"); pass
                     cor_borda = "#B3261E" if atrasado_dash else "#FFC107"
                     tag_atraso = '<span style="color:#FF6B6B;font-size:11px;font-weight:700;">⚠ ATRASADO</span>' if atrasado_dash else ""
                     dias_txt = f"há {dias_fora} dia(s)" if dias_fora is not None else ""
@@ -115,7 +116,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
                         </div>""", unsafe_allow_html=True)
             else:
                 st.success("✅ Nenhum item em manutenção no momento.")
-        except: pass
+        except Exception: registrar_erro("dashboard.py:119"); pass
     with col_alerta2:
         devolucoes_pend_dash = buscar_devolucoes_pendentes()
         if devolucoes_pend_dash:
@@ -141,7 +142,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
             if estoque_check.data:
                 zerados = [p['nome'] for p in estoque_check.data if p['quantidade_estoque'] <= 0]
                 for z in zerados: st.error(f"⚠️ **Atenção:** {z} com estoque ZERADO.")
-        except: pass
+        except Exception: registrar_erro("dashboard.py:145"); pass
     st.markdown("<br>", unsafe_allow_html=True)
     COR_FUNDO_GRAFICO = "#161618"
     col_g1, col_g2 = st.columns([2,1])
@@ -208,13 +209,13 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
                 d_ini = datetime.strptime(ev['data_inicio'].split('T')[0], "%Y-%m-%d").date()
                 d_fim = datetime.strptime(ev['data_fim_alocacao'].split('T')[0], "%Y-%m-%d").date()
                 if d_ini <= hoje_date <= d_fim: ids_ativos_hoje.append(ev['id'])
-            except: pass
+            except Exception: registrar_erro("dashboard.py:212"); pass
     itens_alocados_hoje = 0
     if ids_ativos_hoje:
         try:
             it_hoje = supabase.table("itens_evento").select("quantidade").in_("evento_id", ids_ativos_hoje).execute()
             itens_alocados_hoje = sum(i['quantidade'] for i in (it_hoje.data or []))
-        except: pass
+        except Exception: registrar_erro("dashboard.py:218"); pass
     total_estoque_fisico = 1
     prods_ref_data = []
     try:
@@ -222,7 +223,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
         if prod_all.data:
             total_estoque_fisico = max(1, sum(p['quantidade_estoque'] for p in prod_all.data))
             prods_ref_data = prod_all.data
-    except: pass
+    except Exception: registrar_erro("dashboard.py:226"); pass
     taxa_ocupacao = (itens_alocados_hoje / total_estoque_fisico) * 100
     with col_g3:
         st.subheader("🎯 Taxa de Ocupação Hoje")
@@ -243,6 +244,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
                 "evento_id, produto_id, quantidade, valor_cobrado"
             ).eq("empresa_id", emp_id).execute()
         except Exception:
+            registrar_erro("dashboard.py:247")
             itens_dash = type('obj', (object,), {'data': []})
 
         # Monta o mapa de eventos com valor_total E soma de itens calculada
@@ -263,6 +265,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
                         'quantidade_total': qtd_por_evento.get(e['id'], 0)
                     }
         except Exception:
+            registrar_erro("dashboard.py:268")
             pass
 
         if itens_dash.data and prods_ref_data:
@@ -310,6 +313,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
                             preco_unitario = float(valor_geral) / quantidade_geral if quantidade_geral > 0 else 0.0
                             valor_item = preco_unitario * item['quantidade']
                         except Exception:
+                            registrar_erro("dashboard.py:316")
                             pass
 
                     receita_por_produto[pid] = receita_por_produto.get(pid, 0) + valor_item

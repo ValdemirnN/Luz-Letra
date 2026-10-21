@@ -2,6 +2,7 @@
 
 Recebe as dependências por parâmetro para não depender de variáveis globais do app.py.
 """
+from modulos.log import registrar_erro
 import io
 from datetime import datetime
 
@@ -20,6 +21,7 @@ def render(supabase, formatar_moeda, mostrar_popup, hash_senha, enviar_email_exp
                 "id, email, ativo, nome, email_confirmado, metodo_pagamento, comprovante_pagamento, plano, empresas(nome_fantasia), empresa_id"
             ).neq("perfil", "admin_geral").execute()
         except Exception:
+            registrar_erro("gestao_assinantes.py:24")
             users = supabase.table("usuarios").select("id, email, ativo, empresas(nome_fantasia), empresa_id").neq("perfil", "admin_geral").execute()
 
         if users.data:
@@ -34,7 +36,7 @@ def render(supabase, formatar_moeda, mostrar_popup, hash_senha, enviar_email_exp
                     elif dias_venc == 0: badge_venc = "🟠 Vence HOJE"
                     elif dias_venc <= 7: badge_venc = f"🟡 Vence em {dias_venc} dia(s)"
                     else: badge_venc = f"🟢 Vence em {dias_venc} dias"
-                except Exception: badge_venc = "❓ Sem data"
+                except Exception: registrar_erro("gestao_assinantes.py:39"); badge_venc = "❓ Sem data"
 
                 nome_fantasia = u['empresas']['nome_fantasia'] if u.get('empresas') else "Sem Empresa"
                 email_confirmado_u = u.get('email_confirmado', False)
@@ -78,7 +80,7 @@ def render(supabase, formatar_moeda, mostrar_popup, hash_senha, enviar_email_exp
                                     sucesso_email = enviar_email_expiracao(u['email'], u.get('nome') or u['email'], max(1, dias_r), venc_fmt_adm)
                                     if sucesso_email: mostrar_popup("E-mail enviado com sucesso!")
                                     else: mostrar_popup("Erro ao enviar e-mail.", tipo="erro")
-                                except Exception as e: mostrar_popup(f"Erro: {e}", tipo="erro")
+                                except Exception as e: registrar_erro("gestao_assinantes.py:83"); mostrar_popup(f"Erro: {e}", tipo="erro")
                     with col2:
                         nova_senha = st.text_input("Nova Senha", key=f"pwd_{u['id']}")
                         if st.button("🔑 Mudar Senha", key=f"btn_pwd_{u['id']}") and nova_senha:
@@ -89,7 +91,7 @@ def render(supabase, formatar_moeda, mostrar_popup, hash_senha, enviar_email_exp
                         valor_renovacao_adm = st.number_input("Valor recebido (R$)", min_value=0.0, value=79.90 if plano_u == 'basico' else 89.90, format="%.2f", key=f"valor_ren_{u['id']}")
                         if st.button("🔄 Renovar", key=f"ren_{u['id']}"):
                             try: data_base_ren = max(datetime.strptime(venc, "%Y-%m-%d").date(), datetime.now().date())
-                            except Exception: data_base_ren = datetime.now().date()
+                            except Exception: registrar_erro("gestao_assinantes.py:94"); data_base_ren = datetime.now().date()
                             novo_venc_adm = (datetime.combine(data_base_ren, datetime.min.time()) + relativedelta(months=int(meses_add))).strftime("%Y-%m-%d")
                             supabase.table("assinaturas").update({"data_vencimento": novo_venc_adm}).eq("empresa_id", u['empresa_id']).execute()
                             st.cache_data.clear()
@@ -127,11 +129,11 @@ def render(supabase, formatar_moeda, mostrar_popup, hash_senha, enviar_email_exp
                     nome_u_pag = pag.get('usuarios',{}).get('nome','-') if pag.get('usuarios') else '-'
                     def _fmt_pag(d):
                         try: return datetime.strptime(str(d).split("T")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
-                        except Exception: return str(d) if d else '-'
+                        except Exception: registrar_erro("gestao_assinantes.py:132"); return str(d) if d else '-'
                     data_pag_fmt = pag.get('data_pagamento','-')
                     if data_pag_fmt and data_pag_fmt != '-':
                         try: data_pag_fmt = datetime.strptime(data_pag_fmt[:19], "%Y-%m-%d %H:%M:%S").strftime("%d/%m/%Y às %H:%M")
-                        except Exception: pass
+                        except Exception: registrar_erro("gestao_assinantes.py:136"); pass
                     valor_pag = float(pag.get('valor') or 0)
                     metodo_pag = pag.get('metodo_pagamento') or '-'
                     plano_pag = (pag.get('plano') or 'basico').upper()
@@ -183,6 +185,7 @@ def render(supabase, formatar_moeda, mostrar_popup, hash_senha, enviar_email_exp
                 st.download_button("📊 Exportar Histórico em Excel", data=buf_xls_pag, file_name=f"pagamentos_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             else: st.info("Nenhum pagamento registrado ainda.")
         except Exception as e:
+            registrar_erro("gestao_assinantes.py:188")
             st.error(f"Erro ao carregar histórico: {e}")
             st.info("Execute o SQL abaixo no Supabase para criar as tabelas necessárias:")
             st.code("""

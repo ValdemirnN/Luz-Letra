@@ -2,6 +2,7 @@
 
 Recebe as dependências por parâmetro para não depender de variáveis globais do app.py.
 """
+from modulos.log import registrar_erro
 from datetime import datetime
 
 import pandas as pd
@@ -78,11 +79,11 @@ def render(supabase, emp_id, mostrar_popup):
             col_ec6, col_ec7 = st.columns(2)
             with col_ec6:
                 try: dt_c = datetime.strptime(str(comp_sel.get('data_compra')).split("T")[0], "%Y-%m-%d").date()
-                except: dt_c = datetime.now().date()
+                except Exception: registrar_erro("compras.py:82"); dt_c = datetime.now().date()
                 edit_dt_c = st.date_input("Data da Compra", value=dt_c, format="DD/MM/YYYY", key="ed_dt_c")
             with col_ec7:
                 try: dt_prev = datetime.strptime(str(comp_sel.get('data_prevista_chegada')).split("T")[0], "%Y-%m-%d").date()
-                except: dt_prev = datetime.now().date()
+                except Exception: registrar_erro("compras.py:86"); dt_prev = datetime.now().date()
                 edit_dt_prev = st.date_input("Previsão de Chegada", value=dt_prev, format="DD/MM/YYYY", key="ed_dt_prev")
             col_ec8, col_ec9 = st.columns(2)
             with col_ec8:

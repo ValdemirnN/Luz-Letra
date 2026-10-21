@@ -2,6 +2,7 @@
 
 Recebe as dependências por parâmetro (injeção) para não depender de variáveis globais do app.py.
 """
+from modulos.log import registrar_erro
 import json
 from datetime import datetime
 
@@ -67,6 +68,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load,
                             st.session_state['orc_dur_calc'] = dur_calc
                             mostrar_popup(f"Distância calculada: {km_calc:.1f} km")
                         except Exception as e:
+                            registrar_erro("orcamento.py:71")
                             mostrar_popup(f"Erro ao calcular distância: {e}", tipo="erro")
 
             km_atual = st.session_state.get('orc_km_calc', 0.0)
@@ -159,6 +161,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load,
                             mostrar_popup("ORÇAMENTO SALVO COMO RASCUNHO!")
                         st.rerun()
                     except Exception as e:
+                        registrar_erro("orcamento.py:164")
                         mostrar_popup(f"Erro ao salvar: {e}", tipo="erro")
         with col_sv2:
             if REPORTLAB_DISPONIVEL and st.button("📄 Gerar PDF (sem salvar)", key="btn_pdf_orc_direto", use_container_width=True):
@@ -175,6 +178,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load,
         try:
             orcamentos_lista = supabase.table("orcamentos").select("*").eq("empresa_id", emp_id).order("data_criacao", desc=True).execute()
         except Exception as e:
+            registrar_erro("orcamento.py:181")
             st.error(f"Erro ao carregar orçamentos: {e}")
             orcamentos_lista = type('obj',(object,),{'data':[]})
 
@@ -260,6 +264,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load,
                                 mostrar_popup("EVENTO CRIADO COM SUCESSO A PARTIR DO ORÇAMENTO!")
                                 st.rerun()
                             except Exception as e:
+                                registrar_erro("orcamento.py:267")
                                 mostrar_popup(f"Erro ao converter: {e}", tipo="erro")
                     elif status_orc == "Convertido":
                         st.success(f"🎉 Já convertido no Evento #{orc.get('evento_id')} — confira em Agendamento.")
