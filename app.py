@@ -97,14 +97,6 @@ if st.query_params.get("privacidade") == "1":
 st.markdown("""
 <style>
 div[data-testid="InputInstructions"] { display: none !important; }
-/* Evita o efeito "transparente/apagado" do Streamlit enquanto a página recarrega ao trocar de aba */
-[data-stale="true"], .stale-element, [data-testid="stale-element"],
-div[data-testid="stElementContainer"][data-stale="true"],
-div[data-testid="stAppViewBlockContainer"] [data-stale="true"] {
-    opacity: 1 !important;
-    filter: none !important;
-    transition: none !important;
-}
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; }
@@ -957,6 +949,18 @@ else:
         return opcao
 
     menu = st.sidebar.radio("Módulos do Sistema", opcoes_menu, format_func=_rotulo_menu)
+
+    # Ao trocar de módulo, esconde o conteúdo da tela anterior (ainda "stale") enquanto a nova carrega,
+    # em vez de mostrá-lo transparente/misturado com a tela nova.
+    if st.session_state.get('_menu_anterior') != menu:
+        st.session_state['_menu_anterior'] = menu
+        st.markdown(
+            """<style>
+            [data-testid="stMain"] [data-stale="true"],
+            section.main [data-stale="true"] { display: none !important; }
+            </style>""",
+            unsafe_allow_html=True,
+        )
     emp_id = st.session_state.get('empresa_id')
     if not emp_id: st.stop()
 
