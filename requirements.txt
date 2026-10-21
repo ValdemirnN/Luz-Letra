@@ -1,12 +1,15 @@
-streamlit
-extra-streamlit-components
-supabase
-pandas
-plotly
-python-dateutil
-reportlab
-requests
-openpyxl
-qrcode[pil]
-Pillow
-bcrypt>=4.0
+# Versões travadas dentro da faixa "major" atual: aceita correções de bug,
+# mas uma atualização grande (ex.: Streamlit 2.x) não quebra o app sozinha.
+# Para travar 100% (versão exata), copie as versões de "pip freeze" do ambiente que está funcionando.
+streamlit>=1.40,<2
+extra-streamlit-components>=0.1.71,<0.2
+supabase>=2.9,<3
+pandas>=2.2,<4
+plotly>=5.24,<8
+python-dateutil>=2.9,<3
+reportlab>=4.2,<6
+requests>=2.32,<3
+openpyxl>=3.1,<4
+qrcode[pil]>=7.4,<9
+Pillow>=10.4,<14
+bcrypt>=4.0,<6

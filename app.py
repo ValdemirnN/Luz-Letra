@@ -614,6 +614,41 @@ def validar_senha_forte(senha):
     }    
 
 # ==========================================
+# LIMITE DE TENTATIVAS DE LOGIN (por e-mail, no servidor)
+# Fica na memória do servidor (não no session_state), então recarregar a página
+# ou abrir outra aba NÃO zera o contador. Reinicia se o app reiniciar.
+# ==========================================
+LOGIN_MAX_TENTATIVAS = 5      # falhas seguidas permitidas
+LOGIN_JANELA_SEG = 15 * 60    # falhas mais antigas que isso são esquecidas
+LOGIN_BLOQUEIO_SEG = 5 * 60   # tempo de bloqueio após estourar o limite
+
+@st.cache_resource
+def _registro_tentativas_login():
+    return {}  # {email: {"falhas": [timestamps], "bloqueado_ate": ts}}
+
+def _chave_login(email):
+    return (email or "").strip().lower()
+
+def login_segundos_bloqueado(email):
+    reg = _registro_tentativas_login().get(_chave_login(email))
+    if not reg: return 0
+    return max(0, int(reg.get("bloqueado_ate", 0) - time.time()))
+
+def login_registrar_falha(email):
+    registro = _registro_tentativas_login()
+    agora = time.time()
+    reg = registro.setdefault(_chave_login(email), {"falhas": [], "bloqueado_ate": 0})
+    reg["falhas"] = [t for t in reg["falhas"] if agora - t < LOGIN_JANELA_SEG] + [agora]
+    if len(reg["falhas"]) >= LOGIN_MAX_TENTATIVAS:
+        reg["bloqueado_ate"] = agora + LOGIN_BLOQUEIO_SEG
+        reg["falhas"] = []
+    if len(registro) > 5000:  # evita crescer sem limite
+        for k in [k for k, v in registro.items() if v["bloqueado_ate"] < agora and not v["falhas"]]: registro.pop(k, None)
+
+def login_limpar_falhas(email):
+    _registro_tentativas_login().pop(_chave_login(email), None)
+
+# ==========================================
 # TELA DE LOGIN
 # ==========================================
 if not st.session_state['logado']:
@@ -625,26 +660,28 @@ if not st.session_state['logado']:
         senha_login = st.text_input("Senha", type="password")
         entrar = st.form_submit_button("Entrar")
 
-    if entrar and time.time() < st.session_state.get('_login_bloqueado_ate', 0):
-        mostrar_popup("Muitas tentativas incorretas. Aguarde 1 minuto e tente novamente.", tipo="erro")
-        entrar = False
+    if entrar:
+        _espera = login_segundos_bloqueado(email_login)
+        if _espera > 0:
+            mostrar_popup(f"Muitas tentativas incorretas. Aguarde {max(1, -(-_espera // 60))} minuto(s) e tente novamente.", tipo="erro")
+            entrar = False
 
     if entrar:
+      with st.spinner("Entrando..."):
         try:
             try: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome, plano").eq("email", email_login).execute()
             except Exception: registrar_erro("app.py:635"); resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, plano").eq("email", email_login).execute()
-            if not resultado.data: mostrar_popup("E-mail não encontrado.", tipo="erro")
+            if not resultado.data:
+                login_registrar_falha(email_login)  # conta também e-mail inexistente (evita enumeração/força bruta)
+                mostrar_popup("E-mail ou senha incorretos.", tipo="erro")
             else:
                 usuario = resultado.data[0]
                 if not usuario['ativo']: mostrar_popup("Usuário bloqueado. Fale com o administrador.", tipo="erro")
                 elif not verificar_senha(senha_login, usuario['senha_hash']):
-                    st.session_state['_login_falhas'] = st.session_state.get('_login_falhas', 0) + 1
-                    if st.session_state['_login_falhas'] >= 5:
-                        st.session_state['_login_bloqueado_ate'] = time.time() + 60
-                        st.session_state['_login_falhas'] = 0
-                    mostrar_popup("Senha incorreta.", tipo="erro")
+                    login_registrar_falha(email_login)
+                    mostrar_popup("E-mail ou senha incorretos.", tipo="erro")
                 else:
-                    st.session_state['_login_falhas'] = 0
+                    login_limpar_falhas(email_login)
                     if not senha_ja_hasheada(usuario['senha_hash']):  # migra senha antiga para bcrypt
                         try: supabase.table("usuarios").update({"senha_hash": hash_senha(senha_login)}).eq("id", usuario['id']).execute()
                         except Exception: registrar_erro("app.py:650"); pass
@@ -1641,6 +1678,26 @@ else:
 
 
     # ==========================================
+    # ESQUELETO DE CARREGAMENTO (some quando a tela termina de montar)
+    # ==========================================
+    _esqueleto_carregando = st.empty()
+    _esqueleto_carregando.markdown("""
+<style>
+@keyframes ll-pulso {0%,100%{opacity:.35} 50%{opacity:.8}}
+.ll-sk{background:rgba(128,128,128,.28);border-radius:8px;animation:ll-pulso 1.2s ease-in-out infinite;margin-bottom:12px}
+</style>
+<div class="ll-sk" style="height:34px;width:40%"></div>
+<div style="display:flex;gap:12px;flex-wrap:wrap">
+  <div class="ll-sk" style="height:90px;flex:1;min-width:140px"></div>
+  <div class="ll-sk" style="height:90px;flex:1;min-width:140px"></div>
+  <div class="ll-sk" style="height:90px;flex:1;min-width:140px"></div>
+</div>
+<div class="ll-sk" style="height:220px;width:100%"></div>
+<div class="ll-sk" style="height:16px;width:70%"></div>
+<div class="ll-sk" style="height:16px;width:55%"></div>
+""", unsafe_allow_html=True)
+
+    # ==========================================
     # MENU: GESTÃO DE ASSINANTES (ADMIN)
     # ==========================================
     if menu == "👑 Gestão de Assinantes":
@@ -1745,6 +1802,7 @@ else:
         if st.session_state.get('perfil') != 'admin_geral':
             st.warning("🚧 **Módulo em criação!** O Orçamento de Eventos está sendo desenvolvido e ficará disponível em breve.")
             st.info("Assim que estiver pronto, você poderá montar orçamentos, gerar o PDF e converter em evento com um clique. Enquanto isso, use o **📅 Agendamento** normalmente.")
+            _esqueleto_carregando.empty()
             st.stop()
         else:
             st.caption("🧪 Modo de teste: este módulo está visível apenas para a conta admin.")
@@ -1756,3 +1814,5 @@ else:
             calcular_distancia_google_maps=calcular_distancia_google_maps,
             gerar_pdf_orcamento=gerar_pdf_orcamento, REPORTLAB_DISPONIVEL=REPORTLAB_DISPONIVEL,
         )
+
+    _esqueleto_carregando.empty()  # terminou de montar a tela
