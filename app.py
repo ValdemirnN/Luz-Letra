@@ -2,6 +2,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 import json
 import hashlib
+import hmac
+import bcrypt
 import base64
 from supabase import create_client, Client
 import pandas as pd
@@ -117,7 +119,29 @@ def formatar_moeda(valor):
     if valor is None: return "0,00"
     return f"{float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
+# ==========================================
+# SENHAS (bcrypt) — com compatibilidade para senhas antigas em texto puro
+# ==========================================
+def _senha_bytes(senha):
+    return (senha or "").encode("utf-8")[:72]  # limite do bcrypt
+
+def hash_senha(senha):
+    return bcrypt.hashpw(_senha_bytes(senha), bcrypt.gensalt()).decode("utf-8")
+
+def senha_ja_hasheada(armazenado):
+    return isinstance(armazenado, str) and armazenado.startswith(("$2a$", "$2b$", "$2y$"))
+
+def verificar_senha(digitada, armazenado):
+    """Aceita hash bcrypt e, enquanto houver, senhas antigas em texto puro (migradas no login)."""
+    if not digitada or not armazenado: return False
+    if senha_ja_hasheada(armazenado):
+        try: return bcrypt.checkpw(_senha_bytes(digitada), armazenado.encode("utf-8"))
+        except Exception: return False
+    return hmac.compare_digest(digitada.encode("utf-8"), armazenado.encode("utf-8"))
+
 def gerar_payload_pix(chave, nome_beneficiario, cidade, valor, descricao="Assinatura"):
+    if not chave or not nome_beneficiario or not cidade:
+        raise ValueError("Chave PIX não configurada. Defina PIX_CHAVE, PIX_NOME e PIX_CIDADE nos secrets.")
     def formatar_campo(id, valor):
         return f"{id}{len(valor):02d}{valor}"
     chave_formatada = formatar_campo("01", chave)
@@ -211,6 +235,9 @@ GOOGLE_MAPS_API_KEY = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
 GOOGLE_CLIENT_ID = st.secrets.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = st.secrets.get("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email"
+PIX_CHAVE = st.secrets.get("PIX_CHAVE", "")
+PIX_NOME = st.secrets.get("PIX_NOME", "")
+PIX_CIDADE = st.secrets.get("PIX_CIDADE", "")
 
 @st.cache_resource
 def init_connection(): return create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -332,6 +359,7 @@ def ativar_conta_apos_pagamento(usuario_id, metodo):
     if resultado_user.data:
         empresa_id_pagamento = resultado_user.data[0]['empresa_id']
         supabase.table("assinaturas").update({"data_vencimento": novo_venc.strftime("%Y-%m-%d")}).eq("empresa_id", empresa_id_pagamento).execute()
+        st.cache_data.clear()
     supabase.table("usuarios").update({"ativo": True, "metodo_pagamento": metodo}).eq("id", usuario_id).execute()
 
 # ==========================================
@@ -357,7 +385,7 @@ Para manter seu acesso sem interrupção, renove agora:
 👉 Acesse o sistema → clique em "Perfil" → "Minha Assinatura"
 
 Formas de pagamento:
-  • PIX: 702.221.494-85 (Valdemir Nunes Nicacio)
+  • PIX: {PIX_CHAVE} ({PIX_NOME})
   • Cartão/Boleto: disponível no painel
   • Pagar em mãos: entre em contato
 
@@ -412,14 +440,19 @@ def verificar_e_disparar_notificacoes_expiracao():
                 except Exception: pass
     except Exception: pass
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _buscar_vencimento_cache(empresa_id):
+    r = supabase.table("assinaturas").select("data_vencimento").eq("empresa_id", empresa_id).order("data_vencimento", desc=True).limit(1).execute()
+    return r.data[0]['data_vencimento'] if r.data else None
+
 def verificar_acesso_e_bloquear():
     if st.session_state.get('perfil') == 'admin_geral': return 'ok'
     empresa_id = st.session_state.get('empresa_id')
     if not empresa_id: return 'ok'
     try:
-        ass_resp = supabase.table("assinaturas").select("data_vencimento").eq("empresa_id", empresa_id).order("data_vencimento", desc=True).limit(1).execute()
-        if not ass_resp.data: return 'ok'
-        venc_str = ass_resp.data[0]['data_vencimento'].split("T")[0]
+        venc_bruto = _buscar_vencimento_cache(empresa_id)
+        if not venc_bruto: return 'ok'
+        venc_str = venc_bruto.split("T")[0]
         venc_date = datetime.strptime(venc_str, "%Y-%m-%d").date()
         hoje = datetime.now().date()
         dias_restantes = (venc_date - hoje).days
@@ -584,6 +617,10 @@ if not st.session_state['logado']:
         senha_login = st.text_input("Senha", type="password")
         entrar = st.form_submit_button("Entrar")
 
+    if entrar and time.time() < st.session_state.get('_login_bloqueado_ate', 0):
+        mostrar_popup("Muitas tentativas incorretas. Aguarde 1 minuto e tente novamente.", tipo="erro")
+        entrar = False
+
     if entrar:
         try:
             try: resultado = supabase.table("usuarios").select("id, senha_hash, perfil, empresa_id, ativo, nome, plano").eq("email", email_login).execute()
@@ -592,8 +629,17 @@ if not st.session_state['logado']:
             else:
                 usuario = resultado.data[0]
                 if not usuario['ativo']: mostrar_popup("Usuário bloqueado. Fale com o administrador.", tipo="erro")
-                elif usuario['senha_hash'] != senha_login: mostrar_popup("Senha incorreta.", tipo="erro")
+                elif not verificar_senha(senha_login, usuario['senha_hash']):
+                    st.session_state['_login_falhas'] = st.session_state.get('_login_falhas', 0) + 1
+                    if st.session_state['_login_falhas'] >= 5:
+                        st.session_state['_login_bloqueado_ate'] = time.time() + 60
+                        st.session_state['_login_falhas'] = 0
+                    mostrar_popup("Senha incorreta.", tipo="erro")
                 else:
+                    st.session_state['_login_falhas'] = 0
+                    if not senha_ja_hasheada(usuario['senha_hash']):  # migra senha antiga para bcrypt
+                        try: supabase.table("usuarios").update({"senha_hash": hash_senha(senha_login)}).eq("id", usuario['id']).execute()
+                        except Exception: pass
                     plano_usuario = usuario.get('plano') or 'basico'
                     perfil_usuario = usuario.get('perfil') or ''
                     if perfil_usuario == 'admin_geral': limite_aparelhos = 999
@@ -727,7 +773,7 @@ if not st.session_state['logado']:
             with col_ns1:
                 if st.button("💾 Confirmar Nova Senha", disabled=not todos_requisitos_ok):
                     supabase.table("usuarios").update({
-                        "senha_hash": nova_senha_recup,
+                        "senha_hash": hash_senha(nova_senha_recup),
                         "codigo_recuperacao": None,
                         "codigo_recuperacao_expira": None
                     }).eq("id", st.session_state['recuperacao_usuario_id']).execute()
@@ -765,8 +811,8 @@ if not st.session_state['logado']:
                             hoje_cadastro = datetime.now().strftime("%Y-%m-%d")
                             supabase.table("assinaturas").insert({"empresa_id": empresa_id_criada, "plano_id": plano_padrao.data[0]['id'], "data_inicio": hoje_cadastro, "data_vencimento": hoje_cadastro}).execute()
                             token_confirmacao_novo = secrets.token_urlsafe(24)
-                            try: supabase.table("usuarios").insert({"email": email_cadastro, "senha_hash": senha_cadastro, "perfil": "dono", "empresa_id": empresa_id_criada, "ativo": False, "nome": nome_usuario_cadastro, "email_confirmado": False, "token_confirmacao": token_confirmacao_novo}).execute()
-                            except: supabase.table("usuarios").insert({"email": email_cadastro, "senha_hash": senha_cadastro, "perfil": "dono", "empresa_id": empresa_id_criada, "ativo": False}).execute()
+                            try: supabase.table("usuarios").insert({"email": email_cadastro, "senha_hash": hash_senha(senha_cadastro), "perfil": "dono", "empresa_id": empresa_id_criada, "ativo": False, "nome": nome_usuario_cadastro, "email_confirmado": False, "token_confirmacao": token_confirmacao_novo}).execute()
+                            except: supabase.table("usuarios").insert({"email": email_cadastro, "senha_hash": hash_senha(senha_cadastro), "perfil": "dono", "empresa_id": empresa_id_criada, "ativo": False}).execute()
                             enviar_email_confirmacao(email_cadastro, nome_usuario_cadastro, token_confirmacao_novo)
                             mostrar_popup("Conta criada! Enviamos um e-mail de confirmação.")
 
@@ -780,9 +826,9 @@ if not st.session_state['logado']:
         valor_cobrado = 79.9 if "Básico" in plano_escolhido_tela else 89.90
         nome_plano_bd = "basico" if "Básico" in plano_escolhido_tela else "pro"
         st.markdown("---")
-        CHAVE_PIX = "702.221.494-85"
-        NOME_PIX = "VALDEMIR NUNES NICACIO"
-        CIDADE_PIX = "ASSU/RN"
+        CHAVE_PIX = PIX_CHAVE
+        NOME_PIX = PIX_NOME
+        CIDADE_PIX = PIX_CIDADE
         metodo_escolhido = st.radio("Como quer pagar?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto", "🤝 Pagar em mãos"])
         if metodo_escolhido == "💠 Pix (QR Code)":
             try:
@@ -869,9 +915,9 @@ else:
     if status_acesso == 'bloqueado':
         st.error("⛔ Sua assinatura venceu. Seu acesso foi bloqueado automaticamente.")
         st.warning("Para reativar, realize o pagamento abaixo e envie o comprovante.")
-        CHAVE_PIX_BLOQ = "702.221.494-85"
-        NOME_PIX_BLOQ = "VALDEMIR NUNES NICACIO"
-        CIDADE_PIX_BLOQ = "ASSU/RN"
+        CHAVE_PIX_BLOQ = PIX_CHAVE
+        NOME_PIX_BLOQ = PIX_NOME
+        CIDADE_PIX_BLOQ = PIX_CIDADE
         st.markdown("### 💳 Renovar Assinatura")
         plano_renovar = st.radio("Selecione o plano:", ["Plano Básico (R$ 79,90)", "Plano Pro (R$ 89,90)"], key="plano_bloq")
         valor_renovar = 79.90 if "Básico" in plano_renovar else 89.90
@@ -997,7 +1043,7 @@ else:
             else:
                 senha_check_resp = supabase.table("usuarios").select("senha_hash").eq("id", st.session_state['usuario_id']).execute()
                 senha_hash_atual = senha_check_resp.data[0]['senha_hash'] if senha_check_resp.data else None
-                if senha_atual_perfil != senha_hash_atual: mostrar_popup("Senha incorreta.", tipo="erro")
+                if not verificar_senha(senha_atual_perfil, senha_hash_atual): mostrar_popup("Senha incorreta.", tipo="erro")
                 else:
                     email_ja_existe = supabase.table("usuarios").select("id").eq("email", novo_email_perfil).neq("id", st.session_state['usuario_id']).execute()
                     if email_ja_existe.data: mostrar_popup("Já existe outra conta usando esse e-mail.", tipo="erro")
@@ -1017,11 +1063,11 @@ else:
         if trocar_senha_btn:
             senha_check_resp2 = supabase.table("usuarios").select("senha_hash").eq("id", st.session_state['usuario_id']).execute()
             senha_hash_atual2 = senha_check_resp2.data[0]['senha_hash'] if senha_check_resp2.data else None
-            if senha_atual_troca != senha_hash_atual2: mostrar_popup("Senha atual incorreta.", tipo="erro")
+            if not verificar_senha(senha_atual_troca, senha_hash_atual2): mostrar_popup("Senha atual incorreta.", tipo="erro")
             elif len(senha_nova_troca) < 7: mostrar_popup("A nova senha precisa ter no mínimo 7 caracteres.", tipo="erro")
             elif senha_nova_troca != senha_nova_troca_confirma: mostrar_popup("As senhas não coincidem.", tipo="erro")
             else:
-                supabase.table("usuarios").update({"senha_hash": senha_nova_troca}).eq("id", st.session_state['usuario_id']).execute()
+                supabase.table("usuarios").update({"senha_hash": hash_senha(senha_nova_troca)}).eq("id", st.session_state['usuario_id']).execute()
                 mostrar_popup("SENHA ALTERADA COM SUCESSO!")
 
         st.markdown("---")
@@ -1029,9 +1075,9 @@ else:
             plano_nome_tela = "PRO 🚀" if plano_atual_usuario == 'pro' else "BÁSICO 📦"
         st.info(f"Seu plano atual é o **{plano_nome_tela}**.")
         acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "🔄 Renovar meu plano atual", "Fazer Upgrade para PRO (R$ 89,90)", "Fazer Downgrade para Básico (R$ 79,90)", "Cancelar Assinatura"])
-        CHAVE_PIX = "702.221.494-85"
-        NOME_PIX = "VALDEMIR NUNES NICACIO"
-        CIDADE_PIX = "ASSU/RN"
+        CHAVE_PIX = PIX_CHAVE
+        NOME_PIX = PIX_NOME
+        CIDADE_PIX = PIX_CIDADE
         if acao_assinatura == "Manter meu plano atual":
             st.info("Seu plano está mantido. Nenhuma alteração realizada.")
         elif acao_assinatura == "🔄 Renovar meu plano atual":
@@ -1590,10 +1636,10 @@ else:
         with tab_assinantes:
             try:
                 users = supabase.table("usuarios").select(
-                    "id, email, ativo, senha_hash, nome, email_confirmado, metodo_pagamento, comprovante_pagamento, plano, empresas(nome_fantasia), empresa_id"
+                    "id, email, ativo, nome, email_confirmado, metodo_pagamento, comprovante_pagamento, plano, empresas(nome_fantasia), empresa_id"
                 ).neq("perfil", "admin_geral").execute()
             except Exception:
-                users = supabase.table("usuarios").select("id, email, ativo, senha_hash, empresas(nome_fantasia), empresa_id").neq("perfil", "admin_geral").execute()
+                users = supabase.table("usuarios").select("id, email, ativo, empresas(nome_fantasia), empresa_id").neq("perfil", "admin_geral").execute()
 
             if users.data:
                 for u in users.data:
@@ -1655,7 +1701,7 @@ else:
                         with col2:
                             nova_senha = st.text_input("Nova Senha", key=f"pwd_{u['id']}")
                             if st.button("🔑 Mudar Senha", key=f"btn_pwd_{u['id']}") and nova_senha:
-                                supabase.table("usuarios").update({"senha_hash": nova_senha}).eq("id", u['id']).execute()
+                                supabase.table("usuarios").update({"senha_hash": hash_senha(nova_senha)}).eq("id", u['id']).execute()
                                 mostrar_popup("Senha alterada!")
                         with col3:
                             meses_add = st.number_input("Estender (meses)", min_value=1, key=f"mes_{u['id']}", value=1)
@@ -1665,6 +1711,7 @@ else:
                                 except Exception: data_base_ren = datetime.now().date()
                                 novo_venc_adm = (datetime.combine(data_base_ren, datetime.min.time()) + relativedelta(months=int(meses_add))).strftime("%Y-%m-%d")
                                 supabase.table("assinaturas").update({"data_vencimento": novo_venc_adm}).eq("empresa_id", u['empresa_id']).execute()
+                                st.cache_data.clear()
                                 if not u['ativo']: supabase.table("usuarios").update({"ativo": True}).eq("id", u['id']).execute()
                                 registrar_pagamento_historico(u['empresa_id'], u['id'], plano_u, valor_renovacao_adm, "manual_admin", venc, novo_venc_adm, aprovado_por=st.session_state.get('nome_usuario','Admin'))
                                 mostrar_popup("Plano renovado com sucesso!")
@@ -3603,21 +3650,21 @@ CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
                 d = datetime.strptime(str(data_str).split("T")[0], "%Y-%m-%d").date()
                 return d.year == ano_selecionado and d.month in meses_selecionados
             except Exception: return False
-        eventos_fat = supabase.table("eventos").select("id, data_inicio, valor_total, status, descricao").eq("empresa_id", emp_id).neq("status","Cancelado").execute()
+        eventos_fat = supabase.table("eventos").select("id, data_inicio, valor_total, status, descricao").eq("empresa_id", emp_id).neq("status","Cancelado").gte("data_inicio", f"{ano_selecionado}-01-01").lt("data_inicio", f"{ano_selecionado+1}-01-01").execute()
         eventos_periodo = [e for e in (eventos_fat.data or []) if _dentro_do_periodo(e.get('data_inicio'))]
         receita_eventos = sum(float(e.get('valor_total') or 0) for e in eventos_periodo)
         qtd_eventos_periodo = len(eventos_periodo)
         try:
-            despesas_viagem_resp = supabase.table("despesas_viagem").select("*").eq("empresa_id", emp_id).execute()
+            despesas_viagem_resp = supabase.table("despesas_viagem").select("*").eq("empresa_id", emp_id).gte("data_despesa", f"{ano_selecionado}-01-01").lt("data_despesa", f"{ano_selecionado+1}-01-01").execute()
             despesas_viagem_periodo = [d for d in (despesas_viagem_resp.data or []) if _dentro_do_periodo(d.get('data_despesa'))]
         except Exception: despesas_viagem_periodo = []
         total_despesas_viagem = sum(float(d.get('valor') or 0) for d in despesas_viagem_periodo)
         try:
-            compras_resp = supabase.table("compras").select("*").eq("empresa_id", emp_id).execute()
+            compras_resp = supabase.table("compras").select("*").eq("empresa_id", emp_id).gte("data_compra", f"{ano_selecionado}-01-01").lt("data_compra", f"{ano_selecionado+1}-01-01").execute()
             compras_periodo = [c for c in (compras_resp.data or []) if _dentro_do_periodo(c.get('data_compra'))]
         except Exception: compras_periodo = []
         total_investimento_compras = sum(float(c.get('valor_total') or 0) for c in compras_periodo)
-        fat_manual_resp = supabase.table("faturamento").select("*").eq("empresa_id", emp_id).execute()
+        fat_manual_resp = supabase.table("faturamento").select("*").eq("empresa_id", emp_id).gte("data_pagamento", f"{ano_selecionado}-01-01").lt("data_pagamento", f"{ano_selecionado+1}-01-01").execute()
         fat_manual_periodo = [f for f in (fat_manual_resp.data or []) if _dentro_do_periodo(f.get('data_pagamento'))]
         receita_manual = sum(float(f.get('valor') or 0) for f in fat_manual_periodo if f.get('tipo') == 'receita')
         despesa_manual = sum(float(f.get('valor') or 0) for f in fat_manual_periodo if f.get('tipo') == 'despesa')

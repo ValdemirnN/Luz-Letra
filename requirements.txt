@@ -9,3 +9,4 @@ requests
 openpyxl
 qrcode[pil]
 Pillow
+bcrypt>=4.0
