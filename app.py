@@ -19,6 +19,7 @@ import time
 import qrcode
 from modulos.log import registrar_erro
 from modulos.login_ui import aplicar_estilo_login, cabecalho_login, rodape_login
+from modulos.tema import aplicar_tema
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -1042,6 +1043,7 @@ else:
     # ==========================================
     # SIDEBAR
     # ==========================================
+    aplicar_tema()  # visual novo (cartões, menu, abas, mobile)
     st.sidebar.image("logo.jpg", use_container_width=True)
     if 'ver_perfil' not in st.session_state: st.session_state['ver_perfil'] = False
     if st.sidebar.button("👤 Perfil"):
