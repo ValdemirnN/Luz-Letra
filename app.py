@@ -102,6 +102,14 @@ if st.query_params.get("privacidade") == "1":
 st.markdown("""
 <style>
 div[data-testid="InputInstructions"] { display: none !important; }
+/* Remove o espaço vazio no topo: menos padding + esconde blocos invisíveis (style/script/iframe de altura 0) */
+[data-testid="stMainBlockContainer"], .block-container { padding-top: 3.5rem !important; }
+[data-testid="stElementContainer"]:has(iframe[height="0"]),
+.element-container:has(iframe[height="0"]),
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdownContainer"] > style:only-child),
+.element-container:has(> [data-testid="stMarkdownContainer"] > style:only-child),
+[data-testid="stElementContainer"]:empty,
+.element-container:empty { display: none !important; }
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; }
@@ -1019,6 +1027,7 @@ else:
     if 'ver_perfil' not in st.session_state: st.session_state['ver_perfil'] = False
     if st.sidebar.button("👤 Perfil"):
         st.session_state['ver_perfil'] = not st.session_state['ver_perfil']
+        st.session_state['_fechar_sidebar'] = True
         st.rerun()
     st.sidebar.button("Sair / Desconectar", on_click=fazer_logout)
     st.sidebar.markdown("---")
@@ -1048,6 +1057,8 @@ else:
     # Ao trocar de módulo, esconde o conteúdo da tela anterior (ainda "stale") enquanto a nova carrega,
     # em vez de mostrá-lo transparente/misturado com a tela nova.
     if st.session_state.get('_menu_anterior') != menu:
+        if st.session_state.get('_menu_anterior') is not None:
+            st.session_state['_fechar_sidebar'] = True  # não fecha no primeiro carregamento
         st.session_state['_menu_anterior'] = menu
         st.markdown(
             """<style>
@@ -1056,6 +1067,34 @@ else:
             </style>""",
             unsafe_allow_html=True,
         )
+    # No celular, o menu lateral abre por cima da tela. Depois de escolher um módulo, fecha o menu
+    # para a tela nova aparecer inteira (em vez de ficar escondida atrás do menu).
+    if st.session_state.pop('_fechar_sidebar', False):
+        st.session_state['_n_fechar_sidebar'] = st.session_state.get('_n_fechar_sidebar', 0) + 1
+        components.html(f"""
+<script>
+/* fechar menu lateral #{st.session_state['_n_fechar_sidebar']} */
+(function() {{
+  try {{
+    var w = window.parent;
+    if (w.innerWidth > 768) return;  // no computador o menu fica fixo, não fecha
+    var d = w.document;
+    function fechar() {{
+      var sb = d.querySelector('[data-testid="stSidebar"]');
+      if (!sb || sb.getAttribute('aria-expanded') === 'false') return;
+      var btn = d.querySelector('[data-testid="stSidebarCollapseButton"] button')
+             || d.querySelector('[data-testid="stSidebarHeader"] button')
+             || d.querySelector('[data-testid="stSidebarCollapseButton"]')
+             || d.querySelector('[data-testid="baseButton-header"]');
+      if (btn) btn.click();
+    }}
+    setTimeout(fechar, 150);
+    setTimeout(fechar, 600);
+  }} catch (e) {{}}
+}})();
+</script>
+""", height=0)
+
     emp_id = st.session_state.get('empresa_id')
     if not emp_id: st.stop()
 
