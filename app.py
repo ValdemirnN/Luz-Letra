@@ -65,6 +65,22 @@ components.html("""
       var l = d.createElement('link'); l.rel = 'apple-touch-icon';
       l.href = origem + '/app/static/apple-touch-icon.png'; d.head.appendChild(l);
     }
+
+    // Tira do fluxo da página os blocos de altura 0 (cookie manager, scripts, estilos), que deixavam um espaço vazio no topo.
+    function limparVazios() {
+      var lista = d.querySelectorAll('[data-testid="stMain"] [data-testid="stElementContainer"], [data-testid="stMain"] .element-container');
+      for (var i = 0; i < lista.length; i++) {
+        var el = lista[i];
+        var h = el.getBoundingClientRect().height;
+        if (el.hasAttribute('data-ll-vazio')) {
+          if (h >= 3) el.removeAttribute('data-ll-vazio');
+          continue;
+        }
+        if (h < 3) el.setAttribute('data-ll-vazio', '1');
+      }
+    }
+    limparVazios();
+    setInterval(limparVazios, 400);
   } catch (e) {}
 })();
 </script>
@@ -110,6 +126,9 @@ div[data-testid="InputInstructions"] { display: none !important; }
 .element-container:has(> [data-testid="stMarkdownContainer"] > style:only-child),
 [data-testid="stElementContainer"]:empty,
 .element-container:empty { display: none !important; }
+/* blocos que ficam com altura 0 (componentes de cookie, scripts...) saem do fluxo e não geram mais "gap" vazio */
+[data-ll-vazio] { position: absolute !important; margin: 0 !important; pointer-events: none !important; }
+[data-testid="stMainBlockContainer"] h1 { padding-top: 0.5rem !important; }
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; }
