@@ -3,6 +3,7 @@
 Recebe as dependências por parâmetro para não depender de variáveis globais do app.py.
 """
 from modulos.log import registrar_erro
+import html
 from datetime import datetime
 
 import pandas as pd
@@ -13,10 +14,42 @@ import streamlit as st
 def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
     import plotly.graph_objects as go
     st.markdown("""<style>.stApp::before { display: none !important; }</style>""", unsafe_allow_html=True)
+    st.markdown("""<style>
+.dash-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin:8px 0 4px;}
+.dash-card{background:#1B1B1D;border-radius:12px;padding:14px 16px;border-top:3px solid #333;min-width:0;}
+.dash-card .lbl{font-size:12.5px;color:#9A9A9A;font-weight:600;}
+.dash-card .val{font-size:clamp(20px,5vw,28px);font-weight:800;color:#EDEDED;line-height:1.25;margin-top:4px;overflow-wrap:anywhere;}
+.dash-card .tag{display:inline-block;margin-top:6px;font-size:11.5px;font-weight:700;border-radius:20px;padding:2px 10px;}
+.dash-ev-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));}
+@media (max-width:640px){
+.dash-card.destaque{grid-column:span 2;}
+h1{font-size:1.65rem !important;line-height:1.25 !important;}
+.block-container{padding-left:1rem !important;padding-right:1rem !important;}
+}
+</style>""", unsafe_allow_html=True)
     st.title("📊 Dashboard e Inteligência de Negócio")
     nome_exibicao = st.session_state.get('nome_usuario') or "Usuário"
-    st.markdown(f"### 👋 Bem-vindo, {nome_exibicao}!")
-    st.markdown("---")
+    st.markdown(f"#### 👋 Bem-vindo, {nome_exibicao}!")
+
+    def _kpi(rotulo, valor, cor_borda="#333", tag=None, destaque=False):
+        tag_html = ""
+        if tag:
+            txt, cor_tag, bg_tag = tag
+            tag_html = f'<div class="tag" style="color:{cor_tag};background:{bg_tag};">{txt}</div>'
+        classe = "dash-card destaque" if destaque else "dash-card"
+        return (f'<div class="{classe}" style="border-top-color:{cor_borda};">'
+                f'<div class="lbl">{rotulo}</div><div class="val">{valor}</div>{tag_html}</div>')
+
+    def _fig_ranking(df, col_x, cor_barra):
+        fig = px.bar(df, x=col_x, y="Produto", orientation='h', template="plotly_dark", text="Label", color_discrete_sequence=[cor_barra])
+        fig.update_traces(textposition='outside', cliponaxis=False, textfont=dict(size=12, color="white"))
+        fig.update_layout(dragmode=False, showlegend=False, height=max(200, 52 * len(df) + 20),
+            plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO,
+            xaxis=dict(showgrid=False, showticklabels=False, title="", zeroline=False, fixedrange=True, range=[0, float(df[col_x].max()) * 1.75]),
+            yaxis=dict(title="", showgrid=False, tickfont=dict(size=12, color='white'), fixedrange=True, automargin=True),
+            margin=dict(t=10, b=0, l=0, r=10))
+        return fig
+
     hoje_date = datetime.now().date()
     try: eventos_dash = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, valor_total, status, descricao, clientes_eventos(nome)").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
     except Exception: registrar_erro("dashboard.py:22"); eventos_dash = supabase.table("eventos").select("id, data_inicio, data_fim_alocacao, valor_total, status, descricao").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
@@ -36,12 +69,17 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
     total_receitas = receita_ev + receita_manual
     total_despesas = despesa_comp + despesa_viagem + despesa_manual
     lucro_liquido = total_receitas - total_despesas
-    col_kpi1, col_kpi2, col_kpi3, col_kpi4, col_kpi5 = st.columns(5)
-    col_kpi1.metric("💰 Receita Total", f"R$ {formatar_moeda(total_receitas)}")
-    col_kpi2.metric("📉 Despesas Totais", f"R$ {formatar_moeda(total_despesas)}")
-    col_kpi3.metric("✨ Lucro Líquido", f"R$ {formatar_moeda(lucro_liquido)}", delta="Positivo" if lucro_liquido >= 0 else "Atenção", delta_color="normal" if lucro_liquido >= 0 else "inverse")
-    col_kpi4.metric("💳 Ticket Médio", f"R$ {formatar_moeda(ticket_medio)}")
-    col_kpi5.metric("🎉 Eventos Ativos", total_eventos_ativos)
+    lucro_pos = lucro_liquido >= 0
+    kpis_html = "".join([
+        _kpi("💰 Receita Total", f"R$ {formatar_moeda(total_receitas)}", "#2E7D32"),
+        _kpi("📉 Despesas Totais", f"R$ {formatar_moeda(total_despesas)}", "#C62828"),
+        _kpi("✨ Lucro Líquido", f"R$ {formatar_moeda(lucro_liquido)}", "#FFC107" if lucro_pos else "#C62828",
+             tag=("↑ Positivo", "#4CAF50", "rgba(76,175,80,0.15)") if lucro_pos else ("↓ Atenção", "#FF6B6B", "rgba(255,107,107,0.15)"),
+             destaque=True),
+        _kpi("💳 Ticket Médio", f"R$ {formatar_moeda(ticket_medio)}"),
+        _kpi("🎉 Eventos Ativos", total_eventos_ativos),
+    ])
+    st.markdown(f'<div class="dash-grid">{kpis_html}</div>', unsafe_allow_html=True)
     st.markdown("---")
 
     # ==========================================
@@ -61,35 +99,61 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
             except Exception: registrar_erro("dashboard.py:61"); pass
     eventos_futuros_topo = sorted(eventos_futuros_topo, key=lambda x: x['Data'])[:6]
     if eventos_futuros_topo:
-        cols_prox_ev = st.columns(len(eventos_futuros_topo))
-        for col_pe, evf in zip(cols_prox_ev, eventos_futuros_topo):
+        cards_ev = []
+        for evf in eventos_futuros_topo:
             dias_ate = (evf['Data'] - hoje_date).days
             if dias_ate == 0: badge_pe = ("HOJE", "#FFC107")
             elif dias_ate == 1: badge_pe = ("AMANHÃ", "#FF9800")
             else: badge_pe = (f"em {dias_ate} dias", "#2E7D32")
-            with col_pe:
-                st.markdown(f"""
-                    <div style="background:#1B1B1D;border-radius:10px;padding:12px 14px;border-top:3px solid {badge_pe[1]};">
-                        <div style="font-size:20px;font-weight:800;color:#EDEDED;">{evf['DataStr']}</div>
-                        <div style="font-size:11px;font-weight:700;color:{badge_pe[1]};margin-bottom:6px;">{badge_pe[0]}</div>
-                        <div style="font-size:13px;font-weight:600;color:#EDEDED;">{evf['Cliente']}</div>
-                        <div style="font-size:12px;color:#9A9A9A;">{evf['Evento'][:22]}{'...' if len(evf['Evento']) > 22 else ''}</div>
-                    </div>""", unsafe_allow_html=True)
+            ev_txt = str(evf['Evento'])
+            ev_curto = html.escape(ev_txt[:22] + ('...' if len(ev_txt) > 22 else ''))
+            cards_ev.append(
+                f'<div style="background:#1B1B1D;border-radius:10px;padding:12px 14px;border-top:3px solid {badge_pe[1]};min-width:0;">'
+                f'<div style="font-size:20px;font-weight:800;color:#EDEDED;">{evf["DataStr"]}</div>'
+                f'<div style="font-size:11px;font-weight:700;color:{badge_pe[1]};margin-bottom:6px;">{badge_pe[0]}</div>'
+                f'<div style="font-size:13px;font-weight:600;color:#EDEDED;">{html.escape(str(evf["Cliente"]))}</div>'
+                f'<div style="font-size:12px;color:#9A9A9A;">{ev_curto}</div></div>')
+        st.markdown(f'<div class="dash-ev-grid">{"".join(cards_ev)}</div>', unsafe_allow_html=True)
     else:
         st.info("Agenda livre! Nenhum evento futuro programado.")
+    # Eventos já encerrados que seguem sem o status "Concluído" distorcem os números do painel
+    sem_baixa = 0
+    for ev in (eventos_dash.data or []):
+        try:
+            d_ref = ev.get('data_fim_alocacao') or ev.get('data_inicio')
+            d_fim_ev = datetime.strptime(str(d_ref).split('T')[0], "%Y-%m-%d").date()
+            if d_fim_ev < hoje_date and ev.get('status') not in ("Concluído", "Cancelado"): sem_baixa += 1
+        except Exception: registrar_erro("dashboard.py:sem_baixa"); pass
+    if sem_baixa:
+        st.caption(f"⚠️ {sem_baixa} evento(s) já encerrado(s) ainda não estão marcados como Concluído. Atualize na aba 📅 Agendamento para o painel ficar fiel.")
     st.markdown("---")
 
-    col_alerta1, col_alerta2, col_alerta3 = st.columns(3)
+    def _cabecalho_alerta(icone, titulo, qtd, cor_bg, cor_txt):
+        return (f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+                f'<span style="font-size:20px;">{icone}</span>'
+                f'<span style="font-size:15px;font-weight:700;color:#EDEDED;">{titulo}</span>'
+                f'<span style="background:{cor_bg};color:{cor_txt};font-size:12px;font-weight:700;border-radius:20px;padding:2px 10px;margin-left:auto;">{qtd}</span></div>')
+
+    def _card_alerta(titulo, subtitulo, cor_borda, direita=""):
+        return (f'<div style="border-left:4px solid {cor_borda};background:#1B1B1D;border-radius:8px;padding:10px 14px;margin-bottom:8px;">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+                f'<span style="font-weight:700;color:#EDEDED;font-size:14px;">{titulo}</span>{direita}</div>'
+                f'<div style="font-size:12.5px;margin-top:2px;">{subtitulo}</div></div>')
+
+    def _lista_com_expander(cards, max_visivel=3):
+        st.markdown("".join(cards[:max_visivel]), unsafe_allow_html=True)
+        if len(cards) > max_visivel:
+            with st.expander(f"Ver todos ({len(cards)})"):
+                st.markdown("".join(cards[max_visivel:]), unsafe_allow_html=True)
+
+    col_alerta1, col_alerta2 = st.columns(2)
     with col_alerta1:
         try:
             manutencao_check = supabase.table("manutencao").select("quantidade, produtos(nome), data_envio, data_prevista_retorno, local_manutencao").eq("empresa_id", emp_id).eq("status", "Em Manutenção").execute()
             if manutencao_check.data:
                 hoje_manut_dash = datetime.now().date()
-                st.markdown(f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-                        <span style="font-size:20px;">🔧</span>
-                        <span style="font-size:15px;font-weight:700;color:#EDEDED;">Itens em Manutenção</span>
-                        <span style="background:#FFC107;color:#0E0E0E;font-size:12px;font-weight:700;border-radius:20px;padding:2px 10px;margin-left:auto;">{len(manutencao_check.data)}</span>
-                    </div>""", unsafe_allow_html=True)
+                st.markdown(_cabecalho_alerta("🔧", "Itens em Manutenção", len(manutencao_check.data), "#FFC107", "#0E0E0E"), unsafe_allow_html=True)
+                cards_manut = []
                 for m in manutencao_check.data:
                     nome_p = m['produtos']['nome'] if m.get('produtos') else "Item"
                     local_m_dash = m.get('local_manutencao') or "Local não informado"
@@ -104,16 +168,11 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
                         atrasado_dash = hoje_manut_dash > dt_prev_dash
                     except Exception: registrar_erro("dashboard.py:105"); pass
                     cor_borda = "#B3261E" if atrasado_dash else "#FFC107"
-                    tag_atraso = '<span style="color:#FF6B6B;font-size:11px;font-weight:700;">⚠ ATRASADO</span>' if atrasado_dash else ""
+                    tag_atraso = '<span style="color:#FF6B6B;font-size:11px;font-weight:700;white-space:nowrap;">⚠ ATRASADO</span>' if atrasado_dash else ""
                     dias_txt = f"há {dias_fora} dia(s)" if dias_fora is not None else ""
-                    st.markdown(f"""
-                        <div style="border-left:4px solid {cor_borda};background:#1B1B1D;border-radius:8px;padding:10px 14px;margin-bottom:8px;">
-                            <div style="display:flex;justify-content:space-between;align-items:center;">
-                                <span style="font-weight:700;color:#EDEDED;font-size:14px;">{m['quantidade']}x {nome_p}</span>
-                                {tag_atraso}
-                            </div>
-                            <div style="color:#9A9A9A;font-size:12.5px;margin-top:2px;">📍 {local_m_dash} {('· ' + dias_txt) if dias_txt else ''}</div>
-                        </div>""", unsafe_allow_html=True)
+                    sub = f'<span style="color:#9A9A9A;">📍 {html.escape(str(local_m_dash))}{(" · " + dias_txt) if dias_txt else ""}</span>'
+                    cards_manut.append(_card_alerta(f"{m['quantidade']}x {html.escape(str(nome_p))}", sub, cor_borda, tag_atraso))
+                _lista_com_expander(cards_manut)
             else:
                 st.success("✅ Nenhum item em manutenção no momento.")
         except Exception: registrar_erro("dashboard.py:119"); pass
@@ -121,28 +180,22 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
         devolucoes_pend_dash = buscar_devolucoes_pendentes()
         if devolucoes_pend_dash:
             total_itens_pend_dash = sum(len(d['itens']) for d in devolucoes_pend_dash)
-            st.markdown(f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-                    <span style="font-size:20px;">🔁</span>
-                    <span style="font-size:15px;font-weight:700;color:#EDEDED;">Equipamentos Não Devolvidos</span>
-                    <span style="background:#B3261E;color:#EDEDED;font-size:12px;font-weight:700;border-radius:20px;padding:2px 10px;margin-left:auto;">{total_itens_pend_dash}</span>
-                </div>""", unsafe_allow_html=True)
-            for dev in devolucoes_pend_dash[:5]:
+            st.markdown(_cabecalho_alerta("🔁", "Equipamentos Não Devolvidos", total_itens_pend_dash, "#B3261E", "#EDEDED"), unsafe_allow_html=True)
+            cards_dev = []
+            for dev in devolucoes_pend_dash:
                 total_qtd_dev = sum(i['quantidade'] for i in dev['itens'])
-                st.markdown(f"""
-                    <div style="border-left:4px solid #B3261E;background:#1B1B1D;border-radius:8px;padding:10px 14px;margin-bottom:8px;">
-                        <div style="font-weight:700;color:#EDEDED;font-size:14px;">{dev['descricao']}</div>
-                        <div style="color:#FF6B6B;font-size:12px;font-weight:600;">⚠ encerrado há {dev['dias_atraso']} dia(s) — {total_qtd_dev} peça(s) pendente(s)</div>
-                    </div>""", unsafe_allow_html=True)
+                sub = f'<span style="color:#FF6B6B;font-weight:600;">⚠ encerrado há {dev["dias_atraso"]} dia(s) — {total_qtd_dev} peça(s) pendente(s)</span>'
+                cards_dev.append(_card_alerta(html.escape(str(dev['descricao'])), sub, "#B3261E"))
+            _lista_com_expander(cards_dev)
             st.caption("Confirme a devolução na aba 📅 Agendamento, dentro do evento.")
         else:
             st.success("✅ Nenhum equipamento pendente de devolução.")
-    with col_alerta3:
-        try:
-            estoque_check = supabase.table("produtos").select("nome, quantidade_estoque").eq("empresa_id", emp_id).execute()
-            if estoque_check.data:
-                zerados = [p['nome'] for p in estoque_check.data if p['quantidade_estoque'] <= 0]
-                for z in zerados: st.error(f"⚠️ **Atenção:** {z} com estoque ZERADO.")
-        except Exception: registrar_erro("dashboard.py:145"); pass
+    try:
+        estoque_check = supabase.table("produtos").select("nome, quantidade_estoque").eq("empresa_id", emp_id).execute()
+        if estoque_check.data:
+            zerados = [p['nome'] for p in estoque_check.data if (p.get('quantidade_estoque') or 0) <= 0]
+            if zerados: st.error(f"⚠️ **Estoque zerado:** {', '.join(zerados)}")
+    except Exception: registrar_erro("dashboard.py:145"); pass
     st.markdown("<br>", unsafe_allow_html=True)
     COR_FUNDO_GRAFICO = "#161618"
     col_g1, col_g2 = st.columns([2,1])
@@ -180,7 +233,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
                 line=dict(color="#FFC107", width=3), marker=dict(size=8),
                 hovertemplate="Lucro: R$ %{y:,.2f}<extra></extra>")
             fig_evolucao.update_layout(template="plotly_dark", plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO,
-                barmode="group", bargap=0.35, separators=",.", dragmode=False, hovermode="x unified", height=350,
+                barmode="group", bargap=0.35, separators=",.", dragmode=False, hovermode="x unified", height=320,
                 yaxis=dict(title="", showgrid=True, gridcolor="#333", fixedrange=True, tickformat=",.0f", zeroline=True, zerolinecolor="#555", automargin=True),
                 xaxis=dict(title="", showgrid=False, fixedrange=True, type="category"),
                 legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
@@ -195,9 +248,9 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
             status_counts.columns = ["Status","Quantidade"]
             mapa_cores_status = {"Concluído":"#2E7D32","Agendado":"#FFC107","Cancelado":"#C62828","Em Andamento":"#0277BD"}
             fig_status = px.pie(status_counts, names="Status", values="Quantidade", hole=0.6, color="Status", color_discrete_map=mapa_cores_status, template="plotly_dark")
-            fig_status.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color=COR_FUNDO_GRAFICO, width=3)))
+            fig_status.update_traces(textposition='inside', textinfo='percent', marker=dict(line=dict(color=COR_FUNDO_GRAFICO, width=3)))
             fig_status.add_annotation(text=f"<b>{total_eventos_ativos}</b><br>Eventos", x=0.5, y=0.5, font_size=18, showarrow=False, align="center")
-            fig_status.update_layout(showlegend=False, plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO, margin=dict(t=20,b=20,l=0,r=0))
+            fig_status.update_layout(showlegend=True, legend=dict(orientation="h", yanchor="top", y=-0.02, xanchor="center", x=0.5, title=""), height=320, plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO, margin=dict(t=10,b=10,l=0,r=0))
             st.plotly_chart(fig_status, use_container_width=True, config={'displayModeBar': False})
         else: st.info("Sem eventos para analisar.")
     st.markdown("---")
@@ -219,7 +272,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
     total_estoque_fisico = 1
     prods_ref_data = []
     try:
-        prod_all = supabase.table("produtos").select("id, nome, quantidade_estoque").eq("empresa_id", emp_id).execute()
+        prod_all = supabase.table("produtos").select("id, nome, quantidade_estoque, valor_locacao").eq("empresa_id", emp_id).execute()
         if prod_all.data:
             total_estoque_fisico = max(1, sum(p['quantidade_estoque'] for p in prod_all.data))
             prods_ref_data = prod_all.data
@@ -229,11 +282,11 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
         st.subheader("🎯 Taxa de Ocupação Hoje")
         st.caption("Volume do estoque total alugado no momento.")
         fig_gauge = go.Figure(go.Indicator(mode="gauge+number", value=taxa_ocupacao,
-            number={'suffix':"%",'font':{'size':36,'color':'#FFC107'}},
+            number={'suffix':"%",'font':{'size':34,'color':'#FFC107'}},
             title={'text':f"{itens_alocados_hoje} de {total_estoque_fisico} itens na rua",'font':{'size':13}},
             gauge={'axis':{'range':[None,100]},'bar':{'color':"#FFC107"},'bgcolor':"#333",'borderwidth':0,
                 'steps':[{'range':[0,40],'color':"rgba(46,125,50,0.3)"},{'range':[40,80],'color':"rgba(255,193,7,0.3)"},{'range':[80,100],'color':"rgba(198,40,40,0.3)"}]}))
-        fig_gauge.update_layout(template="plotly_dark", plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO, margin=dict(t=40,b=0,l=20,r=20), height=280)
+        fig_gauge.update_layout(template="plotly_dark", plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO, margin=dict(t=50,b=20,l=35,r=35), height=250)
         st.plotly_chart(fig_gauge, use_container_width=True, config={'displayModeBar': False})
     with col_g4:
         st.subheader("🏆 Ranking de Produtos")
@@ -283,12 +336,8 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
                     df_top = df_top.sort_values(by="Locações", ascending=True).tail(5)
                     df_top['Porcentagem'] = (df_top['Locações'] / total_alugueis_historico) * 100
                     df_top['Label'] = df_top['Locações'].astype(str) + " (" + df_top['Porcentagem'].round(1).astype(str) + "%)"
-                    fig_top = px.bar(df_top, x="Locações", y="Produto", orientation='h', template="plotly_dark", text="Label", color_discrete_sequence=["#FFC107"])
-                    fig_top.update_traces(textposition='inside', textfont_size=12, textfont_color="black")
-                    fig_top.update_layout(dragmode=False, showlegend=False, plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO,
-                        xaxis=dict(showgrid=False,showticklabels=False,title="",zeroline=False,fixedrange=True),
-                        yaxis=dict(title="",showgrid=False,tickfont=dict(size=12,color='white'),fixedrange=True), margin=dict(t=10,b=0,l=0,r=0))
-                    st.plotly_chart(fig_top, use_container_width=True, height=230, config={'displayModeBar': False})
+                    fig_top = _fig_ranking(df_top, "Locações", "#FFC107")
+                    st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
             with tab_lucro:
                 itens_por_evento = {}
@@ -326,13 +375,8 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
                     df_lucro['Label'] = df_lucro['Receita'].apply(
                         lambda x: f"R$ {x:,.2f}".replace(",","X").replace(".",",").replace("X",".")
                     )
-                    fig_lucro = px.bar(df_lucro, x="Receita", y="Produto", orientation='h',
-                        template="plotly_dark", text="Label", color_discrete_sequence=["#2E7D32"])
-                    fig_lucro.update_traces(textposition='inside', textfont_size=12, textfont_color="white")
-                    fig_lucro.update_layout(dragmode=False, showlegend=False, plot_bgcolor=COR_FUNDO_GRAFICO, paper_bgcolor=COR_FUNDO_GRAFICO,
-                        xaxis=dict(showgrid=False,showticklabels=False,title="",zeroline=False,fixedrange=True),
-                        yaxis=dict(title="",showgrid=False,tickfont=dict(size=12,color='white'),fixedrange=True), margin=dict(t=10,b=0,l=0,r=0))
-                    st.plotly_chart(fig_lucro, use_container_width=True, height=230, config={'displayModeBar': False})
+                    fig_lucro = _fig_ranking(df_lucro, "Receita", "#2E7D32")
+                    st.plotly_chart(fig_lucro, use_container_width=True, config={'displayModeBar': False})
                 else:
                     st.info("Nenhuma receita encontrada. Cadastre o valor de locação dos produtos no Estoque.")
         else:
