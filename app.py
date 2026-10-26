@@ -18,6 +18,7 @@ import secrets
 import time
 import qrcode
 from modulos.log import registrar_erro
+from modulos.login_ui import aplicar_estilo_login, cabecalho_login, rodape_login
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -652,13 +653,13 @@ def login_limpar_falhas(email):
 # TELA DE LOGIN
 # ==========================================
 if not st.session_state['logado']:
-    st.sidebar.image("logo.jpg", use_container_width=True)
-    st.title("🔒 Login - Luz & Letras")
+    aplicar_estilo_login()
+    cabecalho_login()
 
     with st.form("form_login"):
-        email_login = st.text_input("E-mail")
-        senha_login = st.text_input("Senha", type="password")
-        entrar = st.form_submit_button("Entrar")
+        email_login = st.text_input("E-mail", placeholder="voce@suaempresa.com")
+        senha_login = st.text_input("Senha", type="password", placeholder="Digite sua senha")
+        entrar = st.form_submit_button("Entrar", type="primary", use_container_width=True)
 
     if entrar:
         _espera = login_segundos_bloqueado(email_login)
@@ -718,7 +719,7 @@ if not st.session_state['logado']:
             mostrar_popup("Aparelhos antigos desconectados! Faça login novamente.")
             st.rerun()
 
-    st.markdown("---")
+    st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
     with st.expander("🔑 Esqueceu a senha? Clique aqui"):
         if 'recuperacao_etapa' not in st.session_state:
             st.session_state['recuperacao_etapa'] = 'email'
@@ -861,6 +862,8 @@ if not st.session_state['logado']:
                             except Exception: registrar_erro("app.py:824"); supabase.table("usuarios").insert({"email": email_cadastro, "senha_hash": hash_senha(senha_cadastro), "perfil": "dono", "empresa_id": empresa_id_criada, "ativo": False}).execute()
                             enviar_email_confirmacao(email_cadastro, nome_usuario_cadastro, token_confirmacao_novo)
                             mostrar_popup("Conta criada! Enviamos um e-mail de confirmação.")
+
+    rodape_login()
 
     if st.session_state.get('conta_criada_id'):
         st.markdown("---")
