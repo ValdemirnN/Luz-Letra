@@ -43,10 +43,10 @@ _CSS = """
 .cp-step b { font:700 1.08rem 'Outfit',sans-serif; color:#fff; }
 .cp-step small { color:#A1A1AA; margin-left:auto; font-size:.75rem; }
 
-[class*="st-key-cp_box"], .st-key-form_compras [data-testid="stForm"] {
+[class*="st-key-cp_box"], [data-testid="stForm"] {
     position:relative; border:1px solid rgba(255,255,255,.10) !important; border-radius:20px !important; padding:1.15rem 1.15rem .6rem !important;
     background:linear-gradient(160deg,rgba(255,255,255,.065),rgba(255,255,255,.02)) !important; box-shadow:0 12px 32px rgba(0,0,0,.35); margin-bottom:.9rem; }
-[class*="st-key-cp_box"]::before, .st-key-form_compras [data-testid="stForm"]::before {
+[class*="st-key-cp_box"]::before, [data-testid="stForm"]::before {
     content:""; position:absolute; left:22px; right:22px; top:-1px; height:2px; border-radius:2px;
     background:linear-gradient(90deg,transparent,#FFC107,transparent); box-shadow:0 0 12px rgba(255,193,7,.7); }
 
@@ -74,9 +74,9 @@ _CSS = """
 .cp-total b { font:800 1.7rem 'Outfit',sans-serif; color:#FFC107; text-shadow:0 0 18px rgba(255,193,7,.55); white-space:nowrap; }
 
 /* botão de registrar */
-.st-key-form_compras [data-testid="stFormSubmitButton"] button { width:100%; min-height:52px; font-size:1.02rem; letter-spacing:.02em;
+[data-testid="stFormSubmitButton"] button { width:100%; min-height:52px; font-size:1.02rem; letter-spacing:.02em;
     background:linear-gradient(135deg,#FFC107,#FF9F1C) !important; color:#1a1200 !important; border:none !important; box-shadow:0 10px 26px rgba(255,160,0,.40); }
-.st-key-form_compras [data-testid="stFormSubmitButton"] button:hover { filter:brightness(1.08); color:#000 !important; transform:translateY(-1px); }
+[data-testid="stFormSubmitButton"] button:hover { filter:brightness(1.08); color:#000 !important; transform:translateY(-1px); }
 
 /* histórico */
 .cp-titulo { display:flex; align-items:center; gap:10px; margin:2rem 0 .8rem; font:800 1.45rem 'Outfit',sans-serif; color:#fff; }
@@ -124,7 +124,7 @@ _CSS = """
     .cp-kpis { grid-template-columns:1fr 1fr; gap:10px; }
     .cp-kpi-hero { grid-column:1 / -1; }
     .cp-kpi { padding:14px; } .cp-kpi b { font-size:1.3rem; } .cp-kpi-hero b { font-size:1.8rem; }
-    [class*="st-key-cp_box"], .st-key-form_compras [data-testid="stForm"] { padding:1rem .9rem .4rem !important; border-radius:18px !important; }
+    [class*="st-key-cp_box"], [data-testid="stForm"] { padding:1rem .9rem .4rem !important; border-radius:18px !important; }
     .cp-total b { font-size:1.45rem; }
     .cp-card { min-height:120px; } .cp-stub { flex-basis:84px; }
 }

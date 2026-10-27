@@ -178,6 +178,12 @@ hr { border: none !important; height: 1px !important; margin: 1.6rem 0 !importan
 [data-testid="stSidebar"] .stButton > button { width: 100%; }
 [data-testid="stSidebar"] [data-testid="stAlert"] { padding: .5rem .75rem; font-weight: 600; }
 
+/* ---------- Sem rolagem horizontal / faixa vazia no fim da página ---------- */
+html, body, .stApp, [data-testid="stApp"], [data-testid="stAppViewContainer"], [data-testid="stMain"], section.main { overflow-x: hidden !important; max-width: 100vw; }
+[data-testid="stMain"]::-webkit-scrollbar:horizontal, section.main::-webkit-scrollbar:horizontal { display: none; height: 0; }
+[data-testid="stBottom"]:not(:has(textarea)):not(:has(input)):not(:has(button)) { display: none !important; }
+[data-testid="stMainBlockContainer"] { padding-bottom: 3rem !important; }
+
 /* ---------- Detalhes ---------- */
 * { scrollbar-width: thin; scrollbar-color: rgba(255,193,7,.35) transparent; }
 ::selection { background: rgba(255,193,7,.35); }
@@ -186,7 +192,7 @@ hr { border: none !important; height: 1px !important; margin: 1.6rem 0 !importan
 
 /* ---------- CELULAR ---------- */
 @media (max-width: 640px) {
-    [data-testid="stMainBlockContainer"], .block-container { padding: 3.2rem .85rem 6rem !important; }
+    [data-testid="stMainBlockContainer"], .block-container { padding: 4.4rem .85rem 3rem !important; }  /* topo livra o menu/Share; rodapé sem faixa vazia */
     /* 4 métricas em grade 2x2 em vez de empilhadas */
     [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) { flex-wrap: wrap !important; gap: .6rem !important; }
     [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="stColumn"],
