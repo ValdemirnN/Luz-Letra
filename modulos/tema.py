@@ -164,14 +164,17 @@ hr { border: none !important; height: 1px !important; margin: 1.6rem 0 !importan
 [data-testid="stSidebar"] img { border-radius: 18px; }
 [data-testid="stSidebar"] [data-testid="stRadio"] > label { display: none; }
 [data-testid="stSidebar"] [role="radiogroup"] { gap: 4px; }
-[data-testid="stSidebar"] [role="radiogroup"] > label {
+[data-testid="stSidebar"] [role="radiogroup"] > div { width: 100%; }
+[data-testid="stSidebar"] [data-testid="stRadioOption"], [data-testid="stSidebar"] [role="radiogroup"] > label {
     width: 100%; padding: 11px 14px; border-radius: 12px; border: 1px solid transparent; cursor: pointer; transition: all .15s ease; }
-[data-testid="stSidebar"] [role="radiogroup"] > label > div:first-child { display: none !important; } /* esconde a bolinha */
-[data-testid="stSidebar"] [role="radiogroup"] > label:hover { background: var(--ll-card-forte); }
-[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) {
+/* esconde a bolinha (Streamlit novo e antigo) */
+[data-testid="stSidebar"] [data-testid="stRadioOption"] > div > div:first-child,
+[data-testid="stSidebar"] [role="radiogroup"] > label:not([data-testid="stRadioOption"]) > div:first-child { display: none !important; }
+[data-testid="stSidebar"] [data-testid="stRadioOption"]:hover, [data-testid="stSidebar"] [role="radiogroup"] > label:hover { background: var(--ll-card-forte); }
+[data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input:checked), [data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) {
     background: linear-gradient(135deg, rgba(255,193,7,.22), rgba(255,159,28,.08)); border-color: var(--ll-borda-ouro);
     box-shadow: inset 3px 0 0 var(--ll-ouro), 0 0 18px rgba(255,193,7,.12); }
-[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) p { color: var(--ll-ouro) !important; font-weight: 700; }
+[data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input:checked) p, [data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) p { color: var(--ll-ouro) !important; font-weight: 700; }
 [data-testid="stSidebar"] .stButton > button { width: 100%; }
 [data-testid="stSidebar"] [data-testid="stAlert"] { padding: .5rem .75rem; font-weight: 600; }
 
