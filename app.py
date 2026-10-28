@@ -53,27 +53,36 @@ components.html("""
   try {
     var d = window.parent.document;
     var origem = window.parent.location.origin;
-    function addMeta(nome, conteudo) {
-      if (d.querySelector('meta[name="' + nome + '"]')) return;
-      var m = d.createElement('meta'); m.name = nome; m.content = conteudo; d.head.appendChild(m);
-    }
-    addMeta('apple-mobile-web-app-capable', 'yes');
-    addMeta('mobile-web-app-capable', 'yes');
-    addMeta('apple-mobile-web-app-title', 'Luz & Letra');
-    addMeta('apple-mobile-web-app-status-bar-style', 'black-translucent');
-    addMeta('theme-color', '#0E0E0E');
+    // No Streamlit Cloud o app roda dentro de um iframe: o iPhone lê a página de FORA (window.top), então ajustamos as duas.
+    var docs = [d];
+    try { if (window.top !== window.parent && window.top.document) docs.push(window.top.document); } catch (e) {}
+    var cam = window.parent.location.pathname; if (cam.slice(-1) !== '/') cam += '/';
+    var base = origem + cam + 'app/static/';
+    docs.forEach(function(doc) {
+      function setMeta(nome, conteudo) {
+        var m = doc.querySelector('meta[name="' + nome + '"]');
+        if (!m) { m = doc.createElement('meta'); m.name = nome; doc.head.appendChild(m); }
+        m.content = conteudo;
+      }
+      setMeta('apple-mobile-web-app-capable', 'yes');
+      setMeta('mobile-web-app-capable', 'yes');
+      setMeta('apple-mobile-web-app-title', 'Luz & Letra');
+      setMeta('application-name', 'Luz & Letra');
+      setMeta('apple-mobile-web-app-status-bar-style', 'black-translucent');
+      setMeta('theme-color', '#0E0E0E');
+      try { doc.title = 'Luz & Letra'; } catch (e) {}
+      doc.querySelectorAll('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"], link[rel="manifest"], link[rel~="icon"]').forEach(function(x){ x.remove(); });
+      function addLink(rel, href, extra) {
+        var l = doc.createElement('link'); l.rel = rel; l.href = href;
+        if (extra) for (var k in extra) l.setAttribute(k, extra[k]);
+        doc.head.appendChild(l);
+      }
+      addLink('apple-touch-icon', base + 'apple-touch-icon.png', {sizes: '180x180'});
+      addLink('icon', base + 'favicon-32.png', {type: 'image/png', sizes: '32x32'});
+      addLink('manifest', base + 'manifest.webmanifest');
+    });
     var vp = d.querySelector('meta[name="viewport"]');
     if (vp && vp.content.indexOf('viewport-fit') === -1) vp.content = vp.content + ', viewport-fit=cover';
-    // Ícone com a logo (iPhone e Android) + manifest (necessário para instalar no Android)
-    d.querySelectorAll('link[rel="apple-touch-icon"], link[rel="manifest"], link[rel~="icon"]').forEach(function(x){ x.remove(); });
-    function addLink(rel, href, extra) {
-      var l = d.createElement('link'); l.rel = rel; l.href = origem + href;
-      if (extra) for (var k in extra) l.setAttribute(k, extra[k]);
-      d.head.appendChild(l);
-    }
-    addLink('apple-touch-icon', '/app/static/apple-touch-icon.png', {sizes: '180x180'});
-    addLink('icon', '/app/static/favicon-32.png', {type: 'image/png', sizes: '32x32'});
-    addLink('manifest', '/app/static/manifest.webmanifest');
 
     // Sincronização: ao voltar para o app (depois de ficar em segundo plano), recarrega para trazer os dados atuais
     var saiuEm = 0;
