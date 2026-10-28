@@ -153,12 +153,15 @@ def render_topo(supabase, fazer_logout, plano_txt=""):
 # ----------------------------------------------------------------------------------
 # Seção "Foto de perfil" (usar dentro da tela Meu Perfil)
 # ----------------------------------------------------------------------------------
-def secao_foto_perfil(supabase):
+def secao_foto_perfil(supabase, em_expander=True):
     uid = st.session_state.get('usuario_id')
     nome = st.session_state.get('nome_usuario') or ""
     foto = _carregar_foto(supabase, uid)
 
-    with st.expander("📸 Foto de perfil", expanded=False):
+    contexto = st.expander("📸 Foto de perfil", expanded=False) if em_expander else st.container()
+    if not em_expander:
+        st.markdown("#### Foto de perfil")
+    with contexto:
         c1, c2 = st.columns([1, 3])
         with c1:
             st.markdown(f'<div class="ll-user-head">{_avatar_html(foto, _inicial(nome), 84)}</div>', unsafe_allow_html=True)
