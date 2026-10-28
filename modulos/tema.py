@@ -47,6 +47,10 @@ h1, h2, h3, [data-testid="stHeading"] { font-family: 'Outfit', 'Inter', sans-ser
 
 /* ---------- Cabeçalho da página ---------- */
 [data-testid="stHeader"] { background: transparent !important; }
+/* Esconde Share / estrela / lápis / GitHub / menu ⋮ e o rodapé do Streamlit */
+[data-testid="stToolbar"], [data-testid="stAppDeployButton"],
+[data-testid="stMainMenu"], [data-testid="stDecoration"],
+[data-testid="stStatusWidget"], #MainMenu, footer { display: none !important; visibility: hidden !important; }
 [data-testid="stMainBlockContainer"] h1 {
     font-weight: 800 !important; font-size: clamp(1.7rem, 5vw, 2.4rem) !important;
     background: linear-gradient(92deg, #FFFFFF 0%, #FFE082 55%, var(--ll-ouro) 100%);
