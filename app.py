@@ -21,7 +21,7 @@ from modulos.log import registrar_erro
 from modulos.cache_db import ClienteComCache, limpar_cache, iniciar_medicao, resumo_medicao
 from modulos.login_ui import aplicar_estilo_login, cabecalho_login, rodape_login
 from modulos.tema import aplicar_tema
-from modulos import topo_usuario
+from modulos import topo_usuario, perfil_ui
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -1095,7 +1095,24 @@ else:
             return f"{opcao} 🧪 (teste)"
         return opcao
 
-    menu = st.sidebar.radio("Módulos do Sistema", opcoes_menu, format_func=_rotulo_menu)
+    # Menu lateral. Dentro do Perfil nenhum módulo fica marcado; clicar em qualquer um (até no que já
+    # estava ativo) sai do Perfil e abre aquela tela.
+    if st.session_state.get('_menu_sel') not in opcoes_menu:
+        st.session_state['_menu_sel'] = opcoes_menu[0]
+    _em_perfil_menu = bool(st.session_state.get('ver_perfil'))
+    _chave_menu = f"menu_radio_{int(_em_perfil_menu)}"
+
+    def _ao_escolher_menu(chave):
+        escolhido = st.session_state.get(chave)
+        if escolhido is not None:
+            st.session_state['_menu_sel'] = escolhido
+            st.session_state['ver_perfil'] = False
+            st.session_state['_fechar_sidebar'] = True
+
+    st.sidebar.radio("Módulos do Sistema", opcoes_menu, format_func=_rotulo_menu,
+                     index=None if _em_perfil_menu else opcoes_menu.index(st.session_state['_menu_sel']),
+                     key=_chave_menu, on_change=_ao_escolher_menu, args=(_chave_menu,))
+    menu = st.session_state['_menu_sel']
 
     # Ao trocar de módulo, esconde o conteúdo da tela anterior (ainda "stale") enquanto a nova carrega,
     # em vez de mostrá-lo transparente/misturado com a tela nova.
@@ -1153,184 +1170,286 @@ else:
     # PÁGINA DE PERFIL
     # ==========================================
     if st.session_state['ver_perfil']:
-        st.title("👤 Meu Perfil")
-        if st.button("⬅️ Voltar ao Sistema"):
-            st.session_state['ver_perfil'] = False
-            st.rerun()
-        st.markdown("---")
-        topo_usuario.secao_foto_perfil(supabase)
-        dados_usuario_resp = supabase.table("usuarios").select("id, nome, email, google_refresh_token, google_email_conectado").eq("id", st.session_state['usuario_id']).execute()
+        _uid_perfil = st.session_state['usuario_id']
+        perfil_ui.aplicar_css()
+        _col_tit, _col_volta = st.columns([4, 1.3])
+        with _col_tit:
+            st.title("👤 Meu Perfil")
+        with _col_volta:
+            st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+            if st.button("⬅️ Voltar ao Sistema", use_container_width=True):
+                st.session_state['ver_perfil'] = False
+                st.rerun()
+
+        dados_usuario_resp = supabase.table("usuarios").select("id, nome, email, google_refresh_token, google_email_conectado").eq("id", _uid_perfil).execute()
         dados_usuario_atual = dados_usuario_resp.data[0] if dados_usuario_resp.data else {}
+        extra_perfil = perfil_ui.carregar_extra(supabase, _uid_perfil)
+        foto_perfil_b64 = topo_usuario._carregar_foto(supabase, _uid_perfil)
+        nome_fantasia_atual = ""
+        try:
+            _emp_resp = supabase.table("empresas").select("nome_fantasia").eq("id", st.session_state.get('empresa_id')).execute()
+            nome_fantasia_atual = (_emp_resp.data[0].get("nome_fantasia") or "") if _emp_resp.data else ""
+        except Exception: registrar_erro("app.py:perfil_empresa")
+        try: _venc_perfil = _buscar_vencimento_cache(st.session_state.get('empresa_id'))
+        except Exception: registrar_erro("app.py:perfil_venc"); _venc_perfil = None
+        _venc_txt, _venc_cls = perfil_ui.info_vencimento(_venc_perfil)
+        _pct_perfil, _faltando_perfil = perfil_ui.completude(foto_perfil_b64, dados_usuario_atual.get('nome'), dados_usuario_atual.get('email'), extra_perfil, nome_fantasia_atual)
+        _papel_perfil = {"admin_geral": "👑 Administrador", "dono": "🏷️ Proprietário"}.get(st.session_state.get('perfil'), "👤 Usuário")
+        _plano_badge = "👑 Acesso total" if st.session_state.get('perfil') == 'admin_geral' else ("🚀 Plano PRO" if plano_atual_usuario == 'pro' else "📦 Plano Básico")
+        perfil_ui.cabecalho(dados_usuario_atual.get('nome') or st.session_state.get('nome_usuario'), dados_usuario_atual.get('email'),
+                            foto_perfil_b64, _papel_perfil, _plano_badge, _venc_txt, _venc_cls, _pct_perfil, _faltando_perfil, nome_fantasia_atual)
 
-        with st.expander("📇 Meus Dados Cadastrados", expanded=False):
+        tab_dados, tab_emp, tab_seg, tab_ass, tab_int = st.tabs(["👤 Meus dados", "🏢 Empresa", "🔒 Segurança", "💳 Assinatura", "🔌 Integrações"])
+
+        # ---------------------------------------------------------------- MEUS DADOS
+        with tab_dados:
+            topo_usuario.secao_foto_perfil(supabase, em_expander=False)
+            st.markdown("#### Dados pessoais")
             with st.form("form_editar_perfil"):
-                novo_nome_perfil = st.text_input("Nome", value=dados_usuario_atual.get('nome') or "")
-                novo_email_perfil = st.text_input("E-mail", value=dados_usuario_atual.get('email') or "")
-                st.caption("Alterar o e-mail muda o login que você usa para entrar no sistema.")
-                senha_atual_perfil = st.text_input("Confirme sua senha atual para salvar", type="password")
-                salvar_perfil = st.form_submit_button("💾 Salvar Alterações")
-        if salvar_perfil:
-            if not novo_nome_perfil.strip() or not novo_email_perfil.strip(): mostrar_popup("Preencha nome e e-mail.", tipo="erro")
-            elif not senha_atual_perfil: mostrar_popup("Confirme sua senha atual para salvar as alterações.", tipo="erro")
-            else:
-                senha_check_resp = supabase.table("usuarios").select("senha_hash").eq("id", st.session_state['usuario_id']).execute()
-                senha_hash_atual = senha_check_resp.data[0]['senha_hash'] if senha_check_resp.data else None
-                if not verificar_senha(senha_atual_perfil, senha_hash_atual): mostrar_popup("Senha incorreta.", tipo="erro")
+                _c1, _c2 = st.columns(2)
+                novo_nome_perfil = _c1.text_input("Nome completo", value=dados_usuario_atual.get('nome') or "")
+                novo_email_perfil = _c2.text_input("E-mail (usado no login)", value=dados_usuario_atual.get('email') or "")
+                _c3, _c4 = st.columns(2)
+                novo_tel_perfil = _c3.text_input("Telefone / WhatsApp", value=extra_perfil.get('telefone', ''), placeholder="(85) 99999-9999")
+                novo_cargo_perfil = _c4.text_input("Função / Cargo", value=extra_perfil.get('cargo', ''), placeholder="Ex.: Proprietário, Gerente, Atendimento")
+                senha_atual_perfil = st.text_input("Senha atual", type="password", help="Só é necessária se você for trocar o e-mail de login.")
+                st.caption("🔐 A senha atual só é pedida quando você troca o e-mail, porque ele é o seu login no sistema.")
+                salvar_perfil = st.form_submit_button("💾 Salvar dados pessoais", type="primary")
+            if salvar_perfil:
+                _email_novo = novo_email_perfil.strip()
+                _email_mudou = _email_novo.lower() != (dados_usuario_atual.get('email') or "").strip().lower()
+                if not novo_nome_perfil.strip() or not _email_novo:
+                    mostrar_popup("Preencha nome e e-mail.", tipo="erro")
+                elif _email_mudou and not senha_atual_perfil:
+                    mostrar_popup("Para trocar o e-mail, confirme sua senha atual.", tipo="erro")
                 else:
-                    email_ja_existe = supabase.table("usuarios").select("id").eq("email", novo_email_perfil).neq("id", st.session_state['usuario_id']).execute()
-                    if email_ja_existe.data: mostrar_popup("Já existe outra conta usando esse e-mail.", tipo="erro")
-                    else:
-                        supabase.table("usuarios").update({"nome": novo_nome_perfil, "email": novo_email_perfil}).eq("id", st.session_state['usuario_id']).execute()
-                        st.session_state['nome_usuario'] = novo_nome_perfil
-                        mostrar_popup("PERFIL ATUALIZADO COM SUCESSO!")
-                        st.rerun()
+                    _pode_salvar = True
+                    if _email_mudou:
+                        senha_check_resp = supabase.table("usuarios").select("senha_hash").eq("id", _uid_perfil).execute()
+                        senha_hash_atual = senha_check_resp.data[0]['senha_hash'] if senha_check_resp.data else None
+                        if not verificar_senha(senha_atual_perfil, senha_hash_atual):
+                            mostrar_popup("Senha incorreta.", tipo="erro"); _pode_salvar = False
+                        else:
+                            email_ja_existe = supabase.table("usuarios").select("id").eq("email", _email_novo).neq("id", _uid_perfil).execute()
+                            if email_ja_existe.data:
+                                mostrar_popup("Já existe outra conta usando esse e-mail.", tipo="erro"); _pode_salvar = False
+                    if _pode_salvar:
+                        supabase.table("usuarios").update({"nome": novo_nome_perfil.strip(), "email": _email_novo}).eq("id", _uid_perfil).execute()
+                        st.session_state['nome_usuario'] = novo_nome_perfil.strip()
+                        _extra_novo = {**extra_perfil, "telefone": perfil_ui.fmt_tel(novo_tel_perfil), "cargo": novo_cargo_perfil.strip()}
+                        if perfil_ui.salvar_extra(supabase, _uid_perfil, _extra_novo):
+                            mostrar_popup("PERFIL ATUALIZADO COM SUCESSO!")
+                            st.rerun()
+                        else:
+                            st.warning("Nome e e-mail foram salvos, mas telefone e função não.")
+                            perfil_ui.aviso_sql_extra()
 
-                st.markdown("---")
-        with st.expander("🔑 Alterar Senha", expanded=False):
+        # ---------------------------------------------------------------- EMPRESA
+        with tab_emp:
+            st.markdown("#### Dados da empresa")
+            st.caption("Informações do seu negócio, guardadas no seu cadastro para você ter tudo num lugar só.")
+            with st.form("form_perfil_empresa"):
+                _a1, _a2 = st.columns(2)
+                emp_fantasia = _a1.text_input("Nome fantasia", value=nome_fantasia_atual)
+                emp_razao = _a2.text_input("Razão social", value=extra_perfil.get('razao_social', ''))
+                _b1, _b2, _b3 = st.columns(3)
+                emp_doc = _b1.text_input("CNPJ / CPF", value=extra_perfil.get('cnpj', ''), placeholder="00.000.000/0000-00")
+                emp_tel = _b2.text_input("Telefone comercial", value=extra_perfil.get('emp_telefone', ''), placeholder="(85) 3000-0000")
+                emp_wpp = _b3.text_input("WhatsApp comercial", value=extra_perfil.get('emp_whatsapp', ''), placeholder="(85) 99999-9999")
+                _g1, _g2 = st.columns(2)
+                emp_email = _g1.text_input("E-mail comercial", value=extra_perfil.get('emp_email', ''))
+                emp_insta = _g2.text_input("Instagram", value=extra_perfil.get('instagram', ''), placeholder="@suaempresa")
+                emp_site = st.text_input("Site", value=extra_perfil.get('site', ''), placeholder="www.suaempresa.com.br")
+                st.markdown("**📍 Endereço**")
+                _d1, _d2 = st.columns([3, 1])
+                emp_end = _d1.text_input("Rua / Avenida", value=extra_perfil.get('endereco', ''))
+                emp_num = _d2.text_input("Número", value=extra_perfil.get('numero', ''))
+                _e1, _e2, _e3, _e4 = st.columns([2, 2, 1, 1.4])
+                emp_bairro = _e1.text_input("Bairro", value=extra_perfil.get('bairro', ''))
+                emp_cidade = _e2.text_input("Cidade", value=extra_perfil.get('cidade', ''))
+                emp_uf = _e3.text_input("UF", value=extra_perfil.get('uf', ''), max_chars=2)
+                emp_cep = _e4.text_input("CEP", value=extra_perfil.get('cep', ''), placeholder="00000-000")
+                emp_horario = st.text_input("Horário de atendimento", value=extra_perfil.get('horario', ''), placeholder="Seg a Sex, 8h às 18h")
+                salvar_emp = st.form_submit_button("💾 Salvar dados da empresa", type="primary")
+            if salvar_emp:
+                if not emp_fantasia.strip():
+                    mostrar_popup("Informe o nome fantasia da empresa.", tipo="erro")
+                elif emp_doc.strip() and len(perfil_ui.so_digitos(emp_doc)) not in (11, 14):
+                    mostrar_popup("CNPJ precisa ter 14 dígitos (ou CPF, 11 dígitos).", tipo="erro")
+                elif emp_cep.strip() and len(perfil_ui.so_digitos(emp_cep)) != 8:
+                    mostrar_popup("O CEP precisa ter 8 dígitos.", tipo="erro")
+                else:
+                    if emp_fantasia.strip() != nome_fantasia_atual:
+                        try:
+                            supabase.table("empresas").update({"nome_fantasia": emp_fantasia.strip()}).eq("id", st.session_state['empresa_id']).execute()
+                        except Exception:
+                            registrar_erro("app.py:perfil_salvar_fantasia")
+                            st.error("Não foi possível atualizar o nome fantasia.")
+                    _extra_novo = {**extra_perfil,
+                        "razao_social": emp_razao.strip(), "cnpj": perfil_ui.fmt_doc(emp_doc),
+                        "emp_telefone": perfil_ui.fmt_tel(emp_tel), "emp_whatsapp": perfil_ui.fmt_tel(emp_wpp),
+                        "emp_email": emp_email.strip(), "instagram": perfil_ui.fmt_insta(emp_insta), "site": emp_site.strip(),
+                        "endereco": emp_end.strip(), "numero": emp_num.strip(), "bairro": emp_bairro.strip(),
+                        "cidade": emp_cidade.strip(), "uf": emp_uf.strip().upper(), "cep": perfil_ui.fmt_cep(emp_cep),
+                        "horario": emp_horario.strip()}
+                    if perfil_ui.salvar_extra(supabase, _uid_perfil, _extra_novo):
+                        mostrar_popup("DADOS DA EMPRESA SALVOS!")
+                        st.rerun()
+                    else:
+                        perfil_ui.aviso_sql_extra()
+
+        # ---------------------------------------------------------------- SEGURANÇA
+        with tab_seg:
+            st.markdown("#### Alterar senha")
+            st.caption("Use pelo menos 7 caracteres. Misturar letras e números deixa sua conta mais segura.")
             with st.form("form_trocar_senha_perfil"):
                 senha_atual_troca = st.text_input("Senha Atual", type="password", key="senha_atual_troca_perfil")
-                senha_nova_troca = st.text_input("Nova Senha", type="password", key="senha_nova_troca_perfil")
-                senha_nova_troca_confirma = st.text_input("Confirme a Nova Senha", type="password", key="senha_nova_confirma_perfil")
-                trocar_senha_btn = st.form_submit_button("🔒 Alterar Senha")
-        if trocar_senha_btn:
-            senha_check_resp2 = supabase.table("usuarios").select("senha_hash").eq("id", st.session_state['usuario_id']).execute()
-            senha_hash_atual2 = senha_check_resp2.data[0]['senha_hash'] if senha_check_resp2.data else None
-            if not verificar_senha(senha_atual_troca, senha_hash_atual2): mostrar_popup("Senha atual incorreta.", tipo="erro")
-            elif len(senha_nova_troca) < 7: mostrar_popup("A nova senha precisa ter no mínimo 7 caracteres.", tipo="erro")
-            elif senha_nova_troca != senha_nova_troca_confirma: mostrar_popup("As senhas não coincidem.", tipo="erro")
-            else:
-                supabase.table("usuarios").update({"senha_hash": hash_senha(senha_nova_troca)}).eq("id", st.session_state['usuario_id']).execute()
-                mostrar_popup("SENHA ALTERADA COM SUCESSO!")
+                _s1, _s2 = st.columns(2)
+                senha_nova_troca = _s1.text_input("Nova Senha", type="password", key="senha_nova_troca_perfil")
+                senha_nova_troca_confirma = _s2.text_input("Confirme a Nova Senha", type="password", key="senha_nova_confirma_perfil")
+                trocar_senha_btn = st.form_submit_button("🔒 Alterar Senha", type="primary")
+            if trocar_senha_btn:
+                senha_check_resp2 = supabase.table("usuarios").select("senha_hash").eq("id", _uid_perfil).execute()
+                senha_hash_atual2 = senha_check_resp2.data[0]['senha_hash'] if senha_check_resp2.data else None
+                if not verificar_senha(senha_atual_troca, senha_hash_atual2): mostrar_popup("Senha atual incorreta.", tipo="erro")
+                elif len(senha_nova_troca) < 7: mostrar_popup("A nova senha precisa ter no mínimo 7 caracteres.", tipo="erro")
+                elif senha_nova_troca != senha_nova_troca_confirma: mostrar_popup("As senhas não coincidem.", tipo="erro")
+                else:
+                    supabase.table("usuarios").update({"senha_hash": hash_senha(senha_nova_troca)}).eq("id", _uid_perfil).execute()
+                    mostrar_popup("SENHA ALTERADA COM SUCESSO!")
 
-        st.markdown("---")
-        with st.expander("💳 Minha Assinatura", expanded=False):
+        # ---------------------------------------------------------------- ASSINATURA
+        with tab_ass:
+            st.markdown("#### Minha assinatura")
             plano_nome_tela = "PRO 🚀" if plano_atual_usuario == 'pro' else "BÁSICO 📦"
-        st.info(f"Seu plano atual é o **{plano_nome_tela}**.")
-        acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "🔄 Renovar meu plano atual", "Fazer Upgrade para PRO (R$ 89,90)", "Fazer Downgrade para Básico (R$ 79,90)", "Cancelar Assinatura"])
-        CHAVE_PIX = PIX_CHAVE
-        NOME_PIX = PIX_NOME
-        CIDADE_PIX = PIX_CIDADE
-        if acao_assinatura == "Manter meu plano atual":
-            st.info("Seu plano está mantido. Nenhuma alteração realizada.")
-        elif acao_assinatura == "🔄 Renovar meu plano atual":
-            valor_renovar = 89.90 if plano_atual_usuario == 'pro' else 79.90
-            nome_plano_renovar = plano_atual_usuario
-            st.info(f"Renovação do plano **{plano_atual_usuario.upper()}** — R$ {formatar_moeda(valor_renovar)}/mês")
-            metodo_renovacao = st.radio("Como quer pagar?", ["💠 Pix (QR Code)", "🤝 Pagar em mãos"], key="metodo_renovacao")
-            if metodo_renovacao == "💠 Pix (QR Code)":
-                try:
-                    payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, valor_renovar, "Renovacao")
-                    qr_buffer = gerar_qrcode_pix(payload_pix)
-                    col_qr1, col_qr2 = st.columns([1,1])
-                    with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
-                    with col_qr2:
-                        st.markdown(f"**Chave PIX:** `{CHAVE_PIX}`")
-                        st.markdown(f"**Titular:** {NOME_PIX}")
-                        st.markdown(f"**Valor:** R$ {formatar_moeda(valor_renovar)}")
-                    comp_renovacao = st.text_area("Cole o comprovante aqui após pagar", key="comp_renovacao_pix")
-                    if st.button("📤 Enviar Comprovante", key="btn_comp_renovacao"):
-                        if not comp_renovacao.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
+            st.info(f"Seu plano atual é o **{plano_nome_tela}**." + (f"  \n{_venc_txt}" if _venc_txt else ""))
+            acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "🔄 Renovar meu plano atual", "Fazer Upgrade para PRO (R$ 89,90)", "Fazer Downgrade para Básico (R$ 79,90)", "Cancelar Assinatura"])
+            CHAVE_PIX = PIX_CHAVE
+            NOME_PIX = PIX_NOME
+            CIDADE_PIX = PIX_CIDADE
+            if acao_assinatura == "Manter meu plano atual":
+                st.info("Seu plano está mantido. Nenhuma alteração realizada.")
+            elif acao_assinatura == "🔄 Renovar meu plano atual":
+                valor_renovar = 89.90 if plano_atual_usuario == 'pro' else 79.90
+                nome_plano_renovar = plano_atual_usuario
+                st.info(f"Renovação do plano **{plano_atual_usuario.upper()}** — R$ {formatar_moeda(valor_renovar)}/mês")
+                metodo_renovacao = st.radio("Como quer pagar?", ["💠 Pix (QR Code)", "🤝 Pagar em mãos"], key="metodo_renovacao")
+                if metodo_renovacao == "💠 Pix (QR Code)":
+                    try:
+                        payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, valor_renovar, "Renovacao")
+                        qr_buffer = gerar_qrcode_pix(payload_pix)
+                        col_qr1, col_qr2 = st.columns([1,1])
+                        with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
+                        with col_qr2:
+                            st.markdown(f"**Chave PIX:** `{CHAVE_PIX}`")
+                            st.markdown(f"**Titular:** {NOME_PIX}")
+                            st.markdown(f"**Valor:** R$ {formatar_moeda(valor_renovar)}")
+                        comp_renovacao = st.text_area("Cole o comprovante aqui após pagar", key="comp_renovacao_pix")
+                        if st.button("📤 Enviar Comprovante", key="btn_comp_renovacao"):
+                            if not comp_renovacao.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
+                            else:
+                                supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_renovacao, "plano": nome_plano_renovar}).eq("id", st.session_state['usuario_id']).execute()
+                                mostrar_popup("Comprovante enviado! Renovaremos seu plano em breve.")
+                    except Exception as e: registrar_erro("app.py:1113"); st.error(f"Erro ao gerar QR Code: {e}")
+                else:
+                    comp_maos_ren = st.text_area("Descreva o comprovante / acordo", key="comp_maos_renovacao")
+                    if st.button("📤 Enviar", key="btn_maos_renovacao"):
+                        if not comp_maos_ren.strip(): mostrar_popup("Descreva o comprovante.", tipo="erro")
                         else:
-                            supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_renovacao, "plano": nome_plano_renovar}).eq("id", st.session_state['usuario_id']).execute()
-                            mostrar_popup("Comprovante enviado! Renovaremos seu plano em breve.")
-                except Exception as e: registrar_erro("app.py:1113"); st.error(f"Erro ao gerar QR Code: {e}")
-            else:
-                comp_maos_ren = st.text_area("Descreva o comprovante / acordo", key="comp_maos_renovacao")
-                if st.button("📤 Enviar", key="btn_maos_renovacao"):
-                    if not comp_maos_ren.strip(): mostrar_popup("Descreva o comprovante.", tipo="erro")
+                            supabase.table("usuarios").update({"metodo_pagamento": "manual", "comprovante_pagamento": comp_maos_ren, "plano": nome_plano_renovar}).eq("id", st.session_state['usuario_id']).execute()
+                            mostrar_popup("Enviado! Aguarde aprovação do administrador.")
+            elif acao_assinatura == "Fazer Upgrade para PRO (R$ 89,90)":
+                if plano_atual_usuario == 'pro': st.success("Você já está no melhor plano do sistema!")
+                else:
+                    st.warning("Ao confirmar o pagamento, as abas PRO serão liberadas automaticamente.")
+                    metodo_upgrade = st.radio("Como quer pagar o upgrade?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], key="metodo_upgrade")
+                    if metodo_upgrade == "💠 Pix (QR Code)":
+                        try:
+                            payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, 89.90, "Upgrade PRO")
+                            qr_buffer = gerar_qrcode_pix(payload_pix)
+                            col_qr1, col_qr2 = st.columns([1,1])
+                            with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
+                            with col_qr2:
+                                st.markdown("**Como pagar:**\n1. Abra o app do seu banco\n2. Vá em **Pix → Pagar → QR Code**\n3. Escaneie o código ao lado\n4. Confirme o valor **R$ 89,90**\n---\n**Ou copie a chave Pix:**")
+                                st.code(CHAVE_PIX)
+                                st.caption(f"Titular: {NOME_PIX}")
+                            st.markdown("---")
+                            comp_upgrade_pix = st.text_area("Cole aqui o comprovante do pagamento", key="comp_upgrade_pix")
+                            if st.button("📤 Enviar Comprovante Pix", key="btn_comp_upgrade_pix"):
+                                if not comp_upgrade_pix.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
+                                else:
+                                    supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_upgrade_pix}).eq("id", st.session_state['usuario_id']).execute()
+                                    mostrar_popup("Comprovante enviado! Ativaremos o PRO em breve.")
+                        except Exception as e: registrar_erro("app.py:1143"); st.error(f"Erro ao gerar QR Code: {e}")
                     else:
-                        supabase.table("usuarios").update({"metodo_pagamento": "manual", "comprovante_pagamento": comp_maos_ren, "plano": nome_plano_renovar}).eq("id", st.session_state['usuario_id']).execute()
-                        mostrar_popup("Enviado! Aguarde aprovação do administrador.")
-        elif acao_assinatura == "Fazer Upgrade para PRO (R$ 89,90)":
-            if plano_atual_usuario == 'pro': st.success("Você já está no melhor plano do sistema!")
-            else:
-                st.warning("Ao confirmar o pagamento, as abas PRO serão liberadas automaticamente.")
-                metodo_upgrade = st.radio("Como quer pagar o upgrade?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], key="metodo_upgrade")
-                if metodo_upgrade == "💠 Pix (QR Code)":
-                    try:
-                        payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, 89.90, "Upgrade PRO")
-                        qr_buffer = gerar_qrcode_pix(payload_pix)
-                        col_qr1, col_qr2 = st.columns([1,1])
-                        with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
-                        with col_qr2:
-                            st.markdown("**Como pagar:**\n1. Abra o app do seu banco\n2. Vá em **Pix → Pagar → QR Code**\n3. Escaneie o código ao lado\n4. Confirme o valor **R$ 89,90**\n---\n**Ou copie a chave Pix:**")
-                            st.code(CHAVE_PIX)
-                            st.caption(f"Titular: {NOME_PIX}")
-                        st.markdown("---")
-                        comp_upgrade_pix = st.text_area("Cole aqui o comprovante do pagamento", key="comp_upgrade_pix")
-                        if st.button("📤 Enviar Comprovante Pix", key="btn_comp_upgrade_pix"):
-                            if not comp_upgrade_pix.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
-                            else:
-                                supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_upgrade_pix}).eq("id", st.session_state['usuario_id']).execute()
-                                mostrar_popup("Comprovante enviado! Ativaremos o PRO em breve.")
-                    except Exception as e: registrar_erro("app.py:1143"); st.error(f"Erro ao gerar QR Code: {e}")
+                        if st.button("Gerar Link de Pagamento (R$ 89,90)", key="btn_upgrade_mp"):
+                            try:
+                                ref_up = f"{st.session_state['usuario_id']}_PRO"
+                                pref_up = criar_preferencia_pagamento_mp(ref_up, dados_usuario_atual.get('email',''), "Upgrade Plano PRO", 89.90)
+                                st.session_state['link_up_mp'] = pref_up.get('init_point')
+                                st.session_state['ref_up_mp'] = ref_up
+                            except Exception as e: registrar_erro("app.py:1151"); st.error(f"Erro ao gerar link: {e}")
+                        if st.session_state.get('link_up_mp'):
+                            st.link_button("🔗 Ir para Pagamento do Upgrade", st.session_state['link_up_mp'])
+                            if st.button("🔄 Já paguei, verificar", key="btn_verif_upgrade"):
+                                if verificar_pagamento_mp(st.session_state['ref_up_mp']):
+                                    supabase.table("usuarios").update({"plano": "pro"}).eq("id", st.session_state['usuario_id']).execute()
+                                    st.session_state.pop(f"_c_user_{st.session_state['usuario_id']}", None)
+                                    mostrar_popup("UPGRADE REALIZADO COM SUCESSO! 🎉")
+                                    del st.session_state['link_up_mp']
+                                    st.rerun()
+                                else: mostrar_popup("Pagamento não identificado ainda.", tipo="erro")
+            elif acao_assinatura == "Fazer Downgrade para Básico (R$ 79,90)":
+                if plano_atual_usuario == 'basico': st.success("Seu plano já é o básico.")
                 else:
-                    if st.button("Gerar Link de Pagamento (R$ 89,90)", key="btn_upgrade_mp"):
+                    st.warning("Atenção: O downgrade bloqueará seu acesso ao Faturamento, Compras e PDF imediatamente.")
+                    metodo_downgrade = st.radio("Como quer pagar o downgrade?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], key="metodo_downgrade")
+                    if metodo_downgrade == "💠 Pix (QR Code)":
                         try:
-                            ref_up = f"{st.session_state['usuario_id']}_PRO"
-                            pref_up = criar_preferencia_pagamento_mp(ref_up, dados_usuario_atual.get('email',''), "Upgrade Plano PRO", 89.90)
-                            st.session_state['link_up_mp'] = pref_up.get('init_point')
-                            st.session_state['ref_up_mp'] = ref_up
-                        except Exception as e: registrar_erro("app.py:1151"); st.error(f"Erro ao gerar link: {e}")
-                    if st.session_state.get('link_up_mp'):
-                        st.link_button("🔗 Ir para Pagamento do Upgrade", st.session_state['link_up_mp'])
-                        if st.button("🔄 Já paguei, verificar", key="btn_verif_upgrade"):
-                            if verificar_pagamento_mp(st.session_state['ref_up_mp']):
-                                supabase.table("usuarios").update({"plano": "pro"}).eq("id", st.session_state['usuario_id']).execute()
-                                st.session_state.pop(f"_c_user_{st.session_state['usuario_id']}", None)
-                                mostrar_popup("UPGRADE REALIZADO COM SUCESSO! 🎉")
-                                del st.session_state['link_up_mp']
-                                st.rerun()
-                            else: mostrar_popup("Pagamento não identificado ainda.", tipo="erro")
-        elif acao_assinatura == "Fazer Downgrade para Básico (R$ 79,90)":
-            if plano_atual_usuario == 'basico': st.success("Seu plano já é o básico.")
-            else:
-                st.warning("Atenção: O downgrade bloqueará seu acesso ao Faturamento, Compras e PDF imediatamente.")
-                metodo_downgrade = st.radio("Como quer pagar o downgrade?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], key="metodo_downgrade")
-                if metodo_downgrade == "💠 Pix (QR Code)":
-                    try:
-                        payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, 79.90, "Plano Basico")
-                        qr_buffer = gerar_qrcode_pix(payload_pix)
-                        col_qr1, col_qr2 = st.columns([1,1])
-                        with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
-                        with col_qr2:
-                            st.markdown("**Como pagar:**\n1. Abra o app do seu banco\n2. Vá em **Pix → Pagar → QR Code**\n3. Confirme o valor **R$ 79,90**\n---\n**Ou copie a chave Pix:**")
-                            st.code(CHAVE_PIX)
-                            st.caption(f"Titular: {NOME_PIX}")
-                        comp_down_pix = st.text_area("Cole aqui o comprovante do pagamento", key="comp_down_pix")
-                        if st.button("📤 Enviar Comprovante Pix", key="btn_comp_down_pix"):
-                            if not comp_down_pix.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
-                            else:
-                                supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_down_pix, "plano": "basico"}).eq("id", st.session_state['usuario_id']).execute()
-                                mostrar_popup("Comprovante enviado! Faremos o downgrade em breve.")
-                    except Exception as e: registrar_erro("app.py:1182"); st.error(f"Erro ao gerar QR Code: {e}")
-                else:
-                    if st.button("Gerar Link de Pagamento (R$ 79,90)", key="btn_down_mp"):
-                        try:
-                            ref_down = f"{st.session_state['usuario_id']}_BASICO"
-                            pref_down = criar_preferencia_pagamento_mp(ref_down, dados_usuario_atual.get('email',''), "Downgrade Plano Básico", 79.90)
-                            st.session_state['link_down_mp'] = pref_down.get('init_point')
-                            st.session_state['ref_down_mp'] = ref_down
-                        except Exception as e: registrar_erro("app.py:1190"); st.error(f"Erro: {e}")
-                    if st.session_state.get('link_down_mp'):
-                        st.link_button("🔗 Ir para Pagamento do Downgrade", st.session_state['link_down_mp'])
-                        if st.button("🔄 Já paguei, verificar", key="btn_verif_down"):
-                            if verificar_pagamento_mp(st.session_state['ref_down_mp']):
-                                supabase.table("usuarios").update({"plano": "basico"}).eq("id", st.session_state['usuario_id']).execute()
-                                st.session_state.pop(f"_c_user_{st.session_state['usuario_id']}", None)
-                                mostrar_popup("DOWNGRADE REALIZADO.")
-                                del st.session_state['link_down_mp']
-                                st.rerun()
-                            else: mostrar_popup("Pagamento não identificado ainda.", tipo="erro")
-        elif acao_assinatura == "Cancelar Assinatura":
-            st.error("⚠️ CUIDADO: Ao confirmar o cancelamento, seu acesso será bloqueado imediatamente.")
-            if st.button("🚨 Confirmar Cancelamento da Conta"):
-                supabase.table("usuarios").update({"ativo": False}).eq("id", st.session_state['usuario_id']).execute()
-                mostrar_popup("Conta cancelada. Desconectando do sistema...")
-                fazer_logout()
-                st.rerun()
-                
-        with st.expander("📅 Google Agenda", expanded=False):
+                            payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, 79.90, "Plano Basico")
+                            qr_buffer = gerar_qrcode_pix(payload_pix)
+                            col_qr1, col_qr2 = st.columns([1,1])
+                            with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
+                            with col_qr2:
+                                st.markdown("**Como pagar:**\n1. Abra o app do seu banco\n2. Vá em **Pix → Pagar → QR Code**\n3. Confirme o valor **R$ 79,90**\n---\n**Ou copie a chave Pix:**")
+                                st.code(CHAVE_PIX)
+                                st.caption(f"Titular: {NOME_PIX}")
+                            comp_down_pix = st.text_area("Cole aqui o comprovante do pagamento", key="comp_down_pix")
+                            if st.button("📤 Enviar Comprovante Pix", key="btn_comp_down_pix"):
+                                if not comp_down_pix.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
+                                else:
+                                    supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_down_pix, "plano": "basico"}).eq("id", st.session_state['usuario_id']).execute()
+                                    mostrar_popup("Comprovante enviado! Faremos o downgrade em breve.")
+                        except Exception as e: registrar_erro("app.py:1182"); st.error(f"Erro ao gerar QR Code: {e}")
+                    else:
+                        if st.button("Gerar Link de Pagamento (R$ 79,90)", key="btn_down_mp"):
+                            try:
+                                ref_down = f"{st.session_state['usuario_id']}_BASICO"
+                                pref_down = criar_preferencia_pagamento_mp(ref_down, dados_usuario_atual.get('email',''), "Downgrade Plano Básico", 79.90)
+                                st.session_state['link_down_mp'] = pref_down.get('init_point')
+                                st.session_state['ref_down_mp'] = ref_down
+                            except Exception as e: registrar_erro("app.py:1190"); st.error(f"Erro: {e}")
+                        if st.session_state.get('link_down_mp'):
+                            st.link_button("🔗 Ir para Pagamento do Downgrade", st.session_state['link_down_mp'])
+                            if st.button("🔄 Já paguei, verificar", key="btn_verif_down"):
+                                if verificar_pagamento_mp(st.session_state['ref_down_mp']):
+                                    supabase.table("usuarios").update({"plano": "basico"}).eq("id", st.session_state['usuario_id']).execute()
+                                    st.session_state.pop(f"_c_user_{st.session_state['usuario_id']}", None)
+                                    mostrar_popup("DOWNGRADE REALIZADO.")
+                                    del st.session_state['link_down_mp']
+                                    st.rerun()
+                                else: mostrar_popup("Pagamento não identificado ainda.", tipo="erro")
+            elif acao_assinatura == "Cancelar Assinatura":
+                st.error("⚠️ CUIDADO: Ao confirmar o cancelamento, seu acesso será bloqueado imediatamente.")
+                if st.button("🚨 Confirmar Cancelamento da Conta"):
+                    supabase.table("usuarios").update({"ativo": False}).eq("id", st.session_state['usuario_id']).execute()
+                    mostrar_popup("Conta cancelada. Desconectando do sistema...")
+                    fazer_logout()
+                    st.rerun()
+
+        # ---------------------------------------------------------------- INTEGRAÇÕES
+        with tab_int:
+            st.markdown("#### Google Agenda")
             if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
                 st.warning("⚠️ Integração com Google Agenda ainda não configurada pelo administrador.")
             elif dados_usuario_atual.get('google_refresh_token'):
