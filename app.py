@@ -21,6 +21,7 @@ from modulos.log import registrar_erro
 from modulos.cache_db import ClienteComCache, limpar_cache, iniciar_medicao, resumo_medicao
 from modulos.login_ui import aplicar_estilo_login, cabecalho_login, rodape_login
 from modulos.tema import aplicar_tema
+from modulos import topo_usuario
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -1068,11 +1069,10 @@ else:
     aplicar_tema()  # visual novo (cartões, menu, abas, mobile)
     st.sidebar.image("logo.jpg", use_container_width=True)
     if 'ver_perfil' not in st.session_state: st.session_state['ver_perfil'] = False
-    if st.sidebar.button("👤 Perfil"):
-        st.session_state['ver_perfil'] = not st.session_state['ver_perfil']
-        st.session_state['_fechar_sidebar'] = True
-        st.rerun()
-    st.sidebar.button("Sair / Desconectar", on_click=fazer_logout)
+    # Perfil + Sair agora ficam no avatar do canto superior direito (todas as páginas)
+    _plano_txt = ("Administrador" if st.session_state.get('perfil') == 'admin_geral'
+                  else ("Plano PRO" if plano_atual_usuario == 'pro' else "Plano Básico"))
+    topo_usuario.render_topo(supabase, fazer_logout, _plano_txt)
     st.sidebar.markdown("---")
 
     if st.session_state['perfil'] == 'admin_geral':
@@ -1158,6 +1158,7 @@ else:
             st.session_state['ver_perfil'] = False
             st.rerun()
         st.markdown("---")
+        topo_usuario.secao_foto_perfil(supabase)
         dados_usuario_resp = supabase.table("usuarios").select("id, nome, email, google_refresh_token, google_email_conectado").eq("id", st.session_state['usuario_id']).execute()
         dados_usuario_atual = dados_usuario_resp.data[0] if dados_usuario_resp.data else {}
 
