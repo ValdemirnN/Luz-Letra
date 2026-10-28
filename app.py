@@ -1085,7 +1085,9 @@ else:
         opcoes_menu = ["📊 Dashboard", "📅 Agendamento", "📦 Estoque"]
 
     # 🚧 Módulo em desenvolvimento: só o admin_geral usa por enquanto (para testes)
-    MODULOS_EM_CONSTRUCAO = ["🧳 Orçamento"]
+    # >>> Para liberar o Orçamento aos usuários PRO, troque para True (uma única linha). <<<
+    ORCAMENTO_LIBERADO_USUARIOS = False
+    MODULOS_EM_CONSTRUCAO = [] if ORCAMENTO_LIBERADO_USUARIOS else ["🧳 Orçamento"]
     _eh_admin_geral = st.session_state.get('perfil') == 'admin_geral'
 
     def _rotulo_menu(opcao):
@@ -2006,12 +2008,13 @@ else:
         st.title("🧳 Orçamento de Evento")
 
         # 🚧 Bloqueio temporário: só admin_geral enxerga o módulo enquanto está em criação
-        if st.session_state.get('perfil') != 'admin_geral':
+        # (ORCAMENTO_LIBERADO_USUARIOS = True no menu libera para os usuários PRO)
+        if "🧳 Orçamento" in MODULOS_EM_CONSTRUCAO and st.session_state.get('perfil') != 'admin_geral':
             st.warning("🚧 **Módulo em criação!** O Orçamento de Eventos está sendo desenvolvido e ficará disponível em breve.")
             st.info("Assim que estiver pronto, você poderá montar orçamentos, gerar o PDF e converter em evento com um clique. Enquanto isso, use o **📅 Agendamento** normalmente.")
             _esqueleto_carregando.empty()
             st.stop()
-        else:
+        elif "🧳 Orçamento" in MODULOS_EM_CONSTRUCAO:
             st.caption("🧪 Modo de teste: este módulo está visível apenas para a conta admin.")
 
         from modulos import orcamento
