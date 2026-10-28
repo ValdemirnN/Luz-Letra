@@ -18,6 +18,7 @@ import secrets
 import time
 import qrcode
 from modulos.log import registrar_erro
+from modulos.cache_db import ClienteComCache, limpar_cache
 from modulos.login_ui import aplicar_estilo_login, cabecalho_login, rodape_login
 from modulos.tema import aplicar_tema
 
@@ -275,7 +276,9 @@ PIX_NOME = st.secrets.get("PIX_NOME", "")
 PIX_CIDADE = st.secrets.get("PIX_CIDADE", "")
 
 @st.cache_resource
-def init_connection(): return create_client(SUPABASE_URL, SUPABASE_KEY)
+def init_connection():
+    # Cliente com cache curto de leituras (modulos/cache_db.py): acelera a troca de telas
+    return ClienteComCache(create_client(SUPABASE_URL, SUPABASE_KEY))
 
 try: supabase: Client = init_connection()
 except Exception as e:
