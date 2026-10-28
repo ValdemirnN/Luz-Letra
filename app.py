@@ -64,10 +64,24 @@ components.html("""
     addMeta('theme-color', '#0E0E0E');
     var vp = d.querySelector('meta[name="viewport"]');
     if (vp && vp.content.indexOf('viewport-fit') === -1) vp.content = vp.content + ', viewport-fit=cover';
-    if (!d.querySelector('link[rel="apple-touch-icon"]')) {
-      var l = d.createElement('link'); l.rel = 'apple-touch-icon';
-      l.href = origem + '/app/static/apple-touch-icon.png'; d.head.appendChild(l);
+    // Ícone com a logo (iPhone e Android) + manifest (necessário para instalar no Android)
+    d.querySelectorAll('link[rel="apple-touch-icon"], link[rel="manifest"], link[rel~="icon"]').forEach(function(x){ x.remove(); });
+    function addLink(rel, href, extra) {
+      var l = d.createElement('link'); l.rel = rel; l.href = origem + href;
+      if (extra) for (var k in extra) l.setAttribute(k, extra[k]);
+      d.head.appendChild(l);
     }
+    addLink('apple-touch-icon', '/app/static/apple-touch-icon.png', {sizes: '180x180'});
+    addLink('icon', '/app/static/favicon-32.png', {type: 'image/png', sizes: '32x32'});
+    addLink('manifest', '/app/static/manifest.webmanifest');
+
+    // Sincronização: ao voltar para o app (depois de ficar em segundo plano), recarrega para trazer os dados atuais
+    var saiuEm = 0;
+    d.addEventListener('visibilitychange', function() {
+      if (d.visibilityState === 'hidden') { saiuEm = Date.now(); return; }
+      if (saiuEm && Date.now() - saiuEm > 30000) { saiuEm = 0; window.parent.location.reload(); }
+    });
+    window.parent.addEventListener('pageshow', function(e) { if (e.persisted) window.parent.location.reload(); });
 
     // Tira do fluxo da página os blocos de altura 0 (cookie manager, scripts, estilos), que deixavam um espaço vazio no topo.
     function limparVazios() {

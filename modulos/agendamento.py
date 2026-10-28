@@ -9,7 +9,6 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 from dateutil.relativedelta import relativedelta
-from modulos.tema import cartao_evento_html, estado_vazio_html
 
 
 def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, buscar_devolucoes_pendentes, calcular_disponibilidade_periodo, definir_categoria, formatar_telefone_br, gerar_recibo_evento_pdf, sincronizar_evento_google_agenda_silencioso, REPORTLAB_DISPONIVEL):
@@ -103,8 +102,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
             hora_ini_fmt = ev.get('hora_inicio')[:5] if ev.get('hora_inicio') else "00:00"
             hora_fim_fmt = ev.get('hora_fim')[:5] if ev.get('hora_fim') else "23:59"
 
-            st.markdown(cartao_evento_html(titulo_ev, nome_cliente_ev, data_ini_fmt, data_ini_br, data_fim_br, hora_ini_fmt, hora_fim_fmt, status_ev, formatar_moeda(ev.get('valor_total') or 0)), unsafe_allow_html=True)
-            with st.expander("⚙️ Abrir / gerenciar evento"):
+            with st.expander(f"🎉 {titulo_ev} — {nome_cliente_ev} | {data_ini_br} ({hora_ini_fmt}) até {data_fim_br} ({hora_fim_fmt}) | Status: {status_ev}"):
                 try:
                     itens_ev = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao, valor_cobrado, devolvido").eq("evento_id", ev['id']).execute()
                 except Exception:
@@ -411,8 +409,6 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                     if historico_ev.data:
                         for h in historico_ev.data: st.write(f"🕒 **{h['data_registro']}** — {h['descricao']}")
                     else: st.caption("Nenhuma alteração registrada.")
-    else:
-        st.markdown(estado_vazio_html(), unsafe_allow_html=True)
 
     # ==========================================
     # HISTÓRICO DE EVENTOS PASSADOS
