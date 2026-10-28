@@ -25,10 +25,16 @@ _CSS_BASE = """
 
 /* O cabeçalho transparente do Streamlit cobre o topo todo e bloqueava o clique no avatar:
    ele deixa o clique passar, e só os botões dele (abrir/fechar menu lateral) continuam clicáveis. */
-[data-testid="stHeader"] { pointer-events: none !important; }
+[data-testid="stHeader"], [data-testid="stHeader"] *,
+[data-testid="stToolbar"], [data-testid="stToolbar"] *,
+[data-testid="stAppToolbar"], [data-testid="stAppToolbar"] * { pointer-events: none !important; }
 [data-testid="stHeader"] button, [data-testid="stHeader"] a,
-[data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"],
-[data-testid="stSidebarCollapseButton"] { pointer-events: auto !important; }
+[data-testid="stSidebarCollapsedControl"], [data-testid="stSidebarCollapsedControl"] *,
+[data-testid="stExpandSidebarButton"], [data-testid="stExpandSidebarButton"] *,
+[data-testid="stSidebarCollapseButton"], [data-testid="stSidebarCollapseButton"] * { pointer-events: auto !important; }
+/* o avatar (e o painel que ele abre) ficam acima de qualquer camada do cabeçalho */
+.st-key-ll_topbar, .st-key-ll_topbar * { pointer-events: auto !important; }
+[data-testid="stPopoverBody"], [data-baseweb="popover"] { z-index: 1000010 !important; pointer-events: auto !important; }
 .st-key-ll_topbar [data-testid="stPopover"] > button,
 .st-key-ll_topbar button[data-testid="stPopoverButton"] {
     width: 44px !important; height: 44px !important; min-height: 44px !important;
