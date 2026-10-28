@@ -78,7 +78,7 @@ components.html("""
         doc.head.appendChild(l);
       }
       addLink('apple-touch-icon', base + 'apple-touch-icon.png', {sizes: '180x180'});
-      addLink('icon', base + 'favicon-32.png', {type: 'image/png', sizes: '32x32'});
+      addLink('icon', base + 'icon-192.png', {type: 'image/png', sizes: '192x192'});
       addLink('manifest', base + 'manifest.webmanifest');
     });
     var vp = d.querySelector('meta[name="viewport"]');
