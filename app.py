@@ -35,7 +35,7 @@ except ImportError:
     registrar_erro("app.py:31")
     REPORTLAB_DISPONIVEL = False
 
-st.set_page_config(page_title="Luz & Letras", page_icon="logo.jpg", layout="wide")
+st.set_page_config(page_title="Luz & Letra", page_icon="logo.jpg", layout="wide")
 
 st.markdown("""
 <script>
@@ -59,7 +59,7 @@ components.html("""
     }
     addMeta('apple-mobile-web-app-capable', 'yes');
     addMeta('mobile-web-app-capable', 'yes');
-    addMeta('apple-mobile-web-app-title', 'Luz & Letras');
+    addMeta('apple-mobile-web-app-title', 'Luz & Letra');
     addMeta('apple-mobile-web-app-status-bar-style', 'black-translucent');
     addMeta('theme-color', '#0E0E0E');
     var vp = d.querySelector('meta[name="viewport"]');
@@ -90,11 +90,11 @@ components.html("""
 """, height=0)
 
 if st.query_params.get("privacidade") == "1":
-    st.title("Política de Privacidade - Luz & Letras Sistema")
+    st.title("Política de Privacidade - Luz & Letra Sistema")
     st.markdown("""
     **Última atualização:** 21 de julho de 2026
 
-    O Luz & Letras Sistema é uma plataforma de gestão para empresas de locação de itens para eventos.
+    O Luz & Letra Sistema é uma plataforma de gestão para empresas de locação de itens para eventos.
 
     ### 1. Dados que coletamos
     - Nome, e-mail e senha (para login no sistema).
@@ -345,7 +345,7 @@ def enviar_email_confirmacao(destinatario, nome_destinatario, token):
     link_confirmacao = f"{URL_BASE_SISTEMA}/?confirmar_email={token}"
     corpo = f"Olá {nome_destinatario},\n\nObrigado por criar sua conta!\nPara confirmar seu e-mail, clique no link abaixo:\n{link_confirmacao}\n"
     msg = MIMEText(corpo)
-    msg['Subject'] = "Confirme seu e-mail - Luz & Letras Sistema"
+    msg['Subject'] = "Confirme seu e-mail - Luz & Letra Sistema"
     msg['From'] = GMAIL_REMETENTE
     msg['To'] = destinatario
     try:
@@ -411,19 +411,19 @@ def ativar_conta_apos_pagamento(usuario_id, metodo):
 # ==========================================
 def enviar_email_expiracao(destinatario, nome_destinatario, dias_restantes, data_vencimento_str):
     if dias_restantes == 1:
-        assunto = "⚠️ Último dia! Sua assinatura Luz & Letras expira AMANHÃ"
+        assunto = "⚠️ Último dia! Sua assinatura Luz & Letra expira AMANHÃ"
         urgencia = "URGENTE — seu acesso será bloqueado amanhã"
     elif dias_restantes <= 3:
-        assunto = f"⚠️ Sua assinatura Luz & Letras expira em {dias_restantes} dias"
+        assunto = f"⚠️ Sua assinatura Luz & Letra expira em {dias_restantes} dias"
         urgencia = f"Atenção: apenas {dias_restantes} dias restantes"
     else:
-        assunto = f"📅 Lembrete: assinatura Luz & Letras vence em {dias_restantes} dias"
+        assunto = f"📅 Lembrete: assinatura Luz & Letra vence em {dias_restantes} dias"
         urgencia = f"Lembrete amigável: {dias_restantes} dias para o vencimento"
     corpo = f"""Olá {nome_destinatario},
 
 {urgencia.upper()}
 
-Sua assinatura do Luz & Letras Sistema vence em: {data_vencimento_str}
+Sua assinatura do Luz & Letra Sistema vence em: {data_vencimento_str}
 
 Para manter seu acesso sem interrupção, renove agora:
 👉 Acesse o sistema → clique em "Perfil" → "Minha Assinatura"
@@ -438,7 +438,7 @@ Após o vencimento, seu acesso será bloqueado automaticamente 1 dia depois.
 Dúvidas: nvaldemir76@gmail.com
 
 Atenciosamente,
-Equipe Luz & Letras
+Equipe Luz & Letra
 """
     msg = MIMEText(corpo)
     msg['Subject'] = assunto
@@ -639,10 +639,10 @@ Este código expira em 15 minutos.
 Se você não solicitou essa alteração, apenas ignore este e-mail.
 
 Atenciosamente,
-Equipe Luz & Letras
+Equipe Luz & Letra
 """
     msg = MIMEText(corpo)
-    msg['Subject'] = "Código de Recuperação de Senha - Luz & Letras"
+    msg['Subject'] = "Código de Recuperação de Senha - Luz & Letra"
     msg['From'] = GMAIL_REMETENTE
     msg['To'] = destinatario
     try:
@@ -929,7 +929,7 @@ if not st.session_state['logado']:
         metodo_escolhido = st.radio("Como quer pagar?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto", "🤝 Pagar em mãos"])
         if metodo_escolhido == "💠 Pix (QR Code)":
             try:
-                payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, valor_cobrado, "Luz e Letras")
+                payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, valor_cobrado, "Luz e Letra")
                 qr_buffer = gerar_qrcode_pix(payload_pix)
                 col_qr1, col_qr2 = st.columns([1,1])
                 with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
@@ -1653,7 +1653,7 @@ else:
             canvas_obj.drawString(6.2*cm, altura_pagina-2.15*cm, f"Evento: {evento_dict.get('descricao','-')}")
             canvas_obj.setFillColor(colors.grey)
             canvas_obj.setFont("Helvetica", 8)
-            canvas_obj.drawString(2*cm, 1.2*cm, f"Luz & Letras — Emitido em {datetime.now().strftime('%d/%m/%Y às %H:%M')}")
+            canvas_obj.drawString(2*cm, 1.2*cm, f"Luz & Letra — Emitido em {datetime.now().strftime('%d/%m/%Y às %H:%M')}")
             canvas_obj.drawRightString(largura_pagina-2*cm, 1.2*cm, f"Página {doc_obj.page}")
             canvas_obj.restoreState()
         frame_recibo = Frame(2*cm, 1.8*cm, A4[0]-4*cm, A4[1]-5.4*cm, id='corpo_recibo')
@@ -1699,12 +1699,12 @@ else:
         story.append(Spacer(1,15))
         story.append(Paragraph("<b>ASSINATURAS</b>", sub_titulo))
         story.append(Spacer(1,5))
-        assinaturas_data = [["____________________________________","____________________________________"],["Luz & Letras - Locações",f"Cliente: {nome_cliente_pdf[:25]}"],[f"Data: {datetime.now().strftime('%d/%m/%Y')}","Data: ____/____/________"]]
+        assinaturas_data = [["____________________________________","____________________________________"],["Luz & Letra - Locações",f"Cliente: {nome_cliente_pdf[:25]}"],[f"Data: {datetime.now().strftime('%d/%m/%Y')}","Data: ____/____/________"]]
         tabela_assinaturas = Table(assinaturas_data, colWidths=[8.5*cm,8.5*cm])
         tabela_assinaturas.setStyle(TableStyle([('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'BOTTOM'),('FONTNAME',(0,1),(-1,1),'Helvetica-Bold'),('FONTSIZE',(0,2),(-1,2),9),('TEXTCOLOR',(0,2),(-1,2),COR_TEXTO_CINZA)]))
         story.append(tabela_assinaturas)
         story.append(Spacer(1,15))
-        story.append(Paragraph("A equipe <b>Luz & Letras</b> agradece imensamente a sua preferência!", ParagraphStyle('Obrigado',parent=styles['Normal'],fontSize=11,alignment=TA_CENTER,spaceBefore=20,fontName="Helvetica-Oblique",textColor=COR_PRETO)))
+        story.append(Paragraph("A equipe <b>Luz & Letra</b> agradece imensamente a sua preferência!", ParagraphStyle('Obrigado',parent=styles['Normal'],fontSize=11,alignment=TA_CENTER,spaceBefore=20,fontName="Helvetica-Oblique",textColor=COR_PRETO)))
         doc.build(story)
         buffer.seek(0)
         return buffer
@@ -1735,7 +1735,7 @@ else:
             canvas_obj.drawString(6.2*cm, altura_pagina-2.15*cm, f"Evento: {orc.get('titulo_evento','-')}")
             canvas_obj.setFillColor(colors.grey)
             canvas_obj.setFont("Helvetica", 8)
-            canvas_obj.drawString(2*cm, 1.2*cm, f"Luz & Letras — Emitido em {datetime.now().strftime('%d/%m/%Y às %H:%M')}")
+            canvas_obj.drawString(2*cm, 1.2*cm, f"Luz & Letra — Emitido em {datetime.now().strftime('%d/%m/%Y às %H:%M')}")
             canvas_obj.drawRightString(largura_pagina-2*cm, 1.2*cm, f"Página {doc_obj.page}")
             canvas_obj.restoreState()
 
@@ -1797,7 +1797,7 @@ else:
             story.append(Paragraph(f"<b>Observações:</b> {orc['observacoes']}", ParagraphStyle('Obs', parent=normal_style, textColor=COR_TEXTO_CINZA)))
             story.append(Spacer(1,15))
     
-        story.append(Paragraph("Proposta sujeita à disponibilidade de estoque na data de confirmação. A equipe <b>Luz & Letras</b> agradece a preferência!",
+        story.append(Paragraph("Proposta sujeita à disponibilidade de estoque na data de confirmação. A equipe <b>Luz & Letra</b> agradece a preferência!",
             ParagraphStyle('Rodape', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER, textColor=COR_TEXTO_CINZA)))
     
         doc.build(story)

@@ -1,4 +1,4 @@
-"""Registro de erros (logging) do sistema Luz & Letras.
+"""Registro de erros (logging) do sistema Luz & Letra.
 
 Uso, dentro de um bloco `except`:
     except Exception:

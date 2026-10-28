@@ -1,4 +1,4 @@
-"""Visual da tela de login do Luz & Letras.
+"""Visual da tela de login do Luz & Letra.
 
 Só apresentação: nenhuma regra de autenticação passa por aqui.
 Uso no app.py (dentro do `if not st.session_state['logado']:`):
@@ -172,7 +172,7 @@ def aplicar_estilo_login():
 
 def cabecalho_login(titulo="Bem-vindo de volta", subtitulo="Gestão completa para a sua locadora de eventos"):
     logo = _logo_base64()
-    img = f'<img class="ll-logo" src="data:image/jpeg;base64,{logo}" alt="Luz &amp; Letras">' if logo else ""
+    img = f'<img class="ll-logo" src="data:image/jpeg;base64,{logo}" alt="Luz &amp; Letra">' if logo else ""
     st.markdown(
         f'<div class="ll-brand">{img}<h1>{titulo}</h1><p>{subtitulo}</p></div>',
         unsafe_allow_html=True,
@@ -191,7 +191,7 @@ def rodape_login():
         </div>
         <div class="ll-foot">
             🔒 Acesso protegido por senha criptografada<br>
-            © Luz &amp; Letras · <a href="?privacidade=1" target="_self">Política de Privacidade</a>
+            © Luz &amp; Letra · <a href="?privacidade=1" target="_self">Política de Privacidade</a>
         </div>
         """,
         unsafe_allow_html=True,

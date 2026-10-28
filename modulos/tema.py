@@ -1,4 +1,4 @@
-"""Tema visual "Palco & Neon" do Luz & Letras.
+"""Tema visual "Palco & Neon" do Luz & Letra.
 
 Só apresentação (CSS): não mexe em nenhuma regra de negócio.
 Uso no app.py, logo depois do login (antes da sidebar):
