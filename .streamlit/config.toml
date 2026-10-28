@@ -10,5 +10,8 @@ headless = true
 enableCORS = false
 enableStaticServing = true
 
+[client]
+toolbarMode = "minimal"
+
 [browser]
 gatherUsageStats = false
