@@ -51,9 +51,10 @@ _CSS = """<style>
 .st-key-dash_secao [data-testid="stRadioOption"]:has(input:checked) p { color:#1a1200 !important; font-weight:800; }
 
 /* cartão de filtro por período */
-.st-key-dash_filtro { background:#1B1B1D; border-radius:14px; border-left:4px solid #FFC107; padding:12px 16px 6px !important; margin:6px 0 10px; }
+.st-key-dash_filtro { background:#1B1B1D; border-radius:14px; border-left:4px solid #FFC107; padding:14px 18px 16px !important; margin:6px 0 14px; height:auto !important; overflow:visible !important; gap:.5rem !important; box-sizing:border-box; }
 .st-key-dash_filtro [data-testid="stSelectbox"] label p { font-weight:700; }
-.dash-filtro-obs { color:#9A9A9A; font-size:12px; line-height:1.4; padding-top:4px; }
+.st-key-dash_filtro [data-testid="stSelectbox"] { max-width:420px; }
+.dash-filtro-obs { color:#9A9A9A; font-size:12.5px; line-height:1.45; margin:2px 0 0; padding:0; overflow-wrap:anywhere; }
 
 @media (max-width:640px){
 .dash-card.destaque{grid-column:span 2;}
@@ -216,15 +217,12 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
 
         if secao != "alertas":
             with st.container(key="dash_filtro"):
-                c_f1, c_f2 = st.columns([1, 2])
-                with c_f1:
-                    st.selectbox("📅 Período", opcoes_periodo,
-                                 index=opcoes_periodo.index(st.session_state['dash_periodo']),
-                                 key="dash_periodo_w", on_change=_guardar_periodo)
-                with c_f2:
-                    st.markdown('<div class="dash-filtro-obs">Vale para os cards e gráficos de resultado. '
-                                'Alertas, Ocupação Hoje e Próximos Eventos mostram sempre o momento atual.</div>',
-                                unsafe_allow_html=True)
+                st.selectbox("📅 Período", opcoes_periodo,
+                             index=opcoes_periodo.index(st.session_state['dash_periodo']),
+                             key="dash_periodo_w", on_change=_guardar_periodo)
+                st.markdown('<div class="dash-filtro-obs">Vale para os cards e gráficos de resultado. '
+                            'Alertas, Ocupação Hoje e Próximos Eventos mostram sempre o momento atual.</div>',
+                            unsafe_allow_html=True)
         nome_periodo = st.session_state['dash_periodo']
         periodo = mes_do_rotulo.get(nome_periodo)  # None = todo o período
 
