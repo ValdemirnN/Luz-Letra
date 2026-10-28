@@ -34,6 +34,7 @@ _CSS = """<style>
 .dash-chip{background:#1B1B1D;border-radius:12px;padding:12px 16px;border-left:4px solid #333;display:flex;align-items:center;gap:12px;}
 .dash-chip .n{font-size:26px;font-weight:800;color:#EDEDED;line-height:1;}
 .dash-chip .t{font-size:12.5px;color:#9A9A9A;font-weight:600;line-height:1.25;}
+.dash-chip .t.caps{text-transform:uppercase;letter-spacing:0.4px;}
 
 /* navegação por seções (pílulas) — mesmo visual do Estoque */
 .st-key-dash_secao, .st-key-dash_secao [data-testid="stRadio"] { width:100% !important; }
@@ -93,9 +94,10 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
         return (f'<div class="{classe}" style="border-top-color:{cor_borda};">'
                 f'<div class="lbl">{rotulo}</div><div class="val">{valor}</div>{tag_html}</div>')
 
-    def _chip(numero, texto, cor):
+    def _chip(numero, texto, cor, caps=False):
+        cls = "t caps" if caps else "t"
         return (f'<div class="dash-chip" style="border-left-color:{cor};">'
-                f'<div class="n">{numero}</div><div class="t">{texto}</div></div>')
+                f'<div class="n">{numero}</div><div class="{cls}">{texto}</div></div>')
 
     def _fig_ranking(df, col_x, cor_barra):
         fig = px.bar(df, x=col_x, y="Produto", orientation='h', template="plotly_dark", text="Label", color_discrete_sequence=[cor_barra])
@@ -327,10 +329,10 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
         # ==============================================================
         if secao == "resumo":
             chips = [
-                _chip(len(eventos_futuros), "eventos<br>programados", "#2E7D32"),
-                _chip(len(devolucoes_pend), "devoluções<br>pendentes", "#B3261E" if devolucoes_pend else "#333"),
-                _chip(len(manut_data), "itens em<br>manutenção", "#FFC107" if manut_data else "#333"),
-                _chip(len(zerados), "produtos com<br>estoque zerado", "#B3261E" if zerados else "#333"),
+                _chip(len(eventos_futuros), "eventos<br>programados", "#2E7D32", caps=True),
+                _chip(len(devolucoes_pend), "devoluções<br>pendentes", "#B3261E" if devolucoes_pend else "#333", caps=True),
+                _chip(len(manut_data), "itens em<br>manutenção", "#FFC107" if manut_data else "#333", caps=True),
+                _chip(len(zerados), "produtos com<br>estoque zerado", "#B3261E" if zerados else "#333", caps=True),
             ]
             st.markdown(f'<div class="dash-chip-grid">{"".join(chips)}</div>', unsafe_allow_html=True)
             _aviso_sem_baixa()
