@@ -45,15 +45,20 @@ _CSS_BASE = """
     transform: scale(1.06);
     box-shadow: 0 0 0 4px rgba(255,193,7,.30), 0 4px 14px rgba(0,0,0,.45) !important;
 }
-/* inicial do nome (sem seta do popover) */
-.st-key-ll_topbar [data-testid="stPopover"] > button p,
-.st-key-ll_topbar button[data-testid="stPopoverButton"] p {
-    font-weight: 800 !important; font-size: 18px !important; color: #FFC107 !important; margin: 0 !important;
+/* inicial do nome, centralizada (sem a seta do popover e sem o espaço que ela reserva) */
+.st-key-ll_topbar button[data-testid="stPopoverButton"] [aria-hidden="true"],
+.st-key-ll_topbar [data-testid="stPopover"] button [aria-hidden="true"] { display: none !important; }
+.st-key-ll_topbar button[data-testid="stPopoverButton"] div,
+.st-key-ll_topbar button[data-testid="stPopoverButton"] span {
+    margin: 0 !important; padding: 0 !important; gap: 0 !important;
+    justify-content: center !important; align-items: center !important;
+    max-width: 100% !important;
 }
-.st-key-ll_topbar [data-testid="stPopover"] > button [data-testid="stIconMaterial"],
-.st-key-ll_topbar [data-testid="stPopover"] > button svg,
-.st-key-ll_topbar button[data-testid="stPopoverButton"] [data-testid="stIconMaterial"],
-.st-key-ll_topbar button[data-testid="stPopoverButton"] svg { display: none !important; }
+.st-key-ll_topbar button[data-testid="stPopoverButton"] > div { width: 100% !important; height: 100% !important; }
+.st-key-ll_topbar button[data-testid="stPopoverButton"] p {
+    font-weight: 800 !important; font-size: 18px !important; color: #FFC107 !important;
+    margin: 0 !important; padding: 0 !important; line-height: 1 !important; text-align: center !important;
+}
 
 /* ---------- Painel que abre ao clicar ---------- */
 [data-testid="stPopoverBody"] { min-width: 230px; }
