@@ -20,7 +20,15 @@ _CSS_BASE = """
     position: fixed !important; top: 10px; right: 18px; z-index: 1000002;
     width: auto !important; min-width: 0 !important;
 }
+.st-key-ll_topbar { pointer-events: auto !important; }
 .st-key-ll_topbar [data-testid="stPopover"] { width: auto !important; }
+
+/* O cabeçalho transparente do Streamlit cobre o topo todo e bloqueava o clique no avatar:
+   ele deixa o clique passar, e só os botões dele (abrir/fechar menu lateral) continuam clicáveis. */
+[data-testid="stHeader"] { pointer-events: none !important; }
+[data-testid="stHeader"] button, [data-testid="stHeader"] a,
+[data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"],
+[data-testid="stSidebarCollapseButton"] { pointer-events: auto !important; }
 .st-key-ll_topbar [data-testid="stPopover"] > button,
 .st-key-ll_topbar button[data-testid="stPopoverButton"] {
     width: 44px !important; height: 44px !important; min-height: 44px !important;
