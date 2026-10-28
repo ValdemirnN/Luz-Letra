@@ -47,14 +47,27 @@ h1, h2, h3, [data-testid="stHeading"] { font-family: 'Outfit', 'Inter', sans-ser
 
 /* ---------- Cabeçalho da página ---------- */
 [data-testid="stHeader"] { background: transparent !important; }
-/* Esconde Share / estrela / lápis / GitHub / menu ⋮ e o rodapé do Streamlit */
-[data-testid="stToolbar"], [data-testid="stToolbarActions"], [data-testid="stAppToolbar"],
+/* Esconde Share / estrela / lápis / GitHub / menu ⋮ e o rodapé do Streamlit.
+   ATENÇÃO: NÃO esconder o [data-testid="stToolbar"] inteiro nem usar "stToolbar *": nas versões novas
+   do Streamlit o botão que ABRE o menu lateral (☰ / »)  fica dentro dele, e sumia no celular. */
+[data-testid="stToolbarActions"], [data-testid="stAppToolbar"] [data-testid="stToolbarActions"],
 [data-testid="stActionElements"], [data-testid="stAppDeployButton"],
 [data-testid="stMainMenu"], [data-testid="stDecoration"],
-[data-testid="stStatusWidget"], .stDeployButton, .stAppToolbar, .stToolbarActions,
-header [data-testid="stToolbar"] *, #MainMenu, footer,
+[data-testid="stStatusWidget"], .stDeployButton, .stToolbarActions,
+#MainMenu, footer,
 a[href*="github.com"][target="_blank"][class*="Toolbar"],
-[class*="ToolbarActions"], [class*="stToolbar"] { display: none !important; visibility: hidden !important; }
+[class*="ToolbarActions"] { display: none !important; visibility: hidden !important; }
+/* Botão de abrir o menu lateral: sempre visível, em dourado, acima de tudo */
+[data-testid="stExpandSidebarButton"], [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"] {
+    display: flex !important; visibility: visible !important; opacity: 1 !important;
+    position: fixed !important; top: 10px; left: 12px; z-index: 1000003 !important;
+    width: 44px; height: 44px; align-items: center; justify-content: center;
+    background: #1B1B1D !important; border: 2px solid #FFC107 !important; border-radius: 50% !important;
+    box-shadow: 0 0 0 3px rgba(255,193,7,.18), 0 4px 14px rgba(0,0,0,.45);
+    pointer-events: auto !important;
+}
+[data-testid="stExpandSidebarButton"] *, [data-testid="stSidebarCollapsedControl"] *, [data-testid="collapsedControl"] *,
+[data-testid="stExpandSidebarButton"] svg { visibility: visible !important; color: #FFC107 !important; fill: #FFC107 !important; }
 [data-testid="stMainBlockContainer"] h1 {
     font-weight: 800 !important; font-size: clamp(1.7rem, 5vw, 2.4rem) !important;
     background: linear-gradient(92deg, #FFFFFF 0%, #FFE082 55%, var(--ll-ouro) 100%);
