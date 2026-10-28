@@ -225,10 +225,14 @@ def mostrar_popup(mensagem, tipo="sucesso", tempo=1.5):
         time.sleep(tempo)
         alerta.empty()
 
+@st.cache_data(show_spinner=False)
+def _logo_base64(caminho_logo):
+    with open(caminho_logo, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
 def aplicar_fundo_com_logo(caminho_logo="logo.jpg"):
     try:
-        with open(caminho_logo, "rb") as f:
-            logo_base64 = base64.b64encode(f.read()).decode()
+        logo_base64 = _logo_base64(caminho_logo)
         st.markdown(f"""
         <style>
         .stApp {{ position: relative; }}
@@ -474,6 +478,17 @@ def verificar_e_disparar_notificacoes_expiracao():
                     supabase.table("notificacoes_enviadas").insert({"usuario_id": u['id'], "tipo": f"expiracao_{dias_restantes}d", "referencia": venc_str, "enviado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}).execute()
                 except Exception: registrar_erro("app.py:446"); pass
     except Exception: registrar_erro("app.py:447"); pass
+
+def _cache_curto(chave, ttl, buscar):
+    """Guarda o resultado de uma consulta por 'ttl' segundos na sessão do usuário.
+    Evita refazer as mesmas consultas de verificação a cada clique/troca de tela."""
+    agora = time.time()
+    item = st.session_state.get(chave)
+    if item and agora - item[0] < ttl:
+        return item[1]
+    valor = buscar()
+    st.session_state[chave] = (agora, valor)
+    return valor
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _buscar_vencimento_cache(empresa_id):
@@ -967,14 +982,17 @@ else:
     # Vigia de sessão contínua
     token_atual = st.session_state.get('token_sessao')
     if token_atual:
-        sessao_valida = supabase.table("sessoes_ativas").select("id").eq("token", token_atual).execute()
+        sessao_valida = _cache_curto(f"_c_sessao_{token_atual}", 20,
+            lambda: supabase.table("sessoes_ativas").select("id").eq("token", token_atual).execute())
         if not sessao_valida.data:
             mostrar_popup("Sua sessão foi desconectada por outro aparelho.", tipo="erro")
             fazer_logout()
             st.rerun()
 
-    try: check_user = supabase.table("usuarios").select("ativo, plano").eq("id", st.session_state['usuario_id']).execute()
-    except Exception: registrar_erro("app.py:909"); check_user = supabase.table("usuarios").select("ativo").eq("id", st.session_state['usuario_id']).execute()
+    def _buscar_check_user():
+        try: return supabase.table("usuarios").select("ativo, plano").eq("id", st.session_state['usuario_id']).execute()
+        except Exception: registrar_erro("app.py:909"); return supabase.table("usuarios").select("ativo").eq("id", st.session_state['usuario_id']).execute()
+    check_user = _cache_curto(f"_c_user_{st.session_state['usuario_id']}", 20, _buscar_check_user)
 
     if check_user.data and not check_user.data[0]['ativo']:
         mostrar_popup("Sua sessão foi desconectada pelo Administrador.", tipo="erro")
@@ -1254,6 +1272,7 @@ else:
                         if st.button("🔄 Já paguei, verificar", key="btn_verif_upgrade"):
                             if verificar_pagamento_mp(st.session_state['ref_up_mp']):
                                 supabase.table("usuarios").update({"plano": "pro"}).eq("id", st.session_state['usuario_id']).execute()
+                                st.session_state.pop(f"_c_user_{st.session_state['usuario_id']}", None)
                                 mostrar_popup("UPGRADE REALIZADO COM SUCESSO! 🎉")
                                 del st.session_state['link_up_mp']
                                 st.rerun()
@@ -1293,6 +1312,7 @@ else:
                         if st.button("🔄 Já paguei, verificar", key="btn_verif_down"):
                             if verificar_pagamento_mp(st.session_state['ref_down_mp']):
                                 supabase.table("usuarios").update({"plano": "basico"}).eq("id", st.session_state['usuario_id']).execute()
+                                st.session_state.pop(f"_c_user_{st.session_state['usuario_id']}", None)
                                 mostrar_popup("DOWNGRADE REALIZADO.")
                                 del st.session_state['link_down_mp']
                                 st.rerun()
