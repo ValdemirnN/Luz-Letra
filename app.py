@@ -1094,11 +1094,15 @@ else:
             return f"{opcao} 🧪 (teste)"
         return opcao
 
-    menu = st.sidebar.radio("Módulos do Sistema", opcoes_menu, format_func=_rotulo_menu)
+    # Menu de módulos: True = pílulas no topo da tela (troca instantânea, só o conteúdo recarrega);
+    # False = menu lateral clássico (cada troca recarrega a página inteira).
+    MENU_NO_TOPO = True
+    if not MENU_NO_TOPO:
+        menu = st.sidebar.radio("Módulos do Sistema", opcoes_menu, format_func=_rotulo_menu)
 
     # Ao trocar de módulo, esconde o conteúdo da tela anterior (ainda "stale") enquanto a nova carrega,
     # em vez de mostrá-lo transparente/misturado com a tela nova.
-    if st.session_state.get('_menu_anterior') != menu:
+    if not MENU_NO_TOPO and st.session_state.get('_menu_anterior') != menu:
         if st.session_state.get('_menu_anterior') is not None:
             st.session_state['_fechar_sidebar'] = True  # não fecha no primeiro carregamento
         st.session_state['_menu_anterior'] = menu
@@ -1764,10 +1768,11 @@ else:
 
 
     # ==========================================
-    # ESQUELETO DE CARREGAMENTO (some quando a tela termina de montar)
+    # ÁREA DOS MÓDULOS
+    # No modo MENU_NO_TOPO o menu e o conteúdo ficam dentro de um FRAGMENT: trocar de módulo
+    # reexecuta só esta área (sem refazer login, sidebar, tema e verificações do topo).
     # ==========================================
-    _esqueleto_carregando = st.empty()
-    _esqueleto_carregando.markdown("""
+    _HTML_ESQUELETO = """
 <style>
 @keyframes ll-pulso {0%,100%{opacity:.35} 50%{opacity:.8}}
 .ll-sk{background:rgba(128,128,128,.28);border-radius:8px;animation:ll-pulso 1.2s ease-in-out infinite;margin-bottom:12px}
@@ -1781,124 +1786,160 @@ else:
 <div class="ll-sk" style="height:220px;width:100%"></div>
 <div class="ll-sk" style="height:16px;width:70%"></div>
 <div class="ll-sk" style="height:16px;width:55%"></div>
-""", unsafe_allow_html=True)
+"""
+    _CSS_MENU_TOPO = """<style>
+/* Menu de módulos em pílulas (topo) — mesmo visual das pílulas do Estoque/Dashboard */
+.st-key-menu_modulos, .st-key-menu_modulos [data-testid="stRadio"] { width:100% !important; }
+.st-key-menu_modulos [role="radiogroup"] { gap:8px; flex-wrap:wrap; padding:2px 2px 10px; }
+.st-key-menu_modulos [role="radiogroup"] > div { flex:0 0 auto; }
+.st-key-menu_modulos [data-testid="stRadioOption"], .st-key-menu_modulos [role="radiogroup"] > label {
+    padding:10px 18px; border-radius:999px; cursor:pointer; white-space:nowrap; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); transition:all .15s ease; }
+.st-key-menu_modulos [data-testid="stRadioOption"] p { white-space:nowrap; margin:0; }
+.st-key-menu_modulos [data-testid="stRadioOption"] > div > div:first-child,
+.st-key-menu_modulos [role="radiogroup"] > label:not([data-testid="stRadioOption"]) > div:first-child { display:none !important; }
+.st-key-menu_modulos [data-testid="stRadioOption"]:hover { border-color:rgba(255,193,7,.5); }
+.st-key-menu_modulos [data-testid="stRadioOption"]:has(input:checked), .st-key-menu_modulos [role="radiogroup"] > label:has(input:checked) {
+    background:linear-gradient(135deg,#FFC107,#FF9F1C); border-color:transparent; box-shadow:0 8px 22px rgba(255,160,0,.35); }
+.st-key-menu_modulos [data-testid="stRadioOption"]:has(input:checked) p { color:#1a1200 !important; font-weight:800; }
+@media (max-width:640px) {
+    .st-key-menu_modulos [role="radiogroup"] { gap:6px; }
+    .st-key-menu_modulos [data-testid="stRadioOption"] { padding:7px 12px; }
+    .st-key-menu_modulos [data-testid="stRadioOption"] p { font-size:.84rem; }
+}
+</style>"""
 
-    # ==========================================
-    # MENU: GESTÃO DE ASSINANTES (ADMIN)
-    # ==========================================
-    if menu == "👑 Gestão de Assinantes":
-        from modulos import gestao_assinantes
-        gestao_assinantes.render(
-            supabase=supabase,
-            formatar_moeda=formatar_moeda,
-            mostrar_popup=mostrar_popup,
-            hash_senha=hash_senha,
-            enviar_email_expiracao=enviar_email_expiracao,
-            ativar_conta_apos_pagamento=ativar_conta_apos_pagamento,
-            registrar_pagamento_historico=registrar_pagamento_historico,
-        )
-
-
-    # ==========================================
-    # MENU: DASHBOARD
-    # ==========================================
-    elif menu == "📊 Dashboard":
-        from modulos import dashboard
-        dashboard.render(
-            supabase=supabase,
-            emp_id=emp_id,
-            formatar_moeda=formatar_moeda,
-            buscar_devolucoes_pendentes=buscar_devolucoes_pendentes,
-        )
-
-
-    # ==========================================
-    # MENU: AGENDAMENTO
-    # ==========================================
-    elif menu == "📅 Agendamento":
-        from modulos import agendamento
-        agendamento.render(
-            supabase=supabase,
-            emp_id=emp_id,
-            formatar_moeda=formatar_moeda,
-            mostrar_popup=mostrar_popup,
-            safe_json_load=safe_json_load,
-            buscar_devolucoes_pendentes=buscar_devolucoes_pendentes,
-            calcular_disponibilidade_periodo=calcular_disponibilidade_periodo,
-            definir_categoria=definir_categoria,
-            formatar_telefone_br=formatar_telefone_br,
-            gerar_recibo_evento_pdf=gerar_recibo_evento_pdf,
-            sincronizar_evento_google_agenda_silencioso=sincronizar_evento_google_agenda_silencioso,
-            REPORTLAB_DISPONIVEL=REPORTLAB_DISPONIVEL,
-        )
-
-
-    # ==========================================
-    # MENU: ESTOQUE
-    # ==========================================
-    elif menu == "📦 Estoque":
-        from modulos import estoque
-        estoque.render(
-            supabase=supabase,
-            emp_id=emp_id,
-            formatar_moeda=formatar_moeda,
-            mostrar_popup=mostrar_popup,
-            safe_json_load=safe_json_load,
-            calcular_detalhamento_periodo_produto=calcular_detalhamento_periodo_produto,
-            calcular_disponibilidade_periodo=calcular_disponibilidade_periodo,
-            definir_categoria=definir_categoria,
-            formatar_telefone_br=formatar_telefone_br,
-            prever_icone=prever_icone,
-            status_cor=status_cor,
-            popup_confirmacao_estoque=popup_confirmacao_estoque,
-        )
-
-
-    # ==========================================
-    # MENU: COMPRAS
-    # ==========================================
-    elif menu == "🛒 Compras":
-        from modulos import compras
-        compras.render(
-            supabase=supabase,
-            emp_id=emp_id,
-            mostrar_popup=mostrar_popup,
-        )
-
-
-    # ==========================================
-    # MENU: FATURAMENTO
-    # ==========================================
-    elif menu == "💰 Faturamento":
-        from modulos import faturamento
-        faturamento.render(
-            supabase=supabase,
-            emp_id=emp_id,
-            formatar_moeda=formatar_moeda,
-            mostrar_popup=mostrar_popup,
-        )
-
-    # ==========================================
-    # MENU: ORÇAMENTO
-    # ==========================================
-    elif menu == "🧳 Orçamento":
-        st.title("🧳 Orçamento de Evento")
-
-        # 🚧 Bloqueio temporário: só admin_geral enxerga o módulo enquanto está em criação
-        if st.session_state.get('perfil') != 'admin_geral':
-            st.warning("🚧 **Módulo em criação!** O Orçamento de Eventos está sendo desenvolvido e ficará disponível em breve.")
-            st.info("Assim que estiver pronto, você poderá montar orçamentos, gerar o PDF e converter em evento com um clique. Enquanto isso, use o **📅 Agendamento** normalmente.")
-            _esqueleto_carregando.empty()
-            st.stop()
+    def _render_modulos():
+        if MENU_NO_TOPO:
+            st.markdown(_CSS_MENU_TOPO, unsafe_allow_html=True)
+            menu_atual = st.radio("Módulos do Sistema", opcoes_menu, horizontal=True, key="menu_modulos",
+                                  format_func=_rotulo_menu, label_visibility="collapsed")
         else:
-            st.caption("🧪 Modo de teste: este módulo está visível apenas para a conta admin.")
+            menu_atual = menu
+        _esqueleto_carregando = st.empty()
+        if not MENU_NO_TOPO:  # no modo fragment a troca é rápida e o esqueleto só atrapalharia
+            _esqueleto_carregando.markdown(_HTML_ESQUELETO, unsafe_allow_html=True)
 
-        from modulos import orcamento
-        orcamento.render(
-            supabase=supabase, emp_id=emp_id,
-            formatar_moeda=formatar_moeda, mostrar_popup=mostrar_popup, safe_json_load=safe_json_load,
-            calcular_distancia_google_maps=calcular_distancia_google_maps,
-            gerar_pdf_orcamento=gerar_pdf_orcamento, REPORTLAB_DISPONIVEL=REPORTLAB_DISPONIVEL,
-        )
 
-    _esqueleto_carregando.empty()  # terminou de montar a tela
+        # ==========================================
+        # MENU: GESTÃO DE ASSINANTES (ADMIN)
+        # ==========================================
+        if menu_atual == "👑 Gestão de Assinantes":
+            from modulos import gestao_assinantes
+            gestao_assinantes.render(
+                supabase=supabase,
+                formatar_moeda=formatar_moeda,
+                mostrar_popup=mostrar_popup,
+                hash_senha=hash_senha,
+                enviar_email_expiracao=enviar_email_expiracao,
+                ativar_conta_apos_pagamento=ativar_conta_apos_pagamento,
+                registrar_pagamento_historico=registrar_pagamento_historico,
+            )
+
+
+        # ==========================================
+        # MENU: DASHBOARD
+        # ==========================================
+        elif menu_atual == "📊 Dashboard":
+            from modulos import dashboard
+            dashboard.render(
+                supabase=supabase,
+                emp_id=emp_id,
+                formatar_moeda=formatar_moeda,
+                buscar_devolucoes_pendentes=buscar_devolucoes_pendentes,
+            )
+
+
+        # ==========================================
+        # MENU: AGENDAMENTO
+        # ==========================================
+        elif menu_atual == "📅 Agendamento":
+            from modulos import agendamento
+            agendamento.render(
+                supabase=supabase,
+                emp_id=emp_id,
+                formatar_moeda=formatar_moeda,
+                mostrar_popup=mostrar_popup,
+                safe_json_load=safe_json_load,
+                buscar_devolucoes_pendentes=buscar_devolucoes_pendentes,
+                calcular_disponibilidade_periodo=calcular_disponibilidade_periodo,
+                definir_categoria=definir_categoria,
+                formatar_telefone_br=formatar_telefone_br,
+                gerar_recibo_evento_pdf=gerar_recibo_evento_pdf,
+                sincronizar_evento_google_agenda_silencioso=sincronizar_evento_google_agenda_silencioso,
+                REPORTLAB_DISPONIVEL=REPORTLAB_DISPONIVEL,
+            )
+
+
+        # ==========================================
+        # MENU: ESTOQUE
+        # ==========================================
+        elif menu_atual == "📦 Estoque":
+            from modulos import estoque
+            estoque.render(
+                supabase=supabase,
+                emp_id=emp_id,
+                formatar_moeda=formatar_moeda,
+                mostrar_popup=mostrar_popup,
+                safe_json_load=safe_json_load,
+                calcular_detalhamento_periodo_produto=calcular_detalhamento_periodo_produto,
+                calcular_disponibilidade_periodo=calcular_disponibilidade_periodo,
+                definir_categoria=definir_categoria,
+                formatar_telefone_br=formatar_telefone_br,
+                prever_icone=prever_icone,
+                status_cor=status_cor,
+                popup_confirmacao_estoque=popup_confirmacao_estoque,
+            )
+
+
+        # ==========================================
+        # MENU: COMPRAS
+        # ==========================================
+        elif menu_atual == "🛒 Compras":
+            from modulos import compras
+            compras.render(
+                supabase=supabase,
+                emp_id=emp_id,
+                mostrar_popup=mostrar_popup,
+            )
+
+
+        # ==========================================
+        # MENU: FATURAMENTO
+        # ==========================================
+        elif menu_atual == "💰 Faturamento":
+            from modulos import faturamento
+            faturamento.render(
+                supabase=supabase,
+                emp_id=emp_id,
+                formatar_moeda=formatar_moeda,
+                mostrar_popup=mostrar_popup,
+            )
+
+        # ==========================================
+        # MENU: ORÇAMENTO
+        # ==========================================
+        elif menu_atual == "🧳 Orçamento":
+            st.title("🧳 Orçamento de Evento")
+
+            # 🚧 Bloqueio temporário: só admin_geral enxerga o módulo enquanto está em criação
+            if st.session_state.get('perfil') != 'admin_geral':
+                st.warning("🚧 **Módulo em criação!** O Orçamento de Eventos está sendo desenvolvido e ficará disponível em breve.")
+                st.info("Assim que estiver pronto, você poderá montar orçamentos, gerar o PDF e converter em evento com um clique. Enquanto isso, use o **📅 Agendamento** normalmente.")
+                _esqueleto_carregando.empty()
+                st.stop()
+            else:
+                st.caption("🧪 Modo de teste: este módulo está visível apenas para a conta admin.")
+
+            from modulos import orcamento
+            orcamento.render(
+                supabase=supabase, emp_id=emp_id,
+                formatar_moeda=formatar_moeda, mostrar_popup=mostrar_popup, safe_json_load=safe_json_load,
+                calcular_distancia_google_maps=calcular_distancia_google_maps,
+                gerar_pdf_orcamento=gerar_pdf_orcamento, REPORTLAB_DISPONIVEL=REPORTLAB_DISPONIVEL,
+            )
+
+        _esqueleto_carregando.empty()  # terminou de montar a tela
+
+    if MENU_NO_TOPO:
+        _render_modulos = st.fragment(_render_modulos)
+    _render_modulos()
