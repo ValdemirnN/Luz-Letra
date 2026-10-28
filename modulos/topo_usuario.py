@@ -173,16 +173,29 @@ def secao_foto_perfil(supabase, em_expander=True):
         with c2:
             st.caption("Opcional. A foto aparece no canto superior direito de todas as páginas. "
                        "Sem foto, mostramos a inicial do seu nome.")
+            # a chave do uploader muda depois de salvar/remover: isso limpa o arquivo escolhido
+            # e o botão deixa de oferecer "Salvar" de novo para a mesma foto
+            _n_up = st.session_state.get('_foto_up_n', 0)
             arq = st.file_uploader("Escolher imagem", type=["png", "jpg", "jpeg", "webp"],
-                                   key="up_foto_perfil", label_visibility="collapsed")
+                                   key=f"up_foto_perfil_{_n_up}", label_visibility="collapsed")
+            _msg = st.session_state.pop('_foto_msg_ok', None)
+            if _msg:
+                st.success(_msg, icon="✅")
+                st.toast(_msg, icon="✅")
             b1, b2 = st.columns(2)
             with b1:
-                if arq is not None and st.button("💾 Salvar foto", key="btn_salvar_foto", use_container_width=True):
+                if arq is None:
+                    # nada novo para salvar: mostra o estado atual
+                    st.button("✅ Foto salva" if foto else "💾 Salvar foto", key="btn_salvar_foto_off",
+                              use_container_width=True, disabled=True)
+                elif st.button("💾 Salvar foto", key="btn_salvar_foto", type="primary", use_container_width=True):
                     salvou = False
                     try:
                         b64 = _processar_imagem(arq)
                         supabase.table("usuarios").update({"foto_perfil": b64}).eq("id", uid).execute()
                         st.session_state['_foto_perfil_cache'] = (uid, b64)
+                        st.session_state['_foto_up_n'] = _n_up + 1
+                        st.session_state['_foto_msg_ok'] = "Foto salva com sucesso!"
                         salvou = True
                     except Exception:
                         registrar_erro("topo_usuario.py:salvar_foto")
@@ -197,6 +210,8 @@ def secao_foto_perfil(supabase, em_expander=True):
                     try:
                         supabase.table("usuarios").update({"foto_perfil": None}).eq("id", uid).execute()
                         st.session_state['_foto_perfil_cache'] = (uid, None)
+                        st.session_state['_foto_up_n'] = _n_up + 1
+                        st.session_state['_foto_msg_ok'] = "Foto removida."
                         removeu = True
                     except Exception:
                         registrar_erro("topo_usuario.py:remover_foto")
