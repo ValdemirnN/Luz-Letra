@@ -159,6 +159,11 @@ def render_topo(supabase, fazer_logout, plano_txt=""):
 # Seção "Foto de perfil" (usar dentro da tela Meu Perfil)
 # ----------------------------------------------------------------------------------
 def secao_foto_perfil(supabase, em_expander=True):
+    """Foto de perfil em dois estados:
+    - COM foto salva (modo normal): mostra aviso de "foto salva" + botões Alterar foto / Remover foto.
+    - SEM foto, ou depois de clicar em Alterar foto (modo edição): mostra o campo de anexo
+      + botões Salvar foto / Remover foto.
+    """
     uid = st.session_state.get('usuario_id')
     nome = st.session_state.get('nome_usuario') or ""
     foto = _carregar_foto(supabase, uid)
@@ -166,35 +171,51 @@ def secao_foto_perfil(supabase, em_expander=True):
     contexto = st.expander("📸 Foto de perfil", expanded=False) if em_expander else st.container()
     if not em_expander:
         st.markdown("#### Foto de perfil")
+
+    # sem foto salva => sempre em edição; com foto => só edita se clicou em "Alterar foto"
+    editando = bool(st.session_state.get('_foto_editando', False)) or not foto
+    _n_up = st.session_state.get('_foto_up_n', 0)  # trocar a chave do uploader limpa o anexo
+
     with contexto:
         c1, c2 = st.columns([1, 3])
         with c1:
             st.markdown(f'<div class="ll-user-head">{_avatar_html(foto, _inicial(nome), 84)}</div>', unsafe_allow_html=True)
         with c2:
-            st.caption("Opcional. A foto aparece no canto superior direito de todas as páginas. "
-                       "Sem foto, mostramos a inicial do seu nome.")
-            # a chave do uploader muda depois de salvar/remover: isso limpa o arquivo escolhido
-            # e o botão deixa de oferecer "Salvar" de novo para a mesma foto
-            _n_up = st.session_state.get('_foto_up_n', 0)
-            arq = st.file_uploader("Escolher imagem", type=["png", "jpg", "jpeg", "webp"],
-                                   key=f"up_foto_perfil_{_n_up}", label_visibility="collapsed")
             _msg = st.session_state.pop('_foto_msg_ok', None)
             if _msg:
-                st.success(_msg, icon="✅")
                 st.toast(_msg, icon="✅")
+
+            if not editando:
+                # ---------------- modo normal: foto já salva ----------------
+                st.success(_msg or "Foto de perfil salva. Ela aparece no canto superior direito de todas as páginas.", icon="✅")
+                b1, b2 = st.columns(2)
+                with b1:
+                    if st.button("✏️ Alterar foto", key="btn_alterar_foto", use_container_width=True):
+                        st.session_state['_foto_editando'] = True
+                        st.session_state['_foto_up_n'] = _n_up + 1
+                        st.rerun()
+                with b2:
+                    if st.button("🗑️ Remover foto", key="btn_remover_foto", use_container_width=True):
+                        if _remover_foto(supabase, uid, _n_up):
+                            st.rerun()
+                return
+
+            # ---------------- modo edição: anexar / salvar / remover ----------------
+            st.caption("Opcional. A foto aparece no canto superior direito de todas as páginas. "
+                       "Sem foto, mostramos a inicial do seu nome.")
+            arq = st.file_uploader("Escolher imagem", type=["png", "jpg", "jpeg", "webp"],
+                                   key=f"up_foto_perfil_{_n_up}", label_visibility="collapsed")
             b1, b2 = st.columns(2)
             with b1:
-                if arq is None:
-                    # nada novo para salvar: mostra o estado atual
-                    st.button("✅ Foto salva" if foto else "💾 Salvar foto", key="btn_salvar_foto_off",
-                              use_container_width=True, disabled=True)
-                elif st.button("💾 Salvar foto", key="btn_salvar_foto", type="primary", use_container_width=True):
+                if st.button("💾 Salvar foto", key="btn_salvar_foto", type="primary",
+                             use_container_width=True, disabled=(arq is None)):
                     salvou = False
                     try:
                         b64 = _processar_imagem(arq)
                         supabase.table("usuarios").update({"foto_perfil": b64}).eq("id", uid).execute()
                         st.session_state['_foto_perfil_cache'] = (uid, b64)
                         st.session_state['_foto_up_n'] = _n_up + 1
+                        st.session_state['_foto_editando'] = False
                         st.session_state['_foto_msg_ok'] = "Foto salva com sucesso!"
                         salvou = True
                     except Exception:
@@ -205,16 +226,32 @@ def secao_foto_perfil(supabase, em_expander=True):
                     if salvou:
                         st.rerun()
             with b2:
-                if foto and st.button("🗑️ Remover foto", key="btn_remover_foto", use_container_width=True):
-                    removeu = False
-                    try:
-                        supabase.table("usuarios").update({"foto_perfil": None}).eq("id", uid).execute()
-                        st.session_state['_foto_perfil_cache'] = (uid, None)
+                # remove a foto salva; se não houver foto salva, só descarta o anexo escolhido
+                if st.button("🗑️ Remover foto", key="btn_remover_foto_edit", use_container_width=True,
+                             disabled=(not foto and arq is None)):
+                    if foto:
+                        if _remover_foto(supabase, uid, _n_up):
+                            st.rerun()
+                    else:
                         st.session_state['_foto_up_n'] = _n_up + 1
-                        st.session_state['_foto_msg_ok'] = "Foto removida."
-                        removeu = True
-                    except Exception:
-                        registrar_erro("topo_usuario.py:remover_foto")
-                        st.error("Não foi possível remover a foto.")
-                    if removeu:
                         st.rerun()
+            if foto:
+                if st.button("Cancelar alteração", key="btn_cancelar_foto", type="tertiary"):
+                    st.session_state['_foto_editando'] = False
+                    st.session_state['_foto_up_n'] = _n_up + 1
+                    st.rerun()
+
+
+def _remover_foto(supabase, uid, n_up):
+    """Apaga a foto salva. Devolve True se deu certo."""
+    try:
+        supabase.table("usuarios").update({"foto_perfil": None}).eq("id", uid).execute()
+        st.session_state['_foto_perfil_cache'] = (uid, None)
+        st.session_state['_foto_up_n'] = n_up + 1
+        st.session_state['_foto_editando'] = False
+        st.session_state['_foto_msg_ok'] = "Foto removida."
+        return True
+    except Exception:
+        registrar_erro("topo_usuario.py:remover_foto")
+        st.error("Não foi possível remover a foto.")
+        return False
