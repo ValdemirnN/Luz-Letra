@@ -23,14 +23,14 @@ TODO_PERIODO = "Todo o período"
 
 _CSS = """<style>
 .stApp::before { display: none !important; }
-.dash-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin:8px 0 4px;}
+.dash-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin:12px 0 18px;}
 .dash-card{background:#1B1B1D;border-radius:12px;padding:14px 16px;border-top:3px solid #333;min-width:0;}
 .dash-card .lbl{font-size:12.5px;color:#9A9A9A;font-weight:600;}
 .dash-card .val{font-size:clamp(20px,5vw,28px);font-weight:800;color:#EDEDED;line-height:1.25;margin-top:4px;overflow-wrap:anywhere;}
 .dash-card .tag{display:inline-block;margin-top:6px;font-size:11.5px;font-weight:700;border-radius:20px;padding:2px 10px;}
-.dash-ev-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));}
+.dash-ev-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));}
 .dash-sub{color:#A1A1AA;font-size:.95rem;margin:-.2rem 0 .6rem;}
-.dash-chip-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));}
+.dash-chip-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));margin:0 0 14px;}
 .dash-chip{background:#1B1B1D;border-radius:12px;padding:12px 16px;border-left:4px solid #333;display:flex;align-items:center;gap:12px;}
 .dash-chip .n{font-size:26px;font-weight:800;color:#EDEDED;line-height:1;}
 .dash-chip .t{font-size:12.5px;color:#9A9A9A;font-weight:600;line-height:1.25;}
@@ -203,7 +203,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
             "financeiro": "📈 Financeiro",
             "produtos": "🏆 Produtos",
         }
-        st.markdown('<div style="height:6px"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
         secao = st.radio("Seção", SECOES, horizontal=True, key="dash_secao",
                          format_func=lambda k: rotulos[k], label_visibility="collapsed")
 
@@ -264,7 +264,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
         }.get(secao, [])
         if cards_da_aba:
             st.markdown(f'<div class="dash-grid">{"".join(cards[k] for k in cards_da_aba)}</div>', unsafe_allow_html=True)
-            st.markdown('<div style="height:6px"></div>', unsafe_allow_html=True)
+            st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
 
         # ---------------- blocos reutilizáveis ----------------
         def _cards_eventos(lista):
