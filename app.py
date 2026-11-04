@@ -112,6 +112,44 @@ components.html("""
 </script>
 """, height=0)
 
+# --- Remove a 2ª barra de rolagem e a barra "Hosted with Streamlit" (página de fora, no Streamlit Cloud) ---
+components.html("""
+<script>
+(function() {
+  var CSS = 'html, body { overflow: hidden !important; height: 100% !important; margin: 0 !important; }' +
+    ' [class*="viewerBadge"], [class*="ViewerBadge"], [class*="appCreator"], [class*="AppCreator"],' +
+    ' [data-testid*="appCreator"], [data-testid*="viewerBadge"], [data-testid="manage-app-button"],' +
+    ' a[href*="streamlit.io/cloud"], .stDeployButton { display: none !important; }';
+  function aplicar(doc) {
+    try {
+      if (!doc.getElementById('ll-host-fix')) {
+        var st = doc.createElement('style'); st.id = 'll-host-fix'; st.textContent = CSS;
+        doc.head.appendChild(st);
+      }
+      // Plano B: acha o texto "Hosted with Streamlit" e esconde a barra fixa que o contém
+      var links = doc.querySelectorAll('a');
+      for (var i = 0; i < links.length; i++) {
+        var a = links[i];
+        if ((a.textContent || '').indexOf('Hosted with Streamlit') === -1) continue;
+        var el = a;
+        while (el && el !== doc.body) {
+          var pos = doc.defaultView.getComputedStyle(el).position;
+          if (pos === 'fixed' || pos === 'absolute') break;
+          el = el.parentElement;
+        }
+        (el && el !== doc.body ? el : a).style.setProperty('display', 'none', 'important');
+      }
+    } catch (e) {}
+  }
+  function rodar() {
+    aplicar(window.parent.document);
+    try { if (window.top !== window.parent) aplicar(window.top.document); } catch (e) {}
+  }
+  try { rodar(); setInterval(rodar, 1000); } catch (e) {}
+})();
+</script>
+""", height=0)
+
 if st.query_params.get("privacidade") == "1":
     st.title("Política de Privacidade - Luz & Letra Sistema")
     st.markdown("""
