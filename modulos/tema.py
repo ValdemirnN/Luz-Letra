@@ -202,7 +202,11 @@ hr { border: none !important; height: 1px !important; margin: 1.6rem 0 !importan
 /* ---------- Sem rolagem horizontal / faixa vazia no fim da página ---------- */
 html, body, .stApp, [data-testid="stApp"], [data-testid="stAppViewContainer"], [data-testid="stMain"], section.main { overflow-x: hidden !important; max-width: 100vw; }
 [data-testid="stMain"]::-webkit-scrollbar:horizontal, section.main::-webkit-scrollbar:horizontal { display: none; height: 0; }
-[data-testid="stBottom"]:not(:has(textarea)):not(:has(input)):not(:has(button)) { display: none !important; }
+/* Barra inferior do Streamlit (rodapé fixo): some sempre, a não ser que exista um st.chat_input na tela */
+[data-testid="stBottom"]:not(:has([data-testid="stChatInput"])) { display: none !important; height: 0 !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important; }
+[data-testid="stBottom"] { background: transparent !important; }
+[data-testid="stBottomBlockContainer"]:not(:has([data-testid="stChatInput"])) { display: none !important; }
+footer, [data-testid="stFooter"], .viewerBadge_container__1QSob, [class*="viewerBadge"], [class*="StyledFooter"] { display: none !important; }
 [data-testid="stMainBlockContainer"] { padding-bottom: 3rem !important; }
 
 /* ---------- Detalhes ---------- */
