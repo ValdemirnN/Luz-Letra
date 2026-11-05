@@ -6,6 +6,7 @@ Toda a lógica (cálculo, salvar, PDF, converter em evento) continua a mesma; s�
 """
 from html import escape
 from modulos.log import registrar_erro
+from modulos import notificacoes
 import json
 from datetime import datetime
 
@@ -295,6 +296,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load,
                                 "data_registro": data_hora_direto
                             }).execute()
                             supabase.table("orcamentos").update({"evento_id": evento_id_direto}).eq("id", orc_id_novo).execute()
+                            notificacoes.avisar_novo_agendamento(supabase, emp_id, evento_id_direto)  # e-mail com o resumo
                             mostrar_popup("ORÇAMENTO SALVO E EVENTO CRIADO COM SUCESSO!")
                         else:
                             mostrar_popup("ORÇAMENTO SALVO COMO RASCUNHO!")
@@ -423,6 +425,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load,
                                     "data_registro": data_hora_conv
                                 }).execute()
                                 supabase.table("orcamentos").update({"status": "Convertido", "evento_id": evento_id_novo}).eq("id", orc['id']).execute()
+                                notificacoes.avisar_novo_agendamento(supabase, emp_id, evento_id_novo)  # e-mail com o resumo
                                 mostrar_popup("EVENTO CRIADO COM SUCESSO A PARTIR DO ORÇAMENTO!")
                                 st.rerun()
                             except Exception as e:

@@ -27,7 +27,7 @@ from modulos.log import registrar_erro
 from modulos.cache_db import ClienteComCache, limpar_cache, iniciar_medicao, resumo_medicao
 from modulos.login_ui import aplicar_estilo_login, cabecalho_login, rodape_login
 from modulos.tema import aplicar_tema
-from modulos import topo_usuario, perfil_ui
+from modulos import topo_usuario, perfil_ui, notificacoes
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -342,6 +342,7 @@ GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events https:/
 PIX_CHAVE = st.secrets.get("PIX_CHAVE", "")
 PIX_NOME = st.secrets.get("PIX_NOME", "")
 PIX_CIDADE = st.secrets.get("PIX_CIDADE", "")
+notificacoes.configurar(GMAIL_REMETENTE, GMAIL_SENHA_APP, URL_BASE_SISTEMA, PIX_CHAVE, PIX_NOME)  # e-mails automáticos (modulos/notificacoes.py)
 
 @st.cache_resource
 def init_connection():

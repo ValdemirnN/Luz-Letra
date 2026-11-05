@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 from dateutil.relativedelta import relativedelta
 from modulos.tema import cartao_evento_html, estado_vazio_html
-from modulos import contrato
+from modulos import contrato, notificacoes
 
 
 def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, buscar_devolucoes_pendentes, calcular_disponibilidade_periodo, definir_categoria, formatar_telefone_br, gerar_recibo_evento_pdf, sincronizar_evento_google_agenda_silencioso, REPORTLAB_DISPONIVEL):
@@ -163,6 +163,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                                 valor_sugerido = info['total'] * mapa_valor_ref.get(p_id, 0)
                                 supabase.table("itens_evento").insert({"empresa_id": emp_id,"evento_id": evento_id_gerado,"produto_id": p_id,"quantidade": info['total'],"observacao": obs_json_evento,"valor_cobrado": valor_sugerido}).execute()
                                 supabase.table("historico_eventos").insert({"empresa_id": emp_id,"evento_id": evento_id_gerado,"descricao": f"🟢 ALOCAÇÃO INICIAL: Adicionou {info['total']}x Produto {p_id}.","data_registro": data_hora}).execute()
+                            notificacoes.avisar_novo_agendamento(supabase, emp_id, evento_id_gerado)  # e-mail com o resumo
                             mostrar_popup("AGENDAMENTO CONFIRMADO COM SUCESSO!")
                             st.rerun()
                         except Exception as e: registrar_erro("agendamento.py:726"); mostrar_popup(f"Erro: {e}", tipo="erro")
