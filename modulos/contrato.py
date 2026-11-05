@@ -10,9 +10,9 @@ no mesmo modelo do contrato em papel da empresa:
   - Cláusula 4: valor total e forma de pagamento (cadastrada no evento)
   - Assinaturas do locador e do locatário no final
 
-Os dados extras ficam em DUAS colunas de texto novas (veja SQL_MIGRACAO abaixo):
-  eventos.contrato_dados   -> JSON com CPF/CNPJ do cliente, forma de pagamento e entrada
-  empresas.contrato_config -> JSON com os dados do locador
+Onde ficam os dados:
+  eventos.contrato_dados  -> JSON com CPF/CNPJ do cliente, forma de pagamento e entrada (coluna nova, veja SQL_MIGRACAO)
+  usuarios.perfil_extra   -> dados da empresa e do DONO (Meu Perfil > Empresa), usados como LOCADOR
 """
 import io
 import json
@@ -22,8 +22,7 @@ from xml.sax.saxutils import escape
 
 import streamlit as st
 
-SQL_MIGRACAO = """ALTER TABLE eventos  ADD COLUMN IF NOT EXISTS contrato_dados  text;
-ALTER TABLE empresas ADD COLUMN IF NOT EXISTS contrato_config text;"""
+SQL_MIGRACAO = """ALTER TABLE eventos ADD COLUMN IF NOT EXISTS contrato_dados text;"""
 
 FORMAS_PAGAMENTO = {
     "50_50": "50% na assinatura do contrato + 50% no dia do evento",
@@ -51,6 +50,20 @@ def _json(txt):
         return v if isinstance(v, dict) else {}
     except Exception:
         return {}
+
+
+def so_digitos(t):
+    return "".join(c for c in str(t or "") if c.isdigit())
+
+
+def fmt_doc(t):
+    """Põe pontos, traço e barra no CPF (11 dígitos) ou CNPJ (14 dígitos). Outros valores ficam como estão."""
+    d = so_digitos(t)
+    if len(d) == 11:
+        return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:]}"
+    if len(d) == 14:
+        return f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}"
+    return str(t or "").strip()
 
 
 def _data_br(iso):
@@ -98,28 +111,57 @@ def calcular_parcelas(valor_total, dados):
 
 
 # ------------------------------------------------------------------ banco de dados
-def carregar_locador(supabase, emp_id):
-    base = {}
+def _extra_usuario(supabase, uid):
     try:
-        r = supabase.table("empresas").select("*").eq("id", emp_id).execute()
-        linha = (r.data or [{}])[0]
-        base = _json(linha.get("contrato_config"))
-        if not base.get("razao_social"):
-            base["razao_social"] = linha.get("nome_fantasia") or ""
+        r = supabase.table("usuarios").select("perfil_extra").eq("id", uid).execute()
+        bruto = (r.data or [{}])[0].get("perfil_extra")
+        return _json(bruto)
     except Exception:
-        pass
-    return base
+        return {}
 
 
-def salvar_locador(supabase, emp_id, dados):
-    try:
-        supabase.table("empresas").update({"contrato_config": json.dumps(dados, ensure_ascii=False)}).eq("id", emp_id).execute()
-        return True, ""
-    except Exception as e:
-        return False, str(e)
+def carregar_locador(supabase, emp_id):
+    """Monta os dados do LOCADOR a partir do perfil: aba Empresa + 'Dono da empresa' (Meu Perfil)."""
+    extra = _extra_usuario(supabase, st.session_state.get("usuario_id"))
+    if not extra.get("dono_nome"):  # usuário logado não é o dono: procura o perfil do dono na mesma empresa
+        try:
+            r = supabase.table("usuarios").select("perfil_extra").eq("empresa_id", emp_id).execute()
+            for linha in (r.data or []):
+                ex = _json(linha.get("perfil_extra"))
+                if ex.get("dono_nome"):
+                    extra = {**ex, **{k: v for k, v in extra.items() if v and k not in ex}}
+                    break
+        except Exception:
+            pass
+    razao = extra.get("razao_social") or ""
+    if not razao:
+        try:
+            r = supabase.table("empresas").select("nome_fantasia").eq("id", emp_id).execute()
+            razao = (r.data or [{}])[0].get("nome_fantasia") or ""
+        except Exception:
+            pass
+    rua = ", ".join([x for x in [extra.get("endereco"), extra.get("numero")] if x])
+    cid_uf = "-".join([x for x in [extra.get("cidade"), extra.get("uf")] if x])
+    endereco = ", ".join([x for x in [rua, extra.get("bairro")] if x])
+    return {
+        "razao_social": razao, "cnpj": extra.get("cnpj") or "", "endereco": endereco,
+        "telefone": extra.get("emp_whatsapp") or extra.get("emp_telefone") or "", "cidade": cid_uf,
+        "responsavel": extra.get("dono_nome") or "", "nacionalidade": extra.get("dono_nacionalidade") or "",
+        "estado_civil": extra.get("dono_estado_civil") or "", "cpf_responsavel": extra.get("dono_cpf") or "",
+        "endereco_responsavel": extra.get("dono_endereco") or "",
+    }
+
+
+def faltando_locador(locador):
+    nomes = {"razao_social": "nome da empresa", "cnpj": "CNPJ da empresa", "responsavel": "nome do dono",
+             "nacionalidade": "nacionalidade do dono", "estado_civil": "estado civil do dono",
+             "cpf_responsavel": "CPF do dono", "endereco_responsavel": "endereço do dono"}
+    return [v for k, v in nomes.items() if not (locador or {}).get(k)]
 
 
 def salvar_dados_evento(supabase, evento_id, dados):
+    dados = dict(dados or {})
+    dados["doc_cliente"] = fmt_doc(dados.get("doc_cliente"))
     try:
         supabase.table("eventos").update({"contrato_dados": json.dumps(dados, ensure_ascii=False)}).eq("id", evento_id).execute()
         return True, ""
@@ -152,29 +194,18 @@ def ui_campos_contrato(chave, dados_ini=None, valor_total=None):
     return {"doc_cliente": (doc or "").strip(), "forma_pagamento": forma, "entrada": float(entrada or 0)}
 
 
-def ui_config_locador(supabase, emp_id, mostrar_popup):
-    with st.expander("⚙️ Dados da empresa para o contrato (Locador)", expanded=False):
-        st.caption("Preencha uma vez: esses dados aparecem no topo de todo contrato.")
-        d = carregar_locador(supabase, emp_id)
-        c1, c2 = st.columns(2)
-        with c1:
-            razao = st.text_input("Nome da empresa", value=d.get("razao_social", ""), key="ctr_razao")
-            cnpj = st.text_input("CNPJ", value=d.get("cnpj", ""), key="ctr_cnpj")
-            end = st.text_input("Endereço da empresa", value=d.get("endereco", ""), key="ctr_end")
-            tel = st.text_input("Telefone", value=d.get("telefone", ""), key="ctr_tel")
-            cidade = st.text_input("Cidade/UF do contrato", value=d.get("cidade", ""), key="ctr_cidade", placeholder="Assu-RN")
-        with c2:
-            resp = st.text_input("Responsável (assina pelo Locador)", value=d.get("responsavel", ""), key="ctr_resp")
-            cpf = st.text_input("CPF do responsável", value=d.get("cpf_responsavel", ""), key="ctr_cpf")
-            qual = st.text_input("Qualificação", value=d.get("qualificacao", ""), key="ctr_qual", placeholder="brasileiro, casado")
-            end_resp = st.text_input("Endereço do responsável", value=d.get("endereco_responsavel", ""), key="ctr_end_resp")
-        if st.button("💾 Salvar dados da empresa", key="ctr_salvar"):
-            ok, err = salvar_locador(supabase, emp_id, {
-                "razao_social": razao.strip(), "cnpj": cnpj.strip(), "endereco": end.strip(), "telefone": tel.strip(),
-                "cidade": cidade.strip(), "responsavel": resp.strip(), "cpf_responsavel": cpf.strip(),
-                "qualificacao": qual.strip(), "endereco_responsavel": end_resp.strip()})
+def ui_completar_evento(supabase, ev, chave, mostrar_popup):
+    """Expander para preencher/atualizar CPF/CNPJ e forma de pagamento de um evento (inclusive os antigos)."""
+    dados = dados_do_evento(ev)
+    pendente = not dados.get("doc_cliente") or not dados.get("forma_pagamento")
+    titulo = "⚠️ Completar dados do contrato" if pendente else "📝 Dados do contrato (CPF/CNPJ e pagamento)"
+    with st.expander(titulo, expanded=False):
+        novos = ui_campos_contrato(chave, dados)
+        if st.button("💾 Salvar dados do contrato", key=f"{chave}_salvar"):
+            ok, err = salvar_dados_evento(supabase, ev["id"], novos)
             if ok:
-                mostrar_popup("DADOS DA EMPRESA SALVOS COM SUCESSO!")
+                mostrar_popup("DADOS DO CONTRATO SALVOS COM SUCESSO!")
+                st.rerun()
             else:
                 avisar_migracao(err)
 
@@ -232,23 +263,26 @@ def gerar_contrato_pdf(evento, itens_lista, dict_produtos, nome_cliente, locador
 
     story = []
     linhas_cab = [e(locador.get("endereco")) and f"{e(locador.get('endereco'))}",
-                  f"CNPJ: {e(locador.get('cnpj'))}" if locador.get("cnpj") else "",
+                  f"CNPJ: {e(fmt_doc(locador.get('cnpj')))}" if locador.get("cnpj") else "",
                   f"TEL: {e(locador.get('telefone'))}" if locador.get("telefone") else ""]
     story.append(Paragraph("<br/>".join([l for l in linhas_cab if l]) or "&nbsp;", cab))
     story.append(Paragraph("<u>CONTRATO DE PRESTAÇÃO DE SERVIÇO</u>", titulo))
 
-    # Partes
-    resp_txt = campo(locador.get("responsavel"))
-    qual = f", {e(locador.get('qualificacao'))}" if locador.get("qualificacao") else ""
-    cpf_resp = f", inscrito no CPF: {e(locador.get('cpf_responsavel'))}" if locador.get("cpf_responsavel") else ""
-    end_resp = f", residente e domiciliado a {e(locador.get('endereco_responsavel'))}" if locador.get("endereco_responsavel") else ""
-    cnpj_loc = f" inscrito no CNPJ: {e(locador.get('cnpj'))}" if locador.get("cnpj") else ""
+    # Partes — LOCADOR (empresa + dono) e LOCATARIO (cliente)
+    BR = "______________________"
+    def sub(v, vazio=BR):  # negrito + sublinhado (como no contrato em papel)
+        return f"<b><u>{e(v)}</u></b>" if v else vazio
+    cnpj_loc = fmt_doc(locador.get("cnpj"))
+    cpf_resp = fmt_doc(locador.get("cpf_responsavel"))
+    quali = ", ".join([x for x in [locador.get("nacionalidade"), locador.get("estado_civil")] if x])
+    quali = f", {e(quali)}" if quali else ""
     story.append(Paragraph(
-        f"Pelo presente instrumento particular, de um lado <b>{e(empresa_nome)}</b>{cnpj_loc} tendo como responsável "
-        f"<b>{resp_txt.replace('<b>', '').replace('</b>', '')}</b>{qual}{cpf_resp}{end_resp}, doravante denominado <b><u>LOCADOR</u></b> "
-        f"e de outro lado {campo(nome_cliente)}, inscrito no CNPJ ou CPF: {campo(dados.get('doc_cliente'))}, "
-        f"doravante denominado <b><u>LOCATARIO</u></b>, tem entre si, justo e acertado o presente contrato de locação de equipamentos "
-        f"que se regerá pelas cláusulas e condições descritas a seguir.", corpo))
+        f"Pelo presente instrumento particular, de um lado {sub(empresa_nome)} inscrito no CNPJ: {e(cnpj_loc) if cnpj_loc else BR} "
+        f"tendo como responsável {sub(locador.get('responsavel'))}{quali}, inscrito no CPF: {e(cpf_resp) if cpf_resp else BR}, "
+        f"residente e domiciliado a {e(locador.get('endereco_responsavel')) if locador.get('endereco_responsavel') else BR}, "
+        f"doravante denominado <b><u>LOCADOR</u></b> e de outro lado {campo(nome_cliente)}, inscrito no CNPJ ou CPF: "
+        f"{campo(fmt_doc(dados.get('doc_cliente')))}, doravante denominado <b><u>LOCATARIO</u></b>, tem entre si, justo e acertado "
+        f"o presente contrato de locação de equipamentos que se regerá pelas cláusulas e condições descritas a seguir.", corpo))
 
     # Cláusula 1 — equipamentos
     partes = []

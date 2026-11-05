@@ -260,10 +260,18 @@ def gerar_qrcode_pix(payload):
     buffer.seek(0)
     return buffer
 
+def exibir_notificacao_pendente():
+    """Mostra a notificação que ficou pendente quando a tela foi recarregada (st.rerun) logo depois de salvar."""
+    pend = st.session_state.pop('_notificacao_pendente', None)
+    if pend and (time.time() - pend.get('t', 0)) < 8:
+        st.toast(pend['msg'], icon="✅")
+
 def mostrar_popup(mensagem, tipo="sucesso", tempo=1.5):
     if tipo == "erro":
         st.error(f"⚠️ {mensagem}")
     else:
+        # Guarda a mensagem: se a tela recarregar em seguida (st.rerun), ela aparece como notificação na tela nova
+        st.session_state['_notificacao_pendente'] = {'msg': mensagem, 't': time.time()}
         alerta = st.empty()
         alerta.markdown(f"""
         <style>
@@ -1210,6 +1218,7 @@ else:
 </script>
 """, height=0)
 
+    exibir_notificacao_pendente()
     emp_id = st.session_state.get('empresa_id')
     if not emp_id: st.stop()
 
@@ -1349,6 +1358,31 @@ else:
                         "horario": emp_horario.strip()}
                     if perfil_ui.salvar_extra(supabase, _uid_perfil, _extra_novo):
                         mostrar_popup("DADOS DA EMPRESA SALVOS!")
+                        st.rerun()
+                    else:
+                        perfil_ui.aviso_sql_extra()
+
+            # ---- Dono da empresa (aparece como LOCADOR no contrato de locação)
+            st.markdown("---")
+            st.markdown("#### 👤 Dono da empresa")
+            st.caption("Esses dados aparecem no contrato de locação, como responsável pelo LOCADOR.")
+            with st.form("form_perfil_dono"):
+                dono_nome = st.text_input("Nome completo do dono", value=extra_perfil.get('dono_nome', ''))
+                _o1, _o2, _o3 = st.columns([1, 1, 1.3])
+                dono_nac = _o1.text_input("Nacionalidade", value=extra_perfil.get('dono_nacionalidade', ''), placeholder="brasileiro")
+                dono_civil = _o2.text_input("Estado civil", value=extra_perfil.get('dono_estado_civil', ''), placeholder="casado")
+                dono_cpf = _o3.text_input("CPF do dono", value=extra_perfil.get('dono_cpf', ''), placeholder="000.000.000-00")
+                dono_end = st.text_input("Endereço do dono (residente e domiciliado a)", value=extra_perfil.get('dono_endereco', ''), placeholder="Rua, número, bairro, cidade-UF")
+                salvar_dono = st.form_submit_button("💾 Salvar dados do dono", type="primary")
+            if salvar_dono:
+                if dono_cpf.strip() and len(perfil_ui.so_digitos(dono_cpf)) != 11:
+                    mostrar_popup("O CPF do dono precisa ter 11 dígitos.", tipo="erro")
+                else:
+                    _extra_dono = {**extra_perfil, "dono_nome": dono_nome.strip(), "dono_nacionalidade": dono_nac.strip(),
+                                   "dono_estado_civil": dono_civil.strip(), "dono_cpf": perfil_ui.fmt_doc(dono_cpf),
+                                   "dono_endereco": dono_end.strip()}
+                    if perfil_ui.salvar_extra(supabase, _uid_perfil, _extra_dono):
+                        mostrar_popup("DADOS DO DONO SALVOS!")
                         st.rerun()
                     else:
                         perfil_ui.aviso_sql_extra()
