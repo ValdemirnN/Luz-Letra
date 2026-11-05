@@ -17,7 +17,7 @@ Onde ficam os dados:
 import io
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from xml.sax.saxutils import escape
 
 import streamlit as st
@@ -50,6 +50,11 @@ def _json(txt):
         return v if isinstance(v, dict) else {}
     except Exception:
         return {}
+
+
+def _agora():
+    """Data/hora de Brasília (UTC-3), independente do fuso do servidor."""
+    return datetime.now(timezone(timedelta(hours=-3)))
 
 
 def so_digitos(t):
@@ -248,7 +253,7 @@ def gerar_contrato_pdf(evento, itens_lista, dict_produtos, nome_cliente, locador
         c.drawString(6.2 * cm, h - 2.0 * cm, empresa_nome)
         c.setFillColor(colors.grey)
         c.setFont("Helvetica", 8)
-        c.drawString(2 * cm, 1.1 * cm, f"{locador.get('razao_social') or 'Luz & Letra'} — Emitido em {datetime.now().strftime('%d/%m/%Y às %H:%M')}")
+        c.drawString(2 * cm, 1.1 * cm, f"{locador.get('razao_social') or 'Luz & Letra'} — Emitido em {_agora().strftime('%d/%m/%Y às %H:%M')}")
         c.drawRightString(w - 2 * cm, 1.1 * cm, f"Página {doc.page}")
         c.restoreState()
 
@@ -337,7 +342,7 @@ def gerar_contrato_pdf(evento, itens_lista, dict_produtos, nome_cliente, locador
 
     # Assinaturas
     cidade = locador.get("cidade") or ""
-    hoje = _data_extenso(datetime.now().date())
+    hoje = _data_extenso(_agora().date())
     linha = "_" * 46
     assin = Table([
         [linha], [Paragraph(f"<b>{e(locador.get('responsavel') or empresa_nome)}</b> (LOCADOR)", centro)],

@@ -1,3 +1,9 @@
+# Horário de Brasília (UTC-3, sem horário de verão) para o sistema inteiro: o servidor roda em UTC e,
+# sem isso, datas e horas "viravam o dia" às 21h.
+import os as _os, time as _time_tz
+_os.environ["TZ"] = "<-03>3"
+try: _time_tz.tzset()
+except Exception: pass
 import streamlit as st
 import streamlit.components.v1 as components
 import json
