@@ -220,9 +220,12 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                     with tab_det_h:
                         col_h1, col_h2 = st.columns(2)
                         with col_h1:
+                            st.write(f"**Evento:** {ev_h.get('descricao') or ev_h.get('titulo') or '-'}")
                             st.write(f"**Cliente:** {nome_cli_h}")
                             st.write(f"**Contato:** {contato_h}")
-                            st.write(f"**Período:** {data_ini_h} até {data_fim_h}")
+                            _hi_h = (ev_h.get('hora_inicio') or '')[:5] or '--:--'
+                            _hf_h = (ev_h.get('hora_fim') or '')[:5] or '--:--'
+                            st.write(f"**Período:** {data_ini_h} ({_hi_h}) até {data_fim_h} ({_hf_h})")
                             st.write(f"**Valor:** R$ {formatar_moeda(valor_h)}")
                             st.write(f"**Local/Obs:** {ev_h.get('observacao') or '-'}")
                         with col_h2:
@@ -275,10 +278,13 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                         if REPORTLAB_DISPONIVEL:
                             nome_usuario_pdf_h = st.session_state.get('nome_usuario') or 'Usuário'
                             buffer_pdf_h = gerar_recibo_evento_pdf(ev_h, itens_h.data or [], dict_produtos, nome_cli_h, contato_h, nome_usuario_pdf_h)
-                            st.download_button("📄 Baixar Recibo (PDF)", data=buffer_pdf_h, file_name=f"recibo_historico_{ev_h['id']}.pdf", mime="application/pdf", key=f"pdf_hist_{ev_h['id']}")
                             buffer_ctr_h = contrato.gerar_contrato_pdf(ev_h, itens_h.data or [], dict_produtos, nome_cli_h, locador_contrato, safe_json_load, formatar_moeda)
-                            st.download_button("📜 Baixar Contrato de Locação (PDF)", data=buffer_ctr_h, file_name=f"contrato_historico_{ev_h['id']}.pdf", mime="application/pdf", key=f"contrato_hist_{ev_h['id']}")
-                            contrato.ui_completar_evento(supabase, ev_h, f"ctr_hist_{ev_h['id']}", mostrar_popup)
+                            _cbh1, _cbh2, _cbh3 = st.columns([1, 1.5, 2.5])
+                            with _cbh1: st.download_button("📄 Baixar Recibo (PDF)", data=buffer_pdf_h, file_name=f"recibo_historico_{ev_h['id']}.pdf", mime="application/pdf", key=f"pdf_hist_{ev_h['id']}")
+                            with _cbh2: st.download_button("📜 Baixar Contrato de Locação (PDF)", data=buffer_ctr_h, file_name=f"contrato_historico_{ev_h['id']}.pdf", mime="application/pdf", key=f"contrato_hist_{ev_h['id']}")
+                            _dc_h = contrato.dados_do_evento(ev_h)
+                            if not _dc_h.get('doc_cliente') or not _dc_h.get('forma_pagamento'):
+                                st.caption("⚠️ Faltam dados do contrato (CPF/CNPJ do cliente e forma de pagamento). Complete na aba **✏️ Editar Dados**.")
 
                     # --- ABA ALTERAR STATUS ---
                     with tab_status_h:
@@ -329,7 +335,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
 
                     # --- ABA EDITAR DADOS ---
                     with tab_edit_h:
-                        st.caption("Corrija datas, valor, local ou dados do cliente.")
+                        st.caption("Edite qualquer dado do evento: título, datas e horários, valor, local, cliente, dados do contrato e itens.")
                         def _pd(d):
                             if not d: return datetime.now().date()
                             try: return datetime.strptime(d.split("T")[0], "%Y-%m-%d").date()
@@ -343,18 +349,58 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                         with col_he2: nd_fim_h = st.date_input("Data Fim", value=_pd(ev_h.get('data_fim_alocacao')), format="DD/MM/YYYY", key=f"hedit_fim_{ev_h['id']}")
                         with col_he3: nh_ini_h = st.time_input("Hora Início", value=_pt(ev_h.get('hora_inicio')), key=f"hedit_hini_{ev_h['id']}")
                         with col_he4: nh_fim_h = st.time_input("Hora Fim", value=_pt(ev_h.get('hora_fim')), key=f"hedit_hfim_{ev_h['id']}")
+                        ntit_h = st.text_input("Título do Evento", value=ev_h.get('descricao') or ev_h.get('titulo') or "", key=f"hedit_tit_{ev_h['id']}")
                         nval_h = st.number_input("Valor (R$)", min_value=0.0, step=50.0, value=float(ev_h.get('valor_total') or 0), format="%.2f", key=f"hedit_val_{ev_h['id']}")
                         nobs_h = st.text_area("Local/Observações", value=ev_h.get('observacao') or "", key=f"hedit_obs_{ev_h['id']}")
                         col_hec1, col_hec2 = st.columns(2)
                         with col_hec1: nnome_cli_h = st.text_input("Nome do Cliente", value=nome_cli_h, key=f"hedit_nome_{ev_h['id']}")
                         with col_hec2: ncont_cli_h = st.text_input("Contato", value=contato_h if contato_h != "-" else "", key=f"hedit_cont_{ev_h['id']}")
+                        dados_contrato_h = contrato.ui_campos_contrato(f"hedit_ctr_{ev_h['id']}", contrato.dados_do_evento(ev_h))
+                        # --- itens do evento (quantidades) ---
+                        st.markdown("**🛒 Itens do evento**")
+                        alug_h_ed, _ = calcular_disponibilidade_periodo(nd_ini_h, nd_fim_h, nh_ini_h, nh_fim_h, evento_id_excluir=ev_h['id'])
+                        novas_qtd_h = {}
+                        for it_e in (itens_h.data or []):
+                            prod_e = dict_produtos.get(it_e['produto_id'], {})
+                            nome_e = prod_e.get('nome', f"Produto #{it_e['produto_id']}")
+                            js_e = safe_json_load(it_e.get('observacao'))
+                            if js_e:
+                                st.caption(f"🔠 {it_e['quantidade']}x {nome_e} ({', '.join(f'{k}: {v}x' for k, v in js_e.items())}) — itens com peças específicas se alteram em Eventos Encontrados → ➖ Remover Itens.")
+                                continue
+                            livre_e = max(0, int(prod_e.get('quantidade_estoque') or 0) - int(alug_h_ed.get(it_e['produto_id'], 0)))
+                            novas_qtd_h[it_e['id']] = st.number_input(f"{nome_e} (livre: {livre_e}; 0 remove o item)", min_value=0, max_value=max(livre_e, int(it_e['quantidade'])), value=int(it_e['quantidade']), step=1, key=f"hedit_qtd_{ev_h['id']}_{it_e['id']}")
+                        ids_no_evento_h = {it_e['produto_id'] for it_e in (itens_h.data or [])}
+                        opcoes_add_h = {pid: pr for pid, pr in dict_produtos.items() if pid not in ids_no_evento_h and not safe_json_load(pr.get('observacao')) and int(pr.get('quantidade_estoque') or 0) > 0}
+                        col_ad1, col_ad2 = st.columns([3, 1])
+                        with col_ad1: novo_prod_h = st.selectbox("Adicionar novo item", [None] + list(opcoes_add_h.keys()), format_func=lambda pid: "— nenhum —" if pid is None else opcoes_add_h[pid]['nome'], key=f"hedit_addp_{ev_h['id']}")
+                        with col_ad2: novo_prod_qtd_h = st.number_input("Qtd", min_value=1, value=1, step=1, key=f"hedit_addq_{ev_h['id']}")
                         njust_h = st.text_input("Justificativa (obrigatório)", key=f"hedit_just_{ev_h['id']}")
                         col_hbtn1, col_hbtn2 = st.columns(2)
                         with col_hbtn1:
                             if st.button("💾 Salvar Alterações", key=f"hedit_btn_{ev_h['id']}"):
                                 if not njust_h.strip(): mostrar_popup("Informe a justificativa.", tipo="erro")
                                 else:
-                                    supabase.table("eventos").update({"data_inicio": str(nd_ini_h), "data_fim": str(nd_fim_h), "data_fim_alocacao": str(nd_fim_h), "hora_inicio": str(nh_ini_h), "hora_fim": str(nh_fim_h), "valor_total": nval_h, "observacao": nobs_h}).eq("id", ev_h['id']).execute()
+                                    supabase.table("eventos").update({"titulo": ntit_h.strip() or ev_h.get('titulo'), "descricao": ntit_h.strip() or ev_h.get('descricao'), "data_inicio": str(nd_ini_h), "data_fim": str(nd_fim_h), "data_fim_alocacao": str(nd_fim_h), "hora_inicio": str(nh_ini_h), "hora_fim": str(nh_fim_h), "valor_total": nval_h, "observacao": nobs_h}).eq("id", ev_h['id']).execute()
+                                    _ok_ch, _err_ch = contrato.salvar_dados_evento(supabase, ev_h['id'], dados_contrato_h)
+                                    if not _ok_ch: st.session_state['_ctr_erro_migracao'] = _err_ch
+                                    _log_itens_h = []
+                                    for it_e in (itens_h.data or []):
+                                        if it_e['id'] not in novas_qtd_h: continue
+                                        q_novo, q_velho = int(novas_qtd_h[it_e['id']]), int(it_e['quantidade'])
+                                        if q_novo == q_velho: continue
+                                        nome_log = dict_produtos.get(it_e['produto_id'], {}).get('nome', f"Produto #{it_e['produto_id']}")
+                                        if q_novo == 0:
+                                            supabase.table("itens_evento").delete().eq("id", it_e['id']).execute()
+                                            _log_itens_h.append(f"removeu {q_velho}x {nome_log}")
+                                        else:
+                                            v_unit = (float(it_e.get('valor_cobrado') or 0) / q_velho) if q_velho else mapa_valor_ref.get(it_e['produto_id'], 0)
+                                            supabase.table("itens_evento").update({"quantidade": q_novo, "valor_cobrado": v_unit * q_novo}).eq("id", it_e['id']).execute()
+                                            _log_itens_h.append(f"{nome_log}: {q_velho}x → {q_novo}x")
+                                    if novo_prod_h:
+                                        supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": ev_h['id'], "produto_id": novo_prod_h, "quantidade": int(novo_prod_qtd_h), "observacao": "", "valor_cobrado": mapa_valor_ref.get(novo_prod_h, 0) * int(novo_prod_qtd_h)}).execute()
+                                        _log_itens_h.append(f"adicionou {int(novo_prod_qtd_h)}x {opcoes_add_h[novo_prod_h]['nome']}")
+                                    if _log_itens_h:
+                                        supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev_h['id'], "descricao": "🛒 ITENS (via Histórico): " + "; ".join(_log_itens_h), "data_registro": datetime.now().strftime("%d/%m/%Y às %H:%M:%S")}).execute()
                                     if ev_h.get('cliente_id'): supabase.table("clientes_eventos").update({"nome": nnome_cli_h, "contato": ncont_cli_h}).eq("id", ev_h['cliente_id']).execute()
                                     supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev_h['id'], "descricao": f"✏️ EDIÇÃO via Histórico. Justificativa: {njust_h}", "data_registro": datetime.now().strftime("%d/%m/%Y às %H:%M:%S")}).execute()
                                     mostrar_popup("ALTERAÇÃO SALVA COM SUCESSO!")
@@ -501,10 +547,13 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                     if REPORTLAB_DISPONIVEL:
                         nome_usuario_pdf = st.session_state.get('nome_usuario') or "Usuário do Sistema"
                         buffer_pdf = gerar_recibo_evento_pdf(ev, itens_ev.data or [], dict_produtos, nome_cliente_ev, contato_cliente_ev, nome_usuario_pdf)
-                        st.download_button("📄 Baixar Recibo de Confirmação (PDF)", data=buffer_pdf, file_name=f"recibo_evento_{ev['id']}.pdf", mime="application/pdf", key=f"recibo_pdf_{ev['id']}")
                         buffer_ctr = contrato.gerar_contrato_pdf(ev, itens_ev.data or [], dict_produtos, nome_cliente_ev, locador_contrato, safe_json_load, formatar_moeda)
-                        st.download_button("📜 Baixar Contrato de Locação (PDF)", data=buffer_ctr, file_name=f"contrato_evento_{ev['id']}.pdf", mime="application/pdf", key=f"contrato_pdf_{ev['id']}")
-                        contrato.ui_completar_evento(supabase, ev, f"ctr_det_{ev['id']}", mostrar_popup)
+                        _cb1, _cb2, _cb3 = st.columns([1.6, 1.5, 1.4])
+                        with _cb1: st.download_button("📄 Baixar Recibo de Confirmação (PDF)", data=buffer_pdf, file_name=f"recibo_evento_{ev['id']}.pdf", mime="application/pdf", key=f"recibo_pdf_{ev['id']}")
+                        with _cb2: st.download_button("📜 Baixar Contrato de Locação (PDF)", data=buffer_ctr, file_name=f"contrato_evento_{ev['id']}.pdf", mime="application/pdf", key=f"contrato_pdf_{ev['id']}")
+                        _dc_ev = contrato.dados_do_evento(ev)
+                        if not _dc_ev.get('doc_cliente') or not _dc_ev.get('forma_pagamento'):
+                            st.caption("⚠️ Faltam dados do contrato (CPF/CNPJ do cliente e forma de pagamento). Complete na aba **✏️ Editar Evento**.")
 
                     st.markdown("---")
                     if ev.get('pagamento_confirmado'):
@@ -701,19 +750,23 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                     with col_ed2: nova_data_fim_edit = st.date_input("Data Fim", value=_parse_data_edit(ev.get('data_fim_alocacao')), format="DD/MM/YYYY", key=f"edit_data_fim_{ev['id']}")
                     with col_ed3: nova_hora_inicio_edit = st.time_input("Hora Início", value=_parse_time_edit(ev.get('hora_inicio')), key=f"edit_hora_ini_{ev['id']}")
                     with col_ed4: nova_hora_fim_edit = st.time_input("Hora Fim", value=_parse_time_edit(ev.get('hora_fim')), key=f"edit_hora_fim_{ev['id']}")
+                    novo_titulo_edit = st.text_input("Título do Evento", value=ev.get('descricao') or ev.get('titulo') or "", key=f"edit_tit_{ev['id']}")
                     novo_valor_edit = st.number_input("Valor Cobrado (R$)", min_value=0.0, step=50.0, value=float(ev.get('valor_total') or 0), format="%.2f", key=f"edit_valor_{ev['id']}")
                     novo_local_edit = st.text_area("Local/Observações", value=ev.get('observacao') or "", key=f"edit_local_{ev['id']}")
                     col_ec1, col_ec2 = st.columns(2)
                     with col_ec1: novo_nome_cliente_edit = st.text_input("Nome do Cliente", value=nome_cliente_ev, key=f"edit_nome_cli_{ev['id']}")
                     with col_ec2: novo_contato_cliente_edit = st.text_input("Contato do Cliente", value=contato_cliente_ev if contato_cliente_ev != "-" else "", key=f"edit_contato_cli_{ev['id']}")
+                    dados_contrato_edit = contrato.ui_campos_contrato(f"edit_ctr_{ev['id']}", contrato.dados_do_evento(ev))
                     justificativa_edit = st.text_input("Justificativa (obrigatório)", key=f"edit_just_{ev['id']}")
                     col_btn_edit1, col_btn_edit2 = st.columns(2)
                     with col_btn_edit1:
                         if st.button("💾 Salvar Alterações", key=f"btn_edit_evento_{ev['id']}"):
                             if not justificativa_edit.strip(): mostrar_popup("Informe a justificativa da alteração.", tipo="erro")
                             else:
-                                supabase.table("eventos").update({"data_inicio": str(nova_data_inicio_edit),"data_fim": str(nova_data_fim_edit),"data_fim_alocacao": str(nova_data_fim_edit),"hora_inicio": str(nova_hora_inicio_edit),"hora_fim": str(nova_hora_fim_edit),"valor_total": novo_valor_edit,"observacao": novo_local_edit}).eq("id", ev['id']).execute()
+                                supabase.table("eventos").update({"titulo": novo_titulo_edit.strip() or ev.get('titulo'), "descricao": novo_titulo_edit.strip() or ev.get('descricao'), "data_inicio": str(nova_data_inicio_edit),"data_fim": str(nova_data_fim_edit),"data_fim_alocacao": str(nova_data_fim_edit),"hora_inicio": str(nova_hora_inicio_edit),"hora_fim": str(nova_hora_fim_edit),"valor_total": novo_valor_edit,"observacao": novo_local_edit}).eq("id", ev['id']).execute()
                                 if ev.get('cliente_id'): supabase.table("clientes_eventos").update({"nome": novo_nome_cliente_edit,"contato": novo_contato_cliente_edit}).eq("id", ev['cliente_id']).execute()
+                                _ok_ctr_e, _err_ctr_e = contrato.salvar_dados_evento(supabase, ev['id'], dados_contrato_edit)
+                                if not _ok_ctr_e: st.session_state['_ctr_erro_migracao'] = _err_ctr_e
                                 evento_atualizado_google = dict(ev)
                                 evento_atualizado_google.update({"data_inicio": str(nova_data_inicio_edit),"data_fim_alocacao": str(nova_data_fim_edit),"observacao": novo_local_edit})
                                 novo_id_google_edit = sincronizar_evento_google_agenda_silencioso(st.session_state['usuario_id'], evento_atualizado_google, ev.get('google_event_id'))
