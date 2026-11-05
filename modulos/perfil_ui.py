@@ -43,6 +43,21 @@ _CSS = """
 .pf-bar { height:9px; border-radius:99px; background:#2a2a2e; overflow:hidden; }
 .pf-bar > div { height:100%; border-radius:99px; background:linear-gradient(90deg,#FFB300,#FFE082); }
 .pf-dica { font-size:.8rem; color:#8d8d93; margin-top:6px; }
+/* cartões de seção (modo leitura / edição) */
+[data-testid="stMainBlockContainer"] [data-testid="stVerticalBlockBorderWrapper"]:has(.pf-sec-t),
+[data-testid="stMainBlockContainer"] [data-testid="stVerticalBlockBorderWrapper"]:has(.ll-user-head) {
+    background: rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.10) !important; border-radius:16px; padding:6px 10px 10px 10px; margin-bottom:12px; }
+.pf-sec-t { font: 700 1.12rem 'Outfit','Inter',sans-serif; color:#F4F4F5; line-height:1.2; }
+.pf-sec-s { color:#8d8d93; font-size:.84rem; margin-top:3px; }
+.pf-ficha { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:0 32px; margin-top:6px; }
+.pf-campo { padding:12px 0 11px 0; border-bottom:1px solid rgba(255,255,255,.07); min-width:0; }
+.pf-campo.largo { grid-column:1 / -1; }
+.pf-campo .l { font-size:.76rem; color:#8d8d93; font-weight:600; margin-bottom:3px; }
+.pf-campo .v { font-size:1rem; color:#F4F4F5; font-weight:600; word-break:break-word; }
+.pf-campo .v.vazio { color:#5c5c63; font-weight:400; font-style:italic; }
+.pf-grupo { grid-column:1 / -1; margin-top:16px; padding-bottom:2px; font-size:.8rem; font-weight:700; color:#FFC107; letter-spacing:.02em; }
+.pf-grupo:first-child { margin-top:4px; }
+@media (max-width:640px) { .pf-ficha { grid-template-columns:1fr; } .pf-prog { flex:1 1 100%; } }
 </style>
 """
 
@@ -131,6 +146,59 @@ def aviso_sql_extra():
     st.error("Não foi possível salvar os campos novos. Se for a primeira vez, crie a coluna no Supabase "
              "(SQL Editor) e tente de novo:")
     st.code(SQL_PERFIL_EXTRA, language="sql")
+
+
+# ----------------------------------------------------------------------------------
+# Modo leitura (ficha) x modo edição — cada seção abre o formulário só quando se clica em "Editar"
+# ----------------------------------------------------------------------------------
+def _alternar(chave):
+    st.session_state[chave] = not st.session_state.get(chave, False)
+
+
+def fechar_edicao(chave):
+    st.session_state[chave] = False
+
+
+def secao_topo(titulo, chave, subtitulo="", rotulo="Editar", icone=":material/edit:"):
+    """Título da seção + botão Editar à direita. Devolve True se a seção está em modo edição."""
+    editando = bool(st.session_state.get(chave, False))
+    c1, c2 = st.columns([3, 1.1], vertical_alignment="center")
+    sub = f'<div class="pf-sec-s">{escape(subtitulo)}</div>' if subtitulo else ""
+    c1.markdown(f'<div class="pf-sec-t">{escape(titulo)}</div>{sub}', unsafe_allow_html=True)
+    if not editando:
+        c2.button(rotulo, icon=icone, key=f"{chave}_abrir", on_click=_alternar, args=(chave,), use_container_width=True)
+    return editando
+
+
+def ficha(itens):
+    """Mostra dados já salvos como texto fixo (não editável).
+    itens: lista de (rótulo, valor) ou (rótulo, valor, True) para ocupar a linha toda.
+    Um item ('#', 'Título') vira um subtítulo de grupo."""
+    partes = []
+    for it in itens:
+        if it[0] == "#":
+            partes.append(f'<div class="pf-grupo">{escape(it[1])}</div>')
+            continue
+        rotulo, valor = it[0], (it[1] or "").strip() if isinstance(it[1], str) else it[1]
+        largo = len(it) > 2 and it[2]
+        vazio = not valor
+        txt = "Não informado" if vazio else escape(str(valor)).replace("\n", "<br>")
+        partes.append(f'<div class="pf-campo{" largo" if largo else ""}"><div class="l">{escape(rotulo)}</div>'
+                      f'<div class="v{" vazio" if vazio else ""}">{txt}</div></div>')
+    st.markdown(f'<div class="pf-ficha">{"".join(partes)}</div>', unsafe_allow_html=True)
+
+
+def fmt_endereco(extra):
+    rua = (extra.get("endereco") or "").strip()
+    num = (extra.get("numero") or "").strip()
+    bairro = (extra.get("bairro") or "").strip()
+    cidade = (extra.get("cidade") or "").strip()
+    uf = (extra.get("uf") or "").strip()
+    cep = (extra.get("cep") or "").strip()
+    linha1 = ", ".join(x for x in [rua, num] if x)
+    cid_uf = "/".join(x for x in [cidade, uf] if x)
+    linha2 = " · ".join(x for x in [bairro, cid_uf, f"CEP {cep}" if cep else ""] if x)
+    return "\n".join(x for x in [linha1, linha2] if x)
 
 
 # ----------------------------------------------------------------------------------

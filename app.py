@@ -1249,6 +1249,8 @@ else:
             st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
             if st.button("⬅️ Voltar ao Sistema", use_container_width=True):
                 st.session_state['ver_perfil'] = False
+                for _k in ('_pf_ed_dados', '_pf_ed_empresa', '_pf_ed_dono', '_pf_ed_senha', '_foto_editando'):
+                    st.session_state.pop(_k, None)  # ao voltar, tudo fica em modo leitura de novo
                 st.rerun()
 
         dados_usuario_resp = supabase.table("usuarios").select("id, nome, email, google_refresh_token, google_email_conectado").eq("id", _uid_perfil).execute()
@@ -1274,144 +1276,206 @@ else:
         # ---------------------------------------------------------------- MEUS DADOS
         with tab_dados:
             topo_usuario.secao_foto_perfil(supabase, em_expander=False)
-            st.markdown("#### Dados pessoais")
-            with st.form("form_editar_perfil"):
-                _c1, _c2 = st.columns(2)
-                novo_nome_perfil = _c1.text_input("Nome completo", value=dados_usuario_atual.get('nome') or "")
-                novo_email_perfil = _c2.text_input("E-mail (usado no login)", value=dados_usuario_atual.get('email') or "")
-                _c3, _c4 = st.columns(2)
-                novo_tel_perfil = _c3.text_input("Telefone / WhatsApp", value=extra_perfil.get('telefone', ''), placeholder="(85) 99999-9999")
-                novo_cargo_perfil = _c4.text_input("Função / Cargo", value=extra_perfil.get('cargo', ''), placeholder="Ex.: Proprietário, Gerente, Atendimento")
-                senha_atual_perfil = st.text_input("Senha atual", type="password", help="Só é necessária se você for trocar o e-mail de login.")
-                st.caption("🔐 A senha atual só é pedida quando você troca o e-mail, porque ele é o seu login no sistema.")
-                salvar_perfil = st.form_submit_button("💾 Salvar dados pessoais", type="primary")
-            if salvar_perfil:
-                _email_novo = novo_email_perfil.strip()
-                _email_mudou = _email_novo.lower() != (dados_usuario_atual.get('email') or "").strip().lower()
-                if not novo_nome_perfil.strip() or not _email_novo:
-                    mostrar_popup("Preencha nome e e-mail.", tipo="erro")
-                elif _email_mudou and not senha_atual_perfil:
-                    mostrar_popup("Para trocar o e-mail, confirme sua senha atual.", tipo="erro")
+            with st.container(border=True):
+                _ed = perfil_ui.secao_topo("Dados pessoais", "_pf_ed_dados", "Seus dados de acesso e contato.")
+                if not _ed:
+                    perfil_ui.ficha([
+                        ("Nome completo", dados_usuario_atual.get('nome')),
+                        ("E-mail (login)", dados_usuario_atual.get('email')),
+                        ("Telefone / WhatsApp", extra_perfil.get('telefone')),
+                        ("Função / Cargo", extra_perfil.get('cargo')),
+                    ])
                 else:
-                    _pode_salvar = True
-                    if _email_mudou:
-                        senha_check_resp = supabase.table("usuarios").select("senha_hash").eq("id", _uid_perfil).execute()
-                        senha_hash_atual = senha_check_resp.data[0]['senha_hash'] if senha_check_resp.data else None
-                        if not verificar_senha(senha_atual_perfil, senha_hash_atual):
-                            mostrar_popup("Senha incorreta.", tipo="erro"); _pode_salvar = False
+                    with st.form("form_editar_perfil", border=False):
+                        _c1, _c2 = st.columns(2)
+                        novo_nome_perfil = _c1.text_input("Nome completo", value=dados_usuario_atual.get('nome') or "")
+                        novo_email_perfil = _c2.text_input("E-mail (usado no login)", value=dados_usuario_atual.get('email') or "")
+                        _c3, _c4 = st.columns(2)
+                        novo_tel_perfil = _c3.text_input("Telefone / WhatsApp", value=extra_perfil.get('telefone', ''), placeholder="(85) 99999-9999")
+                        novo_cargo_perfil = _c4.text_input("Função / Cargo", value=extra_perfil.get('cargo', ''), placeholder="Ex.: Proprietário, Gerente, Atendimento")
+                        senha_atual_perfil = st.text_input("Senha atual (só se for trocar o e-mail)", type="password",
+                                                           help="O e-mail é o seu login, por isso pedimos a senha para trocá-lo.")
+                        _f1, _f2 = st.columns(2)
+                        salvar_perfil = _f1.form_submit_button("Salvar alterações", type="primary", use_container_width=True)
+                        cancelar_perfil = _f2.form_submit_button("Cancelar", use_container_width=True)
+                    if cancelar_perfil:
+                        perfil_ui.fechar_edicao("_pf_ed_dados"); st.rerun()
+                    if salvar_perfil:
+                        _email_novo = novo_email_perfil.strip()
+                        _email_mudou = _email_novo.lower() != (dados_usuario_atual.get('email') or "").strip().lower()
+                        if not novo_nome_perfil.strip() or not _email_novo:
+                            mostrar_popup("Preencha nome e e-mail.", tipo="erro")
+                        elif _email_mudou and not senha_atual_perfil:
+                            mostrar_popup("Para trocar o e-mail, confirme sua senha atual.", tipo="erro")
                         else:
-                            email_ja_existe = supabase.table("usuarios").select("id").eq("email", _email_novo).neq("id", _uid_perfil).execute()
-                            if email_ja_existe.data:
-                                mostrar_popup("Já existe outra conta usando esse e-mail.", tipo="erro"); _pode_salvar = False
-                    if _pode_salvar:
-                        supabase.table("usuarios").update({"nome": novo_nome_perfil.strip(), "email": _email_novo}).eq("id", _uid_perfil).execute()
-                        st.session_state['nome_usuario'] = novo_nome_perfil.strip()
-                        _extra_novo = {**extra_perfil, "telefone": perfil_ui.fmt_tel(novo_tel_perfil), "cargo": novo_cargo_perfil.strip()}
-                        if perfil_ui.salvar_extra(supabase, _uid_perfil, _extra_novo):
-                            mostrar_popup("PERFIL ATUALIZADO COM SUCESSO!")
-                            st.rerun()
-                        else:
-                            st.warning("Nome e e-mail foram salvos, mas telefone e função não.")
-                            perfil_ui.aviso_sql_extra()
+                            _pode_salvar = True
+                            if _email_mudou:
+                                senha_check_resp = supabase.table("usuarios").select("senha_hash").eq("id", _uid_perfil).execute()
+                                senha_hash_atual = senha_check_resp.data[0]['senha_hash'] if senha_check_resp.data else None
+                                if not verificar_senha(senha_atual_perfil, senha_hash_atual):
+                                    mostrar_popup("Senha incorreta.", tipo="erro"); _pode_salvar = False
+                                else:
+                                    email_ja_existe = supabase.table("usuarios").select("id").eq("email", _email_novo).neq("id", _uid_perfil).execute()
+                                    if email_ja_existe.data:
+                                        mostrar_popup("Já existe outra conta usando esse e-mail.", tipo="erro"); _pode_salvar = False
+                            if _pode_salvar:
+                                supabase.table("usuarios").update({"nome": novo_nome_perfil.strip(), "email": _email_novo}).eq("id", _uid_perfil).execute()
+                                st.session_state['nome_usuario'] = novo_nome_perfil.strip()
+                                _extra_novo = {**extra_perfil, "telefone": perfil_ui.fmt_tel(novo_tel_perfil), "cargo": novo_cargo_perfil.strip()}
+                                if perfil_ui.salvar_extra(supabase, _uid_perfil, _extra_novo):
+                                    perfil_ui.fechar_edicao("_pf_ed_dados")
+                                    mostrar_popup("PERFIL ATUALIZADO COM SUCESSO!")
+                                    st.rerun()
+                                else:
+                                    st.warning("Nome e e-mail foram salvos, mas telefone e função não.")
+                                    perfil_ui.aviso_sql_extra()
 
         # ---------------------------------------------------------------- EMPRESA
         with tab_emp:
-            st.markdown("#### Dados da empresa")
-            st.caption("Informações do seu negócio, guardadas no seu cadastro para você ter tudo num lugar só.")
-            with st.form("form_perfil_empresa"):
-                _a1, _a2 = st.columns(2)
-                emp_fantasia = _a1.text_input("Nome fantasia", value=nome_fantasia_atual)
-                emp_razao = _a2.text_input("Razão social", value=extra_perfil.get('razao_social', ''))
-                _b1, _b2, _b3 = st.columns(3)
-                emp_doc = _b1.text_input("CNPJ / CPF", value=extra_perfil.get('cnpj', ''), placeholder="00.000.000/0000-00")
-                emp_tel = _b2.text_input("Telefone comercial", value=extra_perfil.get('emp_telefone', ''), placeholder="(85) 3000-0000")
-                emp_wpp = _b3.text_input("WhatsApp comercial", value=extra_perfil.get('emp_whatsapp', ''), placeholder="(85) 99999-9999")
-                _g1, _g2 = st.columns(2)
-                emp_email = _g1.text_input("E-mail comercial", value=extra_perfil.get('emp_email', ''))
-                emp_insta = _g2.text_input("Instagram", value=extra_perfil.get('instagram', ''), placeholder="@suaempresa")
-                emp_site = st.text_input("Site", value=extra_perfil.get('site', ''), placeholder="www.suaempresa.com.br")
-                st.markdown("**📍 Endereço**")
-                _d1, _d2 = st.columns([3, 1])
-                emp_end = _d1.text_input("Rua / Avenida", value=extra_perfil.get('endereco', ''))
-                emp_num = _d2.text_input("Número", value=extra_perfil.get('numero', ''))
-                _e1, _e2, _e3, _e4 = st.columns([2, 2, 1, 1.4])
-                emp_bairro = _e1.text_input("Bairro", value=extra_perfil.get('bairro', ''))
-                emp_cidade = _e2.text_input("Cidade", value=extra_perfil.get('cidade', ''))
-                emp_uf = _e3.text_input("UF", value=extra_perfil.get('uf', ''), max_chars=2)
-                emp_cep = _e4.text_input("CEP", value=extra_perfil.get('cep', ''), placeholder="00000-000")
-                emp_horario = st.text_input("Horário de atendimento", value=extra_perfil.get('horario', ''), placeholder="Seg a Sex, 8h às 18h")
-                salvar_emp = st.form_submit_button("💾 Salvar dados da empresa", type="primary")
-            if salvar_emp:
-                if not emp_fantasia.strip():
-                    mostrar_popup("Informe o nome fantasia da empresa.", tipo="erro")
-                elif emp_doc.strip() and len(perfil_ui.so_digitos(emp_doc)) not in (11, 14):
-                    mostrar_popup("CNPJ precisa ter 14 dígitos (ou CPF, 11 dígitos).", tipo="erro")
-                elif emp_cep.strip() and len(perfil_ui.so_digitos(emp_cep)) != 8:
-                    mostrar_popup("O CEP precisa ter 8 dígitos.", tipo="erro")
+            with st.container(border=True):
+                _ed = perfil_ui.secao_topo("Dados da empresa", "_pf_ed_empresa", "Informações do seu negócio, num lugar só.")
+                if not _ed:
+                    perfil_ui.ficha([
+                        ("#", "Identificação"),
+                        ("Nome fantasia", nome_fantasia_atual),
+                        ("Razão social", extra_perfil.get('razao_social')),
+                        ("CNPJ / CPF", extra_perfil.get('cnpj')),
+                        ("#", "Contato"),
+                        ("Telefone comercial", extra_perfil.get('emp_telefone')),
+                        ("WhatsApp comercial", extra_perfil.get('emp_whatsapp')),
+                        ("E-mail comercial", extra_perfil.get('emp_email')),
+                        ("Instagram", extra_perfil.get('instagram')),
+                        ("Site", extra_perfil.get('site'), True),
+                        ("#", "Endereço e atendimento"),
+                        ("Endereço", perfil_ui.fmt_endereco(extra_perfil), True),
+                        ("Horário de atendimento", extra_perfil.get('horario'), True),
+                    ])
                 else:
-                    if emp_fantasia.strip() != nome_fantasia_atual:
-                        try:
-                            supabase.table("empresas").update({"nome_fantasia": emp_fantasia.strip()}).eq("id", st.session_state['empresa_id']).execute()
-                        except Exception:
-                            registrar_erro("app.py:perfil_salvar_fantasia")
-                            st.error("Não foi possível atualizar o nome fantasia.")
-                    _extra_novo = {**extra_perfil,
-                        "razao_social": emp_razao.strip(), "cnpj": perfil_ui.fmt_doc(emp_doc),
-                        "emp_telefone": perfil_ui.fmt_tel(emp_tel), "emp_whatsapp": perfil_ui.fmt_tel(emp_wpp),
-                        "emp_email": emp_email.strip(), "instagram": perfil_ui.fmt_insta(emp_insta), "site": emp_site.strip(),
-                        "endereco": emp_end.strip(), "numero": emp_num.strip(), "bairro": emp_bairro.strip(),
-                        "cidade": emp_cidade.strip(), "uf": emp_uf.strip().upper(), "cep": perfil_ui.fmt_cep(emp_cep),
-                        "horario": emp_horario.strip()}
-                    if perfil_ui.salvar_extra(supabase, _uid_perfil, _extra_novo):
-                        mostrar_popup("DADOS DA EMPRESA SALVOS!")
-                        st.rerun()
-                    else:
-                        perfil_ui.aviso_sql_extra()
+                    with st.form("form_perfil_empresa", border=False):
+                        _a1, _a2 = st.columns(2)
+                        emp_fantasia = _a1.text_input("Nome fantasia", value=nome_fantasia_atual)
+                        emp_razao = _a2.text_input("Razão social", value=extra_perfil.get('razao_social', ''))
+                        _b1, _b2, _b3 = st.columns(3)
+                        emp_doc = _b1.text_input("CNPJ / CPF", value=extra_perfil.get('cnpj', ''), placeholder="00.000.000/0000-00")
+                        emp_tel = _b2.text_input("Telefone comercial", value=extra_perfil.get('emp_telefone', ''), placeholder="(85) 3000-0000")
+                        emp_wpp = _b3.text_input("WhatsApp comercial", value=extra_perfil.get('emp_whatsapp', ''), placeholder="(85) 99999-9999")
+                        _g1, _g2 = st.columns(2)
+                        emp_email = _g1.text_input("E-mail comercial", value=extra_perfil.get('emp_email', ''))
+                        emp_insta = _g2.text_input("Instagram", value=extra_perfil.get('instagram', ''), placeholder="@suaempresa")
+                        emp_site = st.text_input("Site", value=extra_perfil.get('site', ''), placeholder="www.suaempresa.com.br")
+                        st.markdown("**📍 Endereço**")
+                        _d1, _d2 = st.columns([3, 1])
+                        emp_end = _d1.text_input("Rua / Avenida", value=extra_perfil.get('endereco', ''))
+                        emp_num = _d2.text_input("Número", value=extra_perfil.get('numero', ''))
+                        _e1, _e2, _e3, _e4 = st.columns([2, 2, 1, 1.4])
+                        emp_bairro = _e1.text_input("Bairro", value=extra_perfil.get('bairro', ''))
+                        emp_cidade = _e2.text_input("Cidade", value=extra_perfil.get('cidade', ''))
+                        emp_uf = _e3.text_input("UF", value=extra_perfil.get('uf', ''), max_chars=2)
+                        emp_cep = _e4.text_input("CEP", value=extra_perfil.get('cep', ''), placeholder="00000-000")
+                        emp_horario = st.text_input("Horário de atendimento", value=extra_perfil.get('horario', ''), placeholder="Seg a Sex, 8h às 18h")
+                        _f1, _f2 = st.columns(2)
+                        salvar_emp = _f1.form_submit_button("Salvar alterações", type="primary", use_container_width=True)
+                        cancelar_emp = _f2.form_submit_button("Cancelar", use_container_width=True)
+                    if cancelar_emp:
+                        perfil_ui.fechar_edicao("_pf_ed_empresa"); st.rerun()
+                    if salvar_emp:
+                        if not emp_fantasia.strip():
+                            mostrar_popup("Informe o nome fantasia da empresa.", tipo="erro")
+                        elif emp_doc.strip() and len(perfil_ui.so_digitos(emp_doc)) not in (11, 14):
+                            mostrar_popup("CNPJ precisa ter 14 dígitos (ou CPF, 11 dígitos).", tipo="erro")
+                        elif emp_cep.strip() and len(perfil_ui.so_digitos(emp_cep)) != 8:
+                            mostrar_popup("O CEP precisa ter 8 dígitos.", tipo="erro")
+                        else:
+                            if emp_fantasia.strip() != nome_fantasia_atual:
+                                try:
+                                    supabase.table("empresas").update({"nome_fantasia": emp_fantasia.strip()}).eq("id", st.session_state['empresa_id']).execute()
+                                except Exception:
+                                    registrar_erro("app.py:perfil_salvar_fantasia")
+                                    st.error("Não foi possível atualizar o nome fantasia.")
+                            _extra_novo = {**extra_perfil,
+                                "razao_social": emp_razao.strip(), "cnpj": perfil_ui.fmt_doc(emp_doc),
+                                "emp_telefone": perfil_ui.fmt_tel(emp_tel), "emp_whatsapp": perfil_ui.fmt_tel(emp_wpp),
+                                "emp_email": emp_email.strip(), "instagram": perfil_ui.fmt_insta(emp_insta), "site": emp_site.strip(),
+                                "endereco": emp_end.strip(), "numero": emp_num.strip(), "bairro": emp_bairro.strip(),
+                                "cidade": emp_cidade.strip(), "uf": emp_uf.strip().upper(), "cep": perfil_ui.fmt_cep(emp_cep),
+                                "horario": emp_horario.strip()}
+                            if perfil_ui.salvar_extra(supabase, _uid_perfil, _extra_novo):
+                                perfil_ui.fechar_edicao("_pf_ed_empresa")
+                                mostrar_popup("DADOS DA EMPRESA SALVOS!")
+                                st.rerun()
+                            else:
+                                perfil_ui.aviso_sql_extra()
 
             # ---- Dono da empresa (aparece como LOCADOR no contrato de locação)
-            st.markdown("---")
-            st.markdown("#### 👤 Dono da empresa")
-            st.caption("Esses dados aparecem no contrato de locação, como responsável pelo LOCADOR.")
-            with st.form("form_perfil_dono"):
-                dono_nome = st.text_input("Nome completo do dono", value=extra_perfil.get('dono_nome', ''))
-                _o1, _o2, _o3 = st.columns([1, 1, 1.3])
-                dono_nac = _o1.text_input("Nacionalidade", value=extra_perfil.get('dono_nacionalidade', ''), placeholder="brasileiro")
-                dono_civil = _o2.text_input("Estado civil", value=extra_perfil.get('dono_estado_civil', ''), placeholder="casado")
-                dono_cpf = _o3.text_input("CPF do dono", value=extra_perfil.get('dono_cpf', ''), placeholder="000.000.000-00")
-                dono_end = st.text_input("Endereço do dono (residente e domiciliado a)", value=extra_perfil.get('dono_endereco', ''), placeholder="Rua, número, bairro, cidade-UF")
-                salvar_dono = st.form_submit_button("💾 Salvar dados do dono", type="primary")
-            if salvar_dono:
-                if dono_cpf.strip() and len(perfil_ui.so_digitos(dono_cpf)) != 11:
-                    mostrar_popup("O CPF do dono precisa ter 11 dígitos.", tipo="erro")
+            with st.container(border=True):
+                _ed = perfil_ui.secao_topo("Dono da empresa", "_pf_ed_dono", "Aparece no contrato de locação, como responsável pelo LOCADOR.")
+                if not _ed:
+                    perfil_ui.ficha([
+                        ("Nome completo", extra_perfil.get('dono_nome'), True),
+                        ("Nacionalidade", extra_perfil.get('dono_nacionalidade')),
+                        ("Estado civil", extra_perfil.get('dono_estado_civil')),
+                        ("CPF", extra_perfil.get('dono_cpf')),
+                        ("Endereço (residente e domiciliado a)", extra_perfil.get('dono_endereco'), True),
+                    ])
                 else:
-                    _extra_dono = {**extra_perfil, "dono_nome": dono_nome.strip(), "dono_nacionalidade": dono_nac.strip(),
-                                   "dono_estado_civil": dono_civil.strip(), "dono_cpf": perfil_ui.fmt_doc(dono_cpf),
-                                   "dono_endereco": dono_end.strip()}
-                    if perfil_ui.salvar_extra(supabase, _uid_perfil, _extra_dono):
-                        mostrar_popup("DADOS DO DONO SALVOS!")
-                        st.rerun()
-                    else:
-                        perfil_ui.aviso_sql_extra()
+                    with st.form("form_perfil_dono", border=False):
+                        dono_nome = st.text_input("Nome completo do dono", value=extra_perfil.get('dono_nome', ''))
+                        _o1, _o2, _o3 = st.columns([1, 1, 1.3])
+                        dono_nac = _o1.text_input("Nacionalidade", value=extra_perfil.get('dono_nacionalidade', ''), placeholder="brasileiro")
+                        dono_civil = _o2.text_input("Estado civil", value=extra_perfil.get('dono_estado_civil', ''), placeholder="casado")
+                        dono_cpf = _o3.text_input("CPF do dono", value=extra_perfil.get('dono_cpf', ''), placeholder="000.000.000-00")
+                        dono_end = st.text_input("Endereço do dono (residente e domiciliado a)", value=extra_perfil.get('dono_endereco', ''), placeholder="Rua, número, bairro, cidade-UF")
+                        _f1, _f2 = st.columns(2)
+                        salvar_dono = _f1.form_submit_button("Salvar alterações", type="primary", use_container_width=True)
+                        cancelar_dono = _f2.form_submit_button("Cancelar", use_container_width=True)
+                    if cancelar_dono:
+                        perfil_ui.fechar_edicao("_pf_ed_dono"); st.rerun()
+                    if salvar_dono:
+                        if dono_cpf.strip() and len(perfil_ui.so_digitos(dono_cpf)) != 11:
+                            mostrar_popup("O CPF do dono precisa ter 11 dígitos.", tipo="erro")
+                        else:
+                            _extra_dono = {**extra_perfil, "dono_nome": dono_nome.strip(), "dono_nacionalidade": dono_nac.strip(),
+                                           "dono_estado_civil": dono_civil.strip(), "dono_cpf": perfil_ui.fmt_doc(dono_cpf),
+                                           "dono_endereco": dono_end.strip()}
+                            if perfil_ui.salvar_extra(supabase, _uid_perfil, _extra_dono):
+                                perfil_ui.fechar_edicao("_pf_ed_dono")
+                                mostrar_popup("DADOS DO DONO SALVOS!")
+                                st.rerun()
+                            else:
+                                perfil_ui.aviso_sql_extra()
 
         # ---------------------------------------------------------------- SEGURANÇA
         with tab_seg:
-            st.markdown("#### Alterar senha")
-            st.caption("Use pelo menos 7 caracteres. Misturar letras e números deixa sua conta mais segura.")
-            with st.form("form_trocar_senha_perfil"):
-                senha_atual_troca = st.text_input("Senha Atual", type="password", key="senha_atual_troca_perfil")
-                _s1, _s2 = st.columns(2)
-                senha_nova_troca = _s1.text_input("Nova Senha", type="password", key="senha_nova_troca_perfil")
-                senha_nova_troca_confirma = _s2.text_input("Confirme a Nova Senha", type="password", key="senha_nova_confirma_perfil")
-                trocar_senha_btn = st.form_submit_button("🔒 Alterar Senha", type="primary")
-            if trocar_senha_btn:
-                senha_check_resp2 = supabase.table("usuarios").select("senha_hash").eq("id", _uid_perfil).execute()
-                senha_hash_atual2 = senha_check_resp2.data[0]['senha_hash'] if senha_check_resp2.data else None
-                if not verificar_senha(senha_atual_troca, senha_hash_atual2): mostrar_popup("Senha atual incorreta.", tipo="erro")
-                elif len(senha_nova_troca) < 7: mostrar_popup("A nova senha precisa ter no mínimo 7 caracteres.", tipo="erro")
-                elif senha_nova_troca != senha_nova_troca_confirma: mostrar_popup("As senhas não coincidem.", tipo="erro")
+            with st.container(border=True):
+                _ed = perfil_ui.secao_topo("Senha", "_pf_ed_senha", "Use pelo menos 7 caracteres, misturando letras e números.",
+                                           rotulo="Alterar senha", icone=":material/lock:")
+                if not _ed:
+                    perfil_ui.ficha([
+                        ("Senha de acesso", "••••••••••"),
+                        ("E-mail de login", dados_usuario_atual.get('email')),
+                    ])
                 else:
-                    supabase.table("usuarios").update({"senha_hash": hash_senha(senha_nova_troca)}).eq("id", _uid_perfil).execute()
-                    mostrar_popup("SENHA ALTERADA COM SUCESSO!")
+                    with st.form("form_trocar_senha_perfil", border=False, clear_on_submit=True):
+                        senha_atual_troca = st.text_input("Senha atual", type="password", key="senha_atual_troca_perfil")
+                        _s1, _s2 = st.columns(2)
+                        senha_nova_troca = _s1.text_input("Nova senha", type="password", key="senha_nova_troca_perfil")
+                        senha_nova_troca_confirma = _s2.text_input("Confirme a nova senha", type="password", key="senha_nova_confirma_perfil")
+                        _f1, _f2 = st.columns(2)
+                        trocar_senha_btn = _f1.form_submit_button("Salvar nova senha", type="primary", use_container_width=True)
+                        cancelar_senha = _f2.form_submit_button("Cancelar", use_container_width=True)
+                    if cancelar_senha:
+                        perfil_ui.fechar_edicao("_pf_ed_senha"); st.rerun()
+                    if trocar_senha_btn:
+                        senha_check_resp2 = supabase.table("usuarios").select("senha_hash").eq("id", _uid_perfil).execute()
+                        senha_hash_atual2 = senha_check_resp2.data[0]['senha_hash'] if senha_check_resp2.data else None
+                        if not verificar_senha(senha_atual_troca, senha_hash_atual2): mostrar_popup("Senha atual incorreta.", tipo="erro")
+                        elif len(senha_nova_troca) < 7: mostrar_popup("A nova senha precisa ter no mínimo 7 caracteres.", tipo="erro")
+                        elif senha_nova_troca != senha_nova_troca_confirma: mostrar_popup("As senhas não coincidem.", tipo="erro")
+                        else:
+                            supabase.table("usuarios").update({"senha_hash": hash_senha(senha_nova_troca)}).eq("id", _uid_perfil).execute()
+                            perfil_ui.fechar_edicao("_pf_ed_senha")
+                            mostrar_popup("SENHA ALTERADA COM SUCESSO!")
+                            st.rerun()
 
         # ---------------------------------------------------------------- ASSINATURA
         with tab_ass:
