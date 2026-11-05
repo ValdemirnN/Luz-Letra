@@ -84,14 +84,6 @@ components.html("""
     var vp = d.querySelector('meta[name="viewport"]');
     if (vp && vp.content.indexOf('viewport-fit') === -1) vp.content = vp.content + ', viewport-fit=cover';
 
-    // Sincronização: ao voltar para o app (depois de ficar em segundo plano), recarrega para trazer os dados atuais
-    var saiuEm = 0;
-    d.addEventListener('visibilitychange', function() {
-      if (d.visibilityState === 'hidden') { saiuEm = Date.now(); return; }
-      if (saiuEm && Date.now() - saiuEm > 30000) { saiuEm = 0; window.parent.location.reload(); }
-    });
-    window.parent.addEventListener('pageshow', function(e) { if (e.persisted) window.parent.location.reload(); });
-
     // Tira do fluxo da página os blocos de altura 0 (cookie manager, scripts, estilos), que deixavam um espaço vazio no topo.
     function limparVazios() {
       var lista = d.querySelectorAll('[data-testid="stMain"] [data-testid="stElementContainer"], [data-testid="stMain"] .element-container');
