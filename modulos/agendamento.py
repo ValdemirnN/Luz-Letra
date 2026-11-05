@@ -10,10 +10,14 @@ import pandas as pd
 import streamlit as st
 from dateutil.relativedelta import relativedelta
 from modulos.tema import cartao_evento_html, estado_vazio_html
+from modulos import contrato
 
 
 def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, buscar_devolucoes_pendentes, calcular_disponibilidade_periodo, definir_categoria, formatar_telefone_br, gerar_recibo_evento_pdf, sincronizar_evento_google_agenda_silencioso, REPORTLAB_DISPONIVEL):
     st.title("📅 Gestão de Agendamentos")
+    if st.session_state.get("_ctr_erro_migracao"):
+        contrato.avisar_migracao(st.session_state.pop("_ctr_erro_migracao"))
+    locador_contrato = contrato.carregar_locador(supabase, emp_id)
     produtos_disp = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao, valor_locacao").eq("empresa_id", emp_id).execute()
     dict_produtos = {p['id']: p for p in produtos_disp.data} if produtos_disp.data else {}
     mapa_valor_ref = {p['id']: float(p.get('valor_locacao') or 0) for p in produtos_disp.data} if produtos_disp.data else {}
@@ -69,6 +73,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
             with col_3b: status_evento = st.selectbox("Status", ["Agendado","Em Andamento","Concluído","Cancelado"])
             st.info(f"📅 Datas selecionadas: **{data_inicio.strftime('%d/%m/%Y')}** até **{data_fim.strftime('%d/%m/%Y')}**")
             valor_evento = st.number_input("Valor Cobrado pelo Evento (R$)", min_value=0.0, step=50.0, value=None, format="%.2f")
+            dados_contrato_novo = contrato.ui_campos_contrato("novo_ev")
             st.markdown("**📍 Localização do Evento**")
             col_7, col_8, col_9, col_10 = st.columns([2,2,1.5,0.5])
             with col_7: local_evento = st.text_input("Local do Evento")
@@ -146,6 +151,8 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                             cliente_id_gerado = novo_cliente.data[0]['id']
                             novo_evento = supabase.table("eventos").insert({"empresa_id": emp_id,"cliente_id": cliente_id_gerado,"titulo": nome_evento,"descricao": nome_evento,"data_inicio": str(data_inicio),"data_fim": str(data_fim),"data_fim_alocacao": str(data_fim),"hora_inicio": str(hora_inicio),"hora_fim": str(hora_fim),"status": status_evento,"observacao": f"Local: {local_evento} - {rua_evento}, {numero_evento} - {bairro_evento} - {obs_evento_geral}","valor_total": valor_evento}).execute()
                             evento_id_gerado = novo_evento.data[0]['id']
+                            _ok_ctr, _err_ctr = contrato.salvar_dados_evento(supabase, evento_id_gerado, dados_contrato_novo)
+                            if not _ok_ctr: st.session_state['_ctr_erro_migracao'] = _err_ctr
                             google_event_id_novo = sincronizar_evento_google_agenda_silencioso(st.session_state['usuario_id'], novo_evento.data[0])
                             if google_event_id_novo:
                                 try: supabase.table("eventos").update({"google_event_id": google_event_id_novo}).eq("id", evento_id_gerado).execute()
@@ -269,6 +276,8 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                             nome_usuario_pdf_h = st.session_state.get('nome_usuario') or 'Usuário'
                             buffer_pdf_h = gerar_recibo_evento_pdf(ev_h, itens_h.data or [], dict_produtos, nome_cli_h, contato_h, nome_usuario_pdf_h)
                             st.download_button("📄 Baixar Recibo (PDF)", data=buffer_pdf_h, file_name=f"recibo_historico_{ev_h['id']}.pdf", mime="application/pdf", key=f"pdf_hist_{ev_h['id']}")
+                            buffer_ctr_h = contrato.gerar_contrato_pdf(ev_h, itens_h.data or [], dict_produtos, nome_cli_h, locador_contrato, safe_json_load, formatar_moeda)
+                            st.download_button("📜 Baixar Contrato de Locação (PDF)", data=buffer_ctr_h, file_name=f"contrato_historico_{ev_h['id']}.pdf", mime="application/pdf", key=f"contrato_hist_{ev_h['id']}")
 
                     # --- ABA ALTERAR STATUS ---
                     with tab_status_h:
@@ -492,6 +501,8 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                         nome_usuario_pdf = st.session_state.get('nome_usuario') or "Usuário do Sistema"
                         buffer_pdf = gerar_recibo_evento_pdf(ev, itens_ev.data or [], dict_produtos, nome_cliente_ev, contato_cliente_ev, nome_usuario_pdf)
                         st.download_button("📄 Baixar Recibo de Confirmação (PDF)", data=buffer_pdf, file_name=f"recibo_evento_{ev['id']}.pdf", mime="application/pdf", key=f"recibo_pdf_{ev['id']}")
+                        buffer_ctr = contrato.gerar_contrato_pdf(ev, itens_ev.data or [], dict_produtos, nome_cliente_ev, locador_contrato, safe_json_load, formatar_moeda)
+                        st.download_button("📜 Baixar Contrato de Locação (PDF)", data=buffer_ctr, file_name=f"contrato_evento_{ev['id']}.pdf", mime="application/pdf", key=f"contrato_pdf_{ev['id']}")
 
                     st.markdown("---")
                     if ev.get('pagamento_confirmado'):
@@ -693,6 +704,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                     col_ec1, col_ec2 = st.columns(2)
                     with col_ec1: novo_nome_cliente_edit = st.text_input("Nome do Cliente", value=nome_cliente_ev, key=f"edit_nome_cli_{ev['id']}")
                     with col_ec2: novo_contato_cliente_edit = st.text_input("Contato do Cliente", value=contato_cliente_ev if contato_cliente_ev != "-" else "", key=f"edit_contato_cli_{ev['id']}")
+                    dados_contrato_edit = contrato.ui_campos_contrato(f"edit_ctr_{ev['id']}", contrato.dados_do_evento(ev))
                     justificativa_edit = st.text_input("Justificativa (obrigatório)", key=f"edit_just_{ev['id']}")
                     col_btn_edit1, col_btn_edit2 = st.columns(2)
                     with col_btn_edit1:
@@ -701,6 +713,8 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                             else:
                                 supabase.table("eventos").update({"data_inicio": str(nova_data_inicio_edit),"data_fim": str(nova_data_fim_edit),"data_fim_alocacao": str(nova_data_fim_edit),"hora_inicio": str(nova_hora_inicio_edit),"hora_fim": str(nova_hora_fim_edit),"valor_total": novo_valor_edit,"observacao": novo_local_edit}).eq("id", ev['id']).execute()
                                 if ev.get('cliente_id'): supabase.table("clientes_eventos").update({"nome": novo_nome_cliente_edit,"contato": novo_contato_cliente_edit}).eq("id", ev['cliente_id']).execute()
+                                _ok_ctr_e, _err_ctr_e = contrato.salvar_dados_evento(supabase, ev['id'], dados_contrato_edit)
+                                if not _ok_ctr_e: st.session_state['_ctr_erro_migracao'] = _err_ctr_e
                                 evento_atualizado_google = dict(ev)
                                 evento_atualizado_google.update({"data_inicio": str(nova_data_inicio_edit),"data_fim_alocacao": str(nova_data_fim_edit),"observacao": novo_local_edit})
                                 novo_id_google_edit = sincronizar_evento_google_agenda_silencioso(st.session_state['usuario_id'], evento_atualizado_google, ev.get('google_event_id'))
@@ -728,3 +742,6 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                     else: st.caption("Nenhuma alteração registrada.")
     else:
         st.markdown(estado_vazio_html(), unsafe_allow_html=True)
+
+    st.markdown("---")
+    contrato.ui_config_locador(supabase, emp_id, mostrar_popup)
