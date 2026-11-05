@@ -1479,10 +1479,14 @@ else:
 
         # ---------------------------------------------------------------- ASSINATURA
         with tab_ass:
-            st.markdown("#### Minha assinatura")
-            plano_nome_tela = "PRO 🚀" if plano_atual_usuario == 'pro' else "BÁSICO 📦"
-            st.info(f"Seu plano atual é o **{plano_nome_tela}**." + (f"  \n{_venc_txt}" if _venc_txt else ""))
-            acao_assinatura = st.radio("Gerenciar Assinatura:", ["Manter meu plano atual", "🔄 Renovar meu plano atual", "Fazer Upgrade para PRO (R$ 89,90)", "Fazer Downgrade para Básico (R$ 79,90)", "Cancelar Assinatura"])
+            if st.session_state.get('perfil') == 'admin_geral':
+                st.info("👑 Administrador: você tem acesso total ao sistema, sem plano ou cobrança.")
+            perfil_ui.cartoes_planos(plano_atual_usuario, _venc_txt, _venc_cls)
+            st.markdown("<div class='pf-sec-t'>O que você quer fazer?</div>", unsafe_allow_html=True)
+            _opcoes_ass = ["Manter meu plano atual", "🔄 Renovar meu plano atual"]
+            _opcoes_ass.append("Fazer Downgrade para Básico (R$ 79,90)" if plano_atual_usuario == 'pro' else "Fazer Upgrade para PRO (R$ 89,90)")
+            _opcoes_ass.append("Cancelar Assinatura")
+            acao_assinatura = st.radio("Gerenciar assinatura", _opcoes_ass, horizontal=True, label_visibility="collapsed")
             CHAVE_PIX = PIX_CHAVE
             NOME_PIX = PIX_NOME
             CIDADE_PIX = PIX_CIDADE

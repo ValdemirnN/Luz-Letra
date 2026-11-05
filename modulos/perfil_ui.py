@@ -58,6 +58,30 @@ _CSS = """
 .pf-grupo { grid-column:1 / -1; margin-top:16px; padding-bottom:2px; font-size:.8rem; font-weight:700; color:#FFC107; letter-spacing:.02em; }
 .pf-grupo:first-child { margin-top:4px; }
 @media (max-width:640px) { .pf-ficha { grid-template-columns:1fr; } .pf-prog { flex:1 1 100%; } }
+/* ---------- planos ---------- */
+.pl-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:16px; margin:6px 0 18px 0; }
+.pl-card { position:relative; display:flex; flex-direction:column; padding:22px 22px 18px 22px; border-radius:18px;
+    background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.10); }
+.pl-card.pro { background:linear-gradient(160deg, rgba(255,193,7,.12) 0%, rgba(27,27,29,1) 60%); border-color:rgba(255,193,7,.35); }
+.pl-card.atual { border:2px solid #FFC107; box-shadow:0 0 0 4px rgba(255,193,7,.10), 0 12px 30px rgba(0,0,0,.4); }
+.pl-selo { position:absolute; top:-12px; right:18px; background:#FFC107; color:#1a1200; font-size:.74rem; font-weight:800; padding:3px 12px; border-radius:999px; }
+.pl-nome { font:700 1.2rem 'Outfit','Inter',sans-serif; color:#F4F4F5; }
+.pl-desc { color:#8d8d93; font-size:.84rem; margin-top:2px; }
+.pl-preco { margin:14px 0 4px 0; color:#F4F4F5; }
+.pl-preco b { font:800 2.1rem 'Outfit','Inter',sans-serif; }
+.pl-preco span { color:#8d8d93; font-size:.9rem; }
+.pl-venc { font-size:.8rem; font-weight:700; padding:4px 11px; border-radius:999px; width:fit-content; margin:6px 0 4px 0;
+    background:rgba(46,125,50,.20); color:#7CD67F; border:1px solid rgba(46,125,50,.55); }
+.pl-venc.amar { background:rgba(255,193,7,.16); color:#FFD54F; border-color:rgba(255,193,7,.5); }
+.pl-venc.verm { background:rgba(179,38,30,.22); color:#FF8A80; border-color:rgba(179,38,30,.6); }
+.pl-lista { list-style:none; margin:14px 0 0 0; padding:0; border-top:1px solid rgba(255,255,255,.08); }
+.pl-lista li { display:flex; gap:10px; align-items:flex-start; padding:9px 0; border-bottom:1px solid rgba(255,255,255,.05); font-size:.94rem; color:#E4E4E7; }
+.pl-lista li .ic { flex:0 0 20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:.75rem; font-weight:800; margin-top:1px; }
+.pl-lista li.sim .ic { background:rgba(52,211,153,.18); color:#34D399; }
+.pl-lista li.nao { color:#5c5c63; }
+.pl-lista li.nao .ic { background:rgba(255,255,255,.06); color:#5c5c63; }
+.pl-lista li small { color:#8d8d93; }
+@media (max-width:760px) { .pl-grid { grid-template-columns:1fr; } }
 </style>
 """
 
@@ -199,6 +223,49 @@ def fmt_endereco(extra):
     cid_uf = "/".join(x for x in [cidade, uf] if x)
     linha2 = " · ".join(x for x in [bairro, cid_uf, f"CEP {cep}" if cep else ""] if x)
     return "\n".join(x for x in [linha1, linha2] if x)
+
+
+# ----------------------------------------------------------------------------------
+# Planos: cartões lado a lado com o que cada plano tem (✓) e não tem (✕)
+# ----------------------------------------------------------------------------------
+_RECURSOS = [  # (texto, básico?, pro?, observação)
+    ("Dashboard", True, True, ""),
+    ("Agendamento de eventos", True, True, ""),
+    ("Controle de estoque", True, True, ""),
+    ("Compras", False, True, ""),
+    ("Faturamento", False, True, ""),
+    ("Contratos em PDF", False, True, ""),
+    ("Google Agenda", False, True, ""),
+    ("Orçamento de eventos", False, True, "em breve"),
+    ("Aparelhos conectados ao mesmo tempo", "1", "até 5", ""),
+]
+
+
+def cartoes_planos(plano_atual, venc_txt="", venc_cls=""):
+    def _lista(chave):
+        itens = []
+        for texto, bas, pro, obs in _RECURSOS:
+            v = bas if chave == "basico" else pro
+            if isinstance(v, str):  # recurso com quantidade
+                itens.append(f'<li class="sim"><span class="ic">✓</span><span>{escape(texto)}: <b>{escape(v)}</b></span></li>')
+                continue
+            extra = f' <small>({escape(obs)})</small>' if obs and v else ""
+            itens.append(f'<li class="{"sim" if v else "nao"}"><span class="ic">{"✓" if v else "✕"}</span>'
+                         f'<span>{escape(texto)}{extra}</span></li>')
+        return "".join(itens)
+
+    def _card(chave, nome, desc, preco, classe):
+        atual = plano_atual == chave
+        selo = '<div class="pl-selo">Seu plano</div>' if atual else ""
+        venc = f'<div class="pl-venc {venc_cls}">{escape(venc_txt)}</div>' if atual and venc_txt else ""
+        return (f'<div class="pl-card {classe}{" atual" if atual else ""}">{selo}'
+                f'<div class="pl-nome">{nome}</div><div class="pl-desc">{desc}</div>'
+                f'<div class="pl-preco"><b>R$ {preco}</b><span> /mês</span></div>{venc}'
+                f'<ul class="pl-lista">{_lista(chave)}</ul></div>')
+
+    html = (_card("basico", "Básico", "O essencial para organizar seus eventos.", "79,90", "") +
+            _card("pro", "PRO", "Gestão completa do negócio.", "89,90", "pro"))
+    st.markdown(f'<div class="pl-grid">{html}</div>', unsafe_allow_html=True)
 
 
 # ----------------------------------------------------------------------------------
