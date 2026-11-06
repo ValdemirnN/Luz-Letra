@@ -228,6 +228,8 @@ def _usuarios_ativos(sb):
 
 
 def _ja_enviou(sb, uid, tipo, ref, cache):
+    if cache.get("__forcar__"):  # execução manual: reenvia mesmo o que já foi avisado hoje
+        return False
     k = (uid, tipo, ref)
     if k in cache:
         return cache[k]
@@ -241,6 +243,8 @@ def _ja_enviou(sb, uid, tipo, ref, cache):
 
 
 def _marcar(sb, uid, tipo, ref, cache):
+    if cache.get("__forcar__"):  # reenvio manual não grava novo registro
+        return
     try:
         sb.table("notificacoes_enviadas").insert({"usuario_id": uid, "tipo": tipo, "referencia": ref,
                                                   "enviado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}).execute()
@@ -554,14 +558,15 @@ def _rotina_pendencias_evento(sb, hoje, por_empresa, cache, dry_run, desde):
 # ----------------------------------------------------------------------------------
 # Rotina diária (chamada pelo notificador.py)
 # ----------------------------------------------------------------------------------
-def rodar_rotina_diaria(sb, hoje=None, dry_run=False, desde=None):
+def rodar_rotina_diaria(sb, hoje=None, dry_run=False, desde=None, forcar=False):
     """desde: ignora compras/manutenções/eventos com data anterior a esta (evita avisar sobre o passado
-    quando o recurso é ligado pela primeira vez). Aceita date ou 'AAAA-MM-DD'."""
+    quando o recurso é ligado pela primeira vez). Aceita date ou 'AAAA-MM-DD'.
+    forcar: execução manual — reenvia tudo que ainda está pendente, mesmo que já tenha sido avisado hoje."""
     hoje = hoje or hoje_br()
     if isinstance(desde, str):
         desde = _data(desde)
     por_empresa = _usuarios_ativos(sb)
-    cache = {}
+    cache = {"__forcar__": True} if forcar else {}
     resumo = {}
     for nome, fn in (("assinatura", lambda: _rotina_assinatura(sb, hoje, por_empresa, cache, dry_run)),
                      ("compras", lambda: _rotina_compras(sb, hoje, por_empresa, cache, dry_run, desde)),
