@@ -1,0 +1,41 @@
+name: Notificações diárias por e-mail
+
+on:
+  schedule:
+    - cron: '17 11 * * *'  # 11:17 UTC = 08:17 em Brasília/RN (evita o minuto :00, que o GitHub atrasa mais)
+  workflow_dispatch:
+    inputs:
+      simular:
+        description: "Só simular (mostra no log, não envia e-mail)"
+        type: boolean
+        default: false
+
+jobs:
+  notificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependências
+        run: pip install "supabase>=2.9,<3"
+
+      - name: Enviar notificações
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY || secrets.SUPABASE_ANON_KEY }}
+          GMAIL_REMETENTE: ${{ secrets.GMAIL_REMETENTE }}
+          GMAIL_SENHA_APP: ${{ secrets.GMAIL_SENHA_APP }}
+          URL_BASE_SISTEMA: ${{ secrets.URL_BASE_SISTEMA }}
+          PIX_CHAVE: ${{ secrets.PIX_CHAVE }}
+          PIX_NOME: ${{ secrets.PIX_NOME }}
+          NOTIF_A_PARTIR_DE: ${{ vars.NOTIF_A_PARTIR_DE }}
+        run: |
+          if [ "${{ inputs.simular }}" = "true" ]; then
+            python notificador.py --simular
+          else
+            python notificador.py
+          fi
