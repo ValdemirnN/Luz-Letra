@@ -9,6 +9,8 @@ O que ele envia
   3. Compras: chegando (3 e 1 dia antes), chegam hoje, atrasadas (TODO dia até marcar "Chegou").
   4. Manutenção: retorno chegando (3 e 1 dia antes), é hoje, atrasado (TODO dia até concluir).
   5. Pagamento de evento: no dia do evento e TODO dia depois, até o pagamento ser confirmado.
+  6. Pendências após o evento: TODO dia depois que o evento passou, enquanto houver equipamento não devolvido
+     ou o status continuar "Agendado"/"Em Andamento" (independe de o evento já estar pago).
 
 Para quem vai: usuários ativos da empresa (e-mail de login) e, se preenchido, o "E-mail comercial" da aba
 Empresa do Perfil. O "responder para" é o e-mail comercial e o nome do remetente é o nome fantasia.
@@ -287,6 +289,16 @@ def _fase(dias):
     return None
 
 
+def _fim_evento(e):
+    """Mesma data final que o app usa (data_fim_alocacao é a que o usuário edita)."""
+    return _data(e.get("data_fim_alocacao")) or _data(e.get("data_fim")) or _data(e.get("data_inicio"))
+
+
+def _em_lotes(lista, n=80):
+    for i in range(0, len(lista), n):
+        yield lista[i:i + n]
+
+
 # ----------------------------------------------------------------------------------
 # 1) Assinatura
 # ----------------------------------------------------------------------------------
@@ -434,7 +446,7 @@ def _rotina_manutencao(sb, hoje, por_empresa, cache, dry_run, desde):
 # 5) Pagamento de evento pendente
 # ----------------------------------------------------------------------------------
 def _rotina_pagamento_eventos(sb, hoje, por_empresa, cache, dry_run, desde):
-    r = sb.table("eventos").select("*").neq("status", "Cancelado").lte("data_fim", str(hoje)).execute()
+    r = sb.table("eventos").select("*").neq("status", "Cancelado").lte("data_inicio", str(hoje)).execute()
     eventos = [e for e in (r.data or []) if not e.get("pagamento_confirmado")]
     ids_cli = list({e["cliente_id"] for e in eventos if e.get("cliente_id")})
     clientes = {}
@@ -446,7 +458,7 @@ def _rotina_pagamento_eventos(sb, hoje, por_empresa, cache, dry_run, desde):
             registrar_erro("notificacoes.py:clientes")
     por_emp = {}
     for e in eventos:
-        fim = _data(e.get("data_fim")) or _data(e.get("data_inicio"))
+        fim = _fim_evento(e)
         if not fim or fim > hoje or (desde and fim < desde):
             continue
         dias = (hoje - fim).days
@@ -469,6 +481,78 @@ def _rotina_pagamento_eventos(sb, hoje, por_empresa, cache, dry_run, desde):
 
 
 # ----------------------------------------------------------------------------------
+# 6) Pendências depois do evento: equipamentos não devolvidos / status não atualizado
+#    (todo dia, até resolver — não depende do pagamento)
+# ----------------------------------------------------------------------------------
+def _rotina_pendencias_evento(sb, hoje, por_empresa, cache, dry_run, desde):
+    r = sb.table("eventos").select("*").neq("status", "Cancelado").lte("data_inicio", str(hoje)).execute()
+    encerrados = []
+    for e in (r.data or []):
+        fim = _fim_evento(e)
+        if fim and fim < hoje and not (desde and fim < desde):  # mesma regra do app: encerrado = data final já passou
+            encerrados.append((e, fim))
+    if not encerrados:
+        return 0
+
+    # itens ainda não devolvidos
+    pendentes = {}
+    ids_ev = [e["id"] for e, _ in encerrados]
+    try:
+        for lote in _em_lotes(ids_ev):
+            for it in (sb.table("itens_evento").select("id, evento_id, produto_id, quantidade, devolvido").in_("evento_id", lote).execute().data or []):
+                if not it.get("devolvido"):
+                    pendentes.setdefault(it["evento_id"], []).append(it)
+    except Exception:  # coluna 'devolvido' ainda não existe
+        registrar_erro("notificacoes.py:itens_devolvido")
+    ids_prod = list({i["produto_id"] for lst in pendentes.values() for i in lst if i.get("produto_id")})
+    nomes_p = {}
+    try:
+        for lote in _em_lotes(ids_prod):
+            for p_ in (sb.table("produtos").select("id, nome").in_("id", lote).execute().data or []):
+                nomes_p[p_["id"]] = p_.get("nome")
+    except Exception:
+        registrar_erro("notificacoes.py:produtos_pend")
+    ids_cli = list({e["cliente_id"] for e, _ in encerrados if e.get("cliente_id")})
+    clientes = {}
+    try:
+        for lote in _em_lotes(ids_cli):
+            for c in (sb.table("clientes_eventos").select("id, nome").in_("id", lote).execute().data or []):
+                clientes[c["id"]] = c.get("nome")
+    except Exception:
+        registrar_erro("notificacoes.py:clientes_pend")
+
+    por_emp = {}
+    for e, fim in encerrados:
+        itens = pendentes.get(e["id"], [])
+        status_aberto = (e.get("status") or "") in ("Agendado", "Em Andamento")
+        if not itens and not status_aberto:
+            continue
+        dias = (hoje - fim).days
+        motivos = []
+        if itens:
+            lista = [f"{i.get('quantidade') or 0}x {nomes_p.get(i.get('produto_id')) or 'Item'}" for i in itens[:4]]
+            mais = f" e mais {len(itens) - 4}" if len(itens) > 4 else ""
+            motivos.append(f"equipamentos não devolvidos ({', '.join(lista)}{mais})")
+        if status_aberto:
+            motivos.append(f"status ainda \"{e.get('status')}\"")
+        linha = (f"{e.get('titulo') or e.get('descricao') or 'Evento'} — cliente {clientes.get(e.get('cliente_id')) or '-'} — "
+                 f"terminou em {_br(fim)} (há {_dias_txt(dias)}) — pendente: " + "; ".join(motivos))
+        bloco = "Equipamentos não devolvidos" if itens else "Status do evento não atualizado"
+        por_emp.setdefault(e["empresa_id"], []).append({"tipo": "evento_pendencia", "ref": f"{e['id']}:{hoje}", "bloco": bloco, "linha": linha})
+
+    def assunto(novos):
+        return f"📦 Luz & Letra — {_plural(len(novos), 'evento com pendência', 'eventos com pendências')} (devolução/status)"
+
+    total = 0
+    for empresa_id, itens in por_emp.items():
+        total += _enviar_digest(sb, por_empresa.get(empresa_id, []), itens, assunto, "Eventos encerrados com pendências",
+                                "A data destes eventos já passou. Registre a devolução dos equipamentos e atualize o status "
+                                "(Concluído) em Agendamento. Você será avisado todo dia até resolver, mesmo que o evento já esteja pago.",
+                                [("Equipamentos não devolvidos", "verm"), ("Status do evento não atualizado", "amar")], cache, dry_run)
+    return total
+
+
+# ----------------------------------------------------------------------------------
 # Rotina diária (chamada pelo notificador.py)
 # ----------------------------------------------------------------------------------
 def rodar_rotina_diaria(sb, hoje=None, dry_run=False, desde=None):
@@ -483,7 +567,8 @@ def rodar_rotina_diaria(sb, hoje=None, dry_run=False, desde=None):
     for nome, fn in (("assinatura", lambda: _rotina_assinatura(sb, hoje, por_empresa, cache, dry_run)),
                      ("compras", lambda: _rotina_compras(sb, hoje, por_empresa, cache, dry_run, desde)),
                      ("manutencao", lambda: _rotina_manutencao(sb, hoje, por_empresa, cache, dry_run, desde)),
-                     ("pagamento_eventos", lambda: _rotina_pagamento_eventos(sb, hoje, por_empresa, cache, dry_run, desde))):
+                     ("pagamento_eventos", lambda: _rotina_pagamento_eventos(sb, hoje, por_empresa, cache, dry_run, desde)),
+                     ("pendencias_evento", lambda: _rotina_pendencias_evento(sb, hoje, por_empresa, cache, dry_run, desde))):
         try:
             resumo[nome] = fn()
         except Exception:
