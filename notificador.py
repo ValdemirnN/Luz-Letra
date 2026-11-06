@@ -5,6 +5,7 @@ Variáveis de ambiente (vêm dos "Secrets" do GitHub — veja .github/workflows/
     opcionais: URL_BASE_SISTEMA, PIX_CHAVE, PIX_NOME, NOTIF_A_PARTIR_DE (AAAA-MM-DD)
 
 Teste sem enviar nada:  python notificador.py --simular
+Reenviar o que ainda está pendente (mesmo já avisado hoje):  python notificador.py --forcar   (ou FORCAR_REENVIO=true)
 """
 import os
 import sys
@@ -16,14 +17,15 @@ from modulos import notificacoes
 
 def main():
     simular = "--simular" in sys.argv
+    forcar = "--forcar" in sys.argv or os.environ.get("FORCAR_REENVIO", "").lower() == "true"
     url, chave = os.environ.get("SUPABASE_URL", ""), os.environ.get("SUPABASE_KEY", "")
     if not url or not chave:
         sys.exit("Faltam SUPABASE_URL / SUPABASE_KEY nas variáveis de ambiente.")
     if not simular and not notificacoes.configurado():
         sys.exit("Faltam GMAIL_REMETENTE / GMAIL_SENHA_APP nas variáveis de ambiente.")
     sb = create_client(url, chave)
-    resumo = notificacoes.rodar_rotina_diaria(sb, dry_run=simular, desde=os.environ.get("NOTIF_A_PARTIR_DE") or None)
-    print(("SIMULAÇÃO — " if simular else "") + "e-mails enviados:", resumo)
+    resumo = notificacoes.rodar_rotina_diaria(sb, dry_run=simular, desde=os.environ.get("NOTIF_A_PARTIR_DE") or None, forcar=forcar)
+    print(("SIMULAÇÃO — " if simular else "") + ("REENVIO MANUAL — " if forcar else "") + "e-mails enviados:", resumo)
     if any(v == "erro" for v in resumo.values()):
         sys.exit(1)
 
