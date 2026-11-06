@@ -2,40 +2,32 @@ name: Keep Alive Streamlit
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # A cada 15 minutos
-  workflow_dispatch:
+    - cron: '7,22,37,52 * * * *'  # a cada 15 min, fora dos minutos :00/:15 (horários de pico em que o GitHub mais atrasa/pula)
+  workflow_dispatch:         # botão "Run workflow" para testar na hora
+  push:
+    branches: [main]         # sempre que você enviar arquivos novos, ele também confere o app
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: true
 
 jobs:
   wake-up:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
-      - name: Install dependencies
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar Playwright
         run: |
           pip install playwright
-          playwright install chromium
+          playwright install --with-deps chromium
 
-      - name: Wake up Streamlit app
-        run: |
-          python - <<'EOF'
-          import asyncio
-          from playwright.async_api import async_playwright
-
-          async def main():
-              async with async_playwright() as p:
-                  browser = await p.chromium.launch()
-                  page = await browser.new_page()
-                  await page.goto("https://luzeletra.streamlit.app/", timeout=60000)
-                  
-                  # Tenta clicar no botão se o app estiver dormindo
-                  try:
-                      btn = page.locator("text=Yes, get this app back up!")
-                      await btn.click(timeout=10000)
-                      print("App estava dormindo — acordei!")
-                      await page.wait_for_timeout(15000)
-                  except:
-                      print("App já estava acordado.")
-                  
-                  await browser.close()
-
-          asyncio.run(main())
-          EOF
+      - name: Acordar o app Streamlit
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: python .github/scripts/acordar_app.py
