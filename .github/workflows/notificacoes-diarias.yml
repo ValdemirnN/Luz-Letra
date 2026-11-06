@@ -26,7 +26,7 @@ jobs:
       - name: Enviar notificações
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY || secrets.SUPABASE_ANON_KEY }}
           GMAIL_REMETENTE: ${{ secrets.GMAIL_REMETENTE }}
           GMAIL_SENHA_APP: ${{ secrets.GMAIL_SENHA_APP }}
           URL_BASE_SISTEMA: ${{ secrets.URL_BASE_SISTEMA }}
