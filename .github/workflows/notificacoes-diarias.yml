@@ -9,6 +9,10 @@ on:
         description: "Só simular (mostra no log, não envia e-mail)"
         type: boolean
         default: false
+      reenviar:
+        description: "Reenviar o que ainda está pendente, mesmo que já tenha sido avisado hoje"
+        type: boolean
+        default: true
 
 jobs:
   notificar:
@@ -33,6 +37,7 @@ jobs:
           PIX_CHAVE: ${{ secrets.PIX_CHAVE }}
           PIX_NOME: ${{ secrets.PIX_NOME }}
           NOTIF_A_PARTIR_DE: ${{ vars.NOTIF_A_PARTIR_DE }}
+          FORCAR_REENVIO: ${{ github.event_name == 'workflow_dispatch' && inputs.reenviar }}
         run: |
           if [ "${{ inputs.simular }}" = "true" ]; then
             python notificador.py --simular
