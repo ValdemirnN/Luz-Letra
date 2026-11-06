@@ -12,8 +12,8 @@ O que ele envia
   6. Pendências após o evento: TODO dia depois que o evento passou, enquanto houver equipamento não devolvido
      ou o status continuar "Agendado"/"Em Andamento" (independe de o evento já estar pago).
 
-Para quem vai: usuários ativos da empresa (e-mail de login) e, se preenchido, o "E-mail comercial" da aba
-Empresa do Perfil. O "responder para" é o e-mail comercial e o nome do remetente é o nome fantasia.
+Para quem vai: SÓ o e-mail de login dos usuários ativos da empresa. Se a empresa tiver "E-mail comercial"
+preenchido (aba Empresa do Perfil), ele é usado apenas como "responder para"; o nome do remetente é o nome fantasia.
 Obs.: o endereço de envio em si é sempre o Gmail configurado (GMAIL_REMETENTE).
 Para não repetir e-mail, cada aviso é registrado na tabela `notificacoes_enviadas`
 (usuario_id, tipo, referencia) — a mesma que o app já usa.
@@ -187,7 +187,7 @@ def _extra(v):
 
 
 def _usuarios_ativos(sb):
-    """{empresa_id: [usuários]} — cada usuário traz 'emails' (login + e-mail comercial),
+    """{empresa_id: [usuários]} — cada usuário traz 'emails' (só o login),
     'responder_para' (e-mail comercial) e 'remetente_nome' (nome fantasia · Luz & Letra)."""
     try:
         r = sb.table("usuarios").select("id, email, nome, empresa_id, perfil, ativo, perfil_extra").eq("ativo", True).neq("perfil", "admin_geral").execute()
@@ -219,9 +219,8 @@ def _usuarios_ativos(sb):
             continue
         vistos.add(login.lower())
         com = comercial.get(u["empresa_id"])
-        emails = [login] + ([com] if com and com.lower() != login.lower() else [])
         nome_emp = nomes.get(u["empresa_id"])
-        u["emails"] = emails
+        u["emails"] = [login]  # o aviso vai SÓ para o e-mail de login cadastrado; o comercial fica como "responder para"
         u["responder_para"] = com
         u["remetente_nome"] = f"{nome_emp} · Luz & Letra" if nome_emp else "Luz & Letra"
         por_empresa.setdefault(u["empresa_id"], []).append(u)
