@@ -10,16 +10,21 @@ O que ele envia
   4. Manutenção: retorno chegando (3 e 1 dia antes), é hoje, atrasado (TODO dia até concluir).
   5. Pagamento de evento: no dia do evento e TODO dia depois, até o pagamento ser confirmado.
 
-Para quem vai: usuários ativos da empresa (o e-mail de login cadastrado).
+Para quem vai: usuários ativos da empresa (e-mail de login) e, se preenchido, o "E-mail comercial" da aba
+Empresa do Perfil. O "responder para" é o e-mail comercial e o nome do remetente é o nome fantasia.
+Obs.: o endereço de envio em si é sempre o Gmail configurado (GMAIL_REMETENTE).
 Para não repetir e-mail, cada aviso é registrado na tabela `notificacoes_enviadas`
 (usuario_id, tipo, referencia) — a mesma que o app já usa.
 """
+import json
 import os
+import re
 import smtplib
 import threading
 from datetime import date, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr
 from html import escape
 
 from modulos.log import registrar_erro
@@ -93,26 +98,33 @@ def configurado():
     return bool(_CFG["remetente"] and _CFG["senha"]) and "SEU_EMAIL_AQUI" not in _CFG["remetente"]
 
 
-def enviar_email(destinatario, assunto, texto, html=None):
-    """Envia pelo Gmail (senha de app). Devolve True/False."""
+def enviar_email(destinatario, assunto, texto, html=None, responder_para=None, nome_remetente=None):
+    """Envia pelo Gmail (senha de app). destinatario: e-mail ou lista de e-mails. Devolve True/False."""
     if not configurado():
         registrar_erro("notificacoes.py:enviar", "GMAIL_REMETENTE/GMAIL_SENHA_APP não configurados")
         return False
+    destinos = [destinatario] if isinstance(destinatario, str) else list(destinatario)
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = assunto
-        msg["From"] = f"Luz & Letra <{_CFG['remetente']}>"
-        msg["To"] = destinatario
+        msg["From"] = formataddr((nome_remetente or "Luz & Letra", _CFG["remetente"]), charset="utf-8")
+        msg["To"] = ", ".join(destinos)
+        if responder_para:
+            msg["Reply-To"] = responder_para
         msg.attach(MIMEText(texto, "plain", "utf-8"))
         if html:
             msg.attach(MIMEText(html, "html", "utf-8"))
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as servidor:
             servidor.login(_CFG["remetente"], _CFG["senha"])
-            servidor.sendmail(_CFG["remetente"], destinatario, msg.as_string())
+            servidor.sendmail(_CFG["remetente"], destinos, msg.as_string())
         return True
     except Exception:
-        registrar_erro("notificacoes.py:enviar", destinatario)
+        registrar_erro("notificacoes.py:enviar", ", ".join(destinos))
         return False
+
+
+def _enviar_para_usuario(u, assunto, texto, html):
+    return enviar_email(u["emails"], assunto, texto, html, responder_para=u.get("responder_para"), nome_remetente=u.get("remetente_nome"))
 
 
 _CORES = {"verm": "#C62828", "amar": "#B26A00", "azul": "#1565C0", "verde": "#2E7D32"}
@@ -160,15 +172,56 @@ def _montar(titulo, intro, blocos, rodape=""):
 # ----------------------------------------------------------------------------------
 # Destinatários e registro de envios
 # ----------------------------------------------------------------------------------
+_EMAIL_OK = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _extra(v):
+    if isinstance(v, str):
+        try:
+            v = json.loads(v)
+        except Exception:
+            return {}
+    return v if isinstance(v, dict) else {}
+
+
 def _usuarios_ativos(sb):
-    r = sb.table("usuarios").select("id, email, nome, empresa_id, perfil, ativo").eq("ativo", True).neq("perfil", "admin_geral").execute()
+    """{empresa_id: [usuários]} — cada usuário traz 'emails' (login + e-mail comercial),
+    'responder_para' (e-mail comercial) e 'remetente_nome' (nome fantasia · Luz & Letra)."""
+    try:
+        r = sb.table("usuarios").select("id, email, nome, empresa_id, perfil, ativo, perfil_extra").eq("ativo", True).neq("perfil", "admin_geral").execute()
+    except Exception:  # coluna perfil_extra ainda não criada
+        registrar_erro("notificacoes.py:perfil_extra")
+        r = sb.table("usuarios").select("id, email, nome, empresa_id, perfil, ativo").eq("ativo", True).neq("perfil", "admin_geral").execute()
+    linhas = [u for u in (r.data or []) if u.get("empresa_id") and (u.get("email") or "").strip()]
+
+    # e-mail comercial por empresa (primeiro preenchido entre os usuários dela)
+    comercial = {}
+    for u in linhas:
+        em = (_extra(u.get("perfil_extra")).get("emp_email") or "").strip()
+        if em and _EMAIL_OK.match(em) and u["empresa_id"] not in comercial:
+            comercial[u["empresa_id"]] = em
+    nomes = {}
+    try:
+        ids = list({u["empresa_id"] for u in linhas})
+        if ids:
+            for e in (sb.table("empresas").select("id, nome_fantasia").in_("id", ids).execute().data or []):
+                nomes[e["id"]] = (e.get("nome_fantasia") or "").strip()
+    except Exception:
+        registrar_erro("notificacoes.py:empresas")
+
     por_empresa = {}
     vistos = set()
-    for u in (r.data or []):
-        email = (u.get("email") or "").strip()
-        if not u.get("empresa_id") or not email or email.lower() in vistos:
+    for u in linhas:
+        login = u["email"].strip()
+        if login.lower() in vistos:
             continue
-        vistos.add(email.lower())
+        vistos.add(login.lower())
+        com = comercial.get(u["empresa_id"])
+        emails = [login] + ([com] if com and com.lower() != login.lower() else [])
+        nome_emp = nomes.get(u["empresa_id"])
+        u["emails"] = emails
+        u["responder_para"] = com
+        u["remetente_nome"] = f"{nome_emp} · Luz & Letra" if nome_emp else "Luz & Letra"
         por_empresa.setdefault(u["empresa_id"], []).append(u)
     return por_empresa
 
@@ -211,10 +264,10 @@ def _enviar_digest(sb, usuarios, itens, assunto_fn, titulo, intro, ordem_blocos,
         assunto = assunto_fn(novos)
         texto, html = _montar(titulo, intro, blocos, rodape)
         if dry_run:
-            print(f"[SIMULAÇÃO] para {u['email']}: {assunto} ({len(novos)} item(ns))")
+            print(f"[SIMULAÇÃO] para {', '.join(u['emails'])}: {assunto} ({len(novos)} item(ns))")
             enviados += 1
             continue
-        if enviar_email(u["email"], assunto, texto, html):
+        if _enviar_para_usuario(u, assunto, texto, html):
             enviados += 1
             for it in novos:
                 _marcar(sb, u["id"], it["tipo"], it["ref"], cache)
@@ -272,9 +325,9 @@ def _rotina_assinatura(sb, hoje, por_empresa, cache, dry_run):
                 "Depois do vencimento, o acesso é bloqueado automaticamente 1 dia depois.",
                 [("Como renovar", "amar", linhas)])
             if dry_run:
-                print(f"[SIMULAÇÃO] para {u['email']}: {assunto}")
+                print(f"[SIMULAÇÃO] para {', '.join(u['emails'])}: {assunto}")
                 enviados += 1
-            elif enviar_email(u["email"], assunto, texto, html):
+            elif _enviar_para_usuario(u, assunto, texto, html):
                 enviados += 1
                 _marcar(sb, u["id"], tipo, venc_str, cache)
     return enviados
@@ -485,7 +538,7 @@ def avisar_novo_agendamento(sb, empresa_id, evento_id, em_segundo_plano=True):
             try:
                 if _ja_enviou(sb, u["id"], "agendamento", str(evento_id), cache):
                     continue
-                if enviar_email(u["email"], assunto, texto, html):
+                if _enviar_para_usuario(u, assunto, texto, html):
                     _marcar(sb, u["id"], "agendamento", str(evento_id), cache)
             except Exception:
                 registrar_erro("notificacoes.py:novo_agendamento_envio")
