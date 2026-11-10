@@ -305,6 +305,26 @@ def _desenhar_assinante(a, hoje, supabase, formatar_moeda, mostrar_popup, hash_s
                     mostrar_popup("Plano renovado com sucesso!")
                     st.rerun()
 
+                # ---------- alterar o plano (Básico <-> PRO) ----------
+                st.divider()
+                st.markdown("**🔁 Alterar plano**")
+                st.caption("Troca o plano da conta na hora, sem cobrança e sem mexer no vencimento. "
+                           "Se o cliente estiver logado, a mudança aparece em até ~20 segundos.")
+                nomes_plano = {"basico": "Básico (R$ 79,90)", "pro": "PRO (R$ 89,90)"}
+                novo_plano = st.selectbox(
+                    "Novo plano", ["basico", "pro"], key=f"ga_plano_{uid}",
+                    index=0 if a["plano"] != "pro" else 1,
+                    format_func=lambda p: nomes_plano[p])
+                if st.button("💾 Salvar plano", key=f"ga_plano_btn_{uid}", disabled=(novo_plano == a["plano"])):
+                    try:
+                        supabase.table("usuarios").update({"plano": novo_plano}).eq("id", uid).execute()
+                        st.cache_data.clear()
+                        mostrar_popup(f"Plano alterado para {novo_plano.upper()}!")
+                        st.rerun()
+                    except Exception as e:
+                        registrar_erro("gestao_assinantes.py:alterar_plano")
+                        mostrar_popup(f"Não foi possível alterar o plano: {e}", tipo="erro")
+
             # ---------- ACESSO ----------
             with t_acc:
                 st.markdown(f"**Status:** {'✅ Ativo' if a['ativo'] else '🔴 Bloqueado'}")
