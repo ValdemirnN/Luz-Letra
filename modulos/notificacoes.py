@@ -336,8 +336,7 @@ def _rotina_assinatura(sb, hoje, por_empresa, cache, dry_run):
                 linhas.append(f"Pix: {_CFG['pix_chave']}" + (f" ({_CFG['pix_nome']})" if _CFG["pix_nome"] else ""))
             texto, html = _montar(
                 f"Sua assinatura vence em {_dias_txt(dias)}",
-                f"Olá, {nome}! Renove para manter seu acesso sem interrupção. "
-                "Depois do vencimento, o acesso é bloqueado automaticamente 1 dia depois.",
+                f"Olá, {nome}! Renove sua assinatura para evitar pendências.",
                 [("Como renovar", "amar", linhas)])
             if dry_run:
                 print(f"[SIMULAÇÃO] para {', '.join(u['emails'])}: {assunto}")

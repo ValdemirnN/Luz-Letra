@@ -397,13 +397,7 @@ def restaurar_sessao_por_token():
             if resultado.data:
                 usuario = resultado.data[0]
                 if usuario['ativo']:
-                    plano_valido = True
-                    if usuario.get('empresa_id'):
-                        assinatura_check = supabase.table("assinaturas").select("data_vencimento").eq("empresa_id", usuario['empresa_id']).order("data_vencimento", desc=True).limit(1).execute()
-                        if assinatura_check.data:
-                            venc_check = assinatura_check.data[0]['data_vencimento'].split("T")[0]
-                            if datetime.strptime(venc_check, "%Y-%m-%d").date() < datetime.now().date():
-                                plano_valido = False
+                    plano_valido = True  # assinatura vencida NÃO bloqueia: apenas avisa dentro do sistema
                     if plano_valido:
                         st.session_state.update({'logado': True, 'perfil': usuario['perfil'], 'empresa_id': usuario['empresa_id'],
                             'usuario_id': usuario['id'], 'nome_usuario': usuario.get('nome') or 'Usuário', 'token_sessao': tk_param})
@@ -480,7 +474,7 @@ def ativar_conta_apos_pagamento(usuario_id, metodo):
 def enviar_email_expiracao(destinatario, nome_destinatario, dias_restantes, data_vencimento_str):
     if dias_restantes == 1:
         assunto = "⚠️ Último dia! Sua assinatura Luz & Letra expira AMANHÃ"
-        urgencia = "URGENTE — seu acesso será bloqueado amanhã"
+        urgencia = "URGENTE — sua assinatura vence amanhã"
     elif dias_restantes <= 3:
         assunto = f"⚠️ Sua assinatura Luz & Letra expira em {dias_restantes} dias"
         urgencia = f"Atenção: apenas {dias_restantes} dias restantes"
@@ -501,7 +495,7 @@ Formas de pagamento:
   • Cartão/Boleto: disponível no painel
   • Pagar em mãos: entre em contato
 
-Após o vencimento, seu acesso será bloqueado automaticamente 1 dia depois.
+Renove o quanto antes para evitar pendências.
 
 Dúvidas: nvaldemir76@gmail.com
 
@@ -579,10 +573,8 @@ def verificar_acesso_e_bloquear():
         venc_date = datetime.strptime(venc_str, "%Y-%m-%d").date()
         hoje = datetime.now().date()
         dias_restantes = (venc_date - hoje).days
-        if dias_restantes < -1:
-            supabase.table("usuarios").update({"ativo": False}).eq("id", st.session_state['usuario_id']).execute()
-            return 'bloqueado'
-        elif dias_restantes <= 0: return 'aviso_vencendo'
+        if dias_restantes < 0: return f'aviso_vencida_{abs(dias_restantes)}'  # vencida: só avisa, nunca bloqueia
+        elif dias_restantes == 0: return 'aviso_vencendo'
         elif dias_restantes in [1, 2, 3, 7]: return f'aviso_{dias_restantes}_dias'
         else: return 'ok'
     except Exception: registrar_erro("app.py:471"); return 'ok'
@@ -1080,49 +1072,13 @@ else:
     verificar_e_disparar_notificacoes_expiracao()
     status_acesso = verificar_acesso_e_bloquear()
 
-    if status_acesso == 'bloqueado':
-        st.error("⛔ Sua assinatura venceu. Seu acesso foi bloqueado automaticamente.")
-        st.warning("Para reativar, realize o pagamento abaixo e envie o comprovante.")
-        CHAVE_PIX_BLOQ = PIX_CHAVE
-        NOME_PIX_BLOQ = PIX_NOME
-        CIDADE_PIX_BLOQ = PIX_CIDADE
-        st.markdown("### 💳 Renovar Assinatura")
-        plano_renovar = st.radio("Selecione o plano:", ["Plano Básico (R$ 79,90)", "Plano Pro (R$ 89,90)"], key="plano_bloq")
-        valor_renovar = 79.90 if "Básico" in plano_renovar else 89.90
-        nome_plano_renovar = "basico" if "Básico" in plano_renovar else "pro"
-        metodo_renovar = st.radio("Forma de pagamento:", ["💠 Pix (QR Code)", "🤝 Pagar em mãos"], key="metodo_bloq")
-        if metodo_renovar == "💠 Pix (QR Code)":
-            try:
-                payload_pix_bloq = gerar_payload_pix(CHAVE_PIX_BLOQ, NOME_PIX_BLOQ, CIDADE_PIX_BLOQ, valor_renovar, "Renovacao")
-                qr_bloq = gerar_qrcode_pix(payload_pix_bloq)
-                col_b1, col_b2 = st.columns([1,1])
-                with col_b1: st.image(qr_bloq, caption="📱 Escaneie com seu banco", width=220)
-                with col_b2:
-                    st.markdown(f"**Chave PIX:** `{CHAVE_PIX_BLOQ}`")
-                    st.markdown(f"**Titular:** {NOME_PIX_BLOQ}")
-                    st.markdown(f"**Valor:** R$ {formatar_moeda(valor_renovar)}")
-                comp_bloq = st.text_area("Cole o comprovante aqui após pagar", key="comp_bloq")
-                if st.button("📤 Enviar Comprovante", key="btn_comp_bloq"):
-                    if not comp_bloq.strip(): st.error("Cole o comprovante antes de enviar.")
-                    else:
-                        supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_bloq, "plano": nome_plano_renovar}).eq("id", st.session_state['usuario_id']).execute()
-                        st.success("✅ Comprovante enviado! Ativaremos seu acesso em breve.")
-            except Exception as e: registrar_erro("app.py:951"); st.error(f"Erro ao gerar QR Code: {e}")
-        else:
-            comp_maos = st.text_area("Descreva o comprovante / acordo", key="comp_maos_bloq")
-            if st.button("📤 Enviar", key="btn_maos_bloq"):
-                if not comp_maos.strip(): st.error("Descreva o comprovante.")
-                else:
-                    supabase.table("usuarios").update({"metodo_pagamento": "manual", "comprovante_pagamento": comp_maos, "plano": nome_plano_renovar}).eq("id", st.session_state['usuario_id']).execute()
-                    st.success("✅ Enviado! Aguarde aprovação do administrador.")
-        if st.button("🚪 Sair / Trocar de Conta", key="btn_sair_bloq"):
-            fazer_logout()
-            st.rerun()
-        st.stop()
-
-    elif status_acesso.startswith('aviso'):
-        if status_acesso == 'aviso_vencendo':
-            st.error("🚨 **SUA ASSINATURA VENCE HOJE!** Renove agora em **Perfil → Minha Assinatura** para não perder o acesso.")
+    if status_acesso.startswith('aviso'):
+        if status_acesso.startswith('aviso_vencida_'):
+            try: dias_atraso = int(status_acesso.split('_')[2])
+            except Exception: registrar_erro("app.py:vencida"); dias_atraso = 1
+            st.error(f"🚨 **SUA ASSINATURA VENCEU HÁ {dias_atraso} DIA(S)!** Regularize o pagamento em **Perfil → Assinatura → Renovar meu plano atual**.")
+        elif status_acesso == 'aviso_vencendo':
+            st.error("🚨 **SUA ASSINATURA VENCE HOJE!** Renove agora em **Perfil → Minha Assinatura** para evitar pendências.")
         else:
             try: dias_aviso = int(status_acesso.split('_')[1])
             except Exception: registrar_erro("app.py:969"); dias_aviso = 0
