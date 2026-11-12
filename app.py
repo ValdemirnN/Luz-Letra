@@ -1006,14 +1006,14 @@ if not st.session_state['logado']:
                         except Exception: registrar_erro("app.py:858"); supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
                         mostrar_popup("Comprovante enviado! Ativaremos sua conta em breve.")
                         del st.session_state['conta_criada_id']
-            except Exception as e: registrar_erro("app.py:861"); st.error(f"Erro ao gerar QR Code: {e}")
+            except Exception as e: registrar_erro("app.py:861"); st.warning("💠 O pagamento por Pix está indisponível no momento. Escolha **Pagar em mãos** ou entre em contato com o suporte.")
         elif metodo_escolhido == "💳 Cartão/Boleto":
             if st.button("Gerar Link"):
                 try:
                     preferencia = criar_preferencia_pagamento_mp(st.session_state['conta_criada_id'], st.session_state['conta_criada_email'], f"Assinatura Mensal - {plano_escolhido_tela}", valor_cobrado)
                     st.session_state['link_pagamento_mp'] = preferencia.get('init_point')
                     supabase.table("usuarios").update({"metodo_pagamento": "cartao", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
-                except Exception as e: registrar_erro("app.py:868"); mostrar_popup(f"Erro ao gerar link: {e}", tipo="erro")
+                except Exception as e: registrar_erro("app.py:868"); mostrar_popup("Não foi possível gerar o link de pagamento agora. Tente novamente em instantes.", tipo="erro")
             if st.session_state.get('link_pagamento_mp'):
                 st.link_button("🔗 Ir para Pagamento", st.session_state['link_pagamento_mp'])
                 if st.button("🔄 Já paguei, verificar"):
@@ -1498,7 +1498,7 @@ else:
                             else:
                                 supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_renovacao, "plano": nome_plano_renovar}).eq("id", st.session_state['usuario_id']).execute()
                                 mostrar_popup("Comprovante enviado! Renovaremos seu plano em breve.")
-                    except Exception as e: registrar_erro("app.py:1113"); st.error(f"Erro ao gerar QR Code: {e}")
+                    except Exception as e: registrar_erro("app.py:1113"); st.warning("💠 O pagamento por Pix está indisponível no momento. Escolha **Pagar em mãos** ou entre em contato com o suporte.")
                 else:
                     comp_maos_ren = st.text_area("Descreva o comprovante / acordo", key="comp_maos_renovacao")
                     if st.button("📤 Enviar", key="btn_maos_renovacao"):
@@ -1528,7 +1528,7 @@ else:
                                 else:
                                     supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_upgrade_pix}).eq("id", st.session_state['usuario_id']).execute()
                                     mostrar_popup("Comprovante enviado! Ativaremos o PRO em breve.")
-                        except Exception as e: registrar_erro("app.py:1143"); st.error(f"Erro ao gerar QR Code: {e}")
+                        except Exception as e: registrar_erro("app.py:1143"); st.warning("💠 O pagamento por Pix está indisponível no momento. Escolha **Pagar em mãos** ou entre em contato com o suporte.")
                     else:
                         if st.button("Gerar Link de Pagamento (R$ 89,90)", key="btn_upgrade_mp"):
                             try:
@@ -1536,7 +1536,7 @@ else:
                                 pref_up = criar_preferencia_pagamento_mp(ref_up, dados_usuario_atual.get('email',''), "Upgrade Plano PRO", 89.90)
                                 st.session_state['link_up_mp'] = pref_up.get('init_point')
                                 st.session_state['ref_up_mp'] = ref_up
-                            except Exception as e: registrar_erro("app.py:1151"); st.error(f"Erro ao gerar link: {e}")
+                            except Exception as e: registrar_erro("app.py:1151"); st.warning("Não foi possível gerar o link de pagamento agora. Tente novamente em instantes.")
                         if st.session_state.get('link_up_mp'):
                             st.link_button("🔗 Ir para Pagamento do Upgrade", st.session_state['link_up_mp'])
                             if st.button("🔄 Já paguei, verificar", key="btn_verif_upgrade"):
@@ -1568,7 +1568,7 @@ else:
                                 else:
                                     supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_down_pix, "plano": "basico"}).eq("id", st.session_state['usuario_id']).execute()
                                     mostrar_popup("Comprovante enviado! Faremos o downgrade em breve.")
-                        except Exception as e: registrar_erro("app.py:1182"); st.error(f"Erro ao gerar QR Code: {e}")
+                        except Exception as e: registrar_erro("app.py:1182"); st.warning("💠 O pagamento por Pix está indisponível no momento. Escolha **Pagar em mãos** ou entre em contato com o suporte.")
                     else:
                         if st.button("Gerar Link de Pagamento (R$ 79,90)", key="btn_down_mp"):
                             try:
@@ -1576,7 +1576,7 @@ else:
                                 pref_down = criar_preferencia_pagamento_mp(ref_down, dados_usuario_atual.get('email',''), "Downgrade Plano Básico", 79.90)
                                 st.session_state['link_down_mp'] = pref_down.get('init_point')
                                 st.session_state['ref_down_mp'] = ref_down
-                            except Exception as e: registrar_erro("app.py:1190"); st.error(f"Erro: {e}")
+                            except Exception as e: registrar_erro("app.py:1190"); st.warning("Não foi possível gerar o link de pagamento agora. Tente novamente em instantes.")
                         if st.session_state.get('link_down_mp'):
                             st.link_button("🔗 Ir para Pagamento do Downgrade", st.session_state['link_down_mp'])
                             if st.button("🔄 Já paguei, verificar", key="btn_verif_down"):
