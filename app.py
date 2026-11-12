@@ -339,10 +339,18 @@ GOOGLE_MAPS_API_KEY = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
 GOOGLE_CLIENT_ID = st.secrets.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = st.secrets.get("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email"
-PIX_CHAVE = st.secrets.get("PIX_CHAVE", "")
+PIX_CHAVE = st.secrets.get("PIX_CHAVE", "70222149485")
 PIX_NOME = st.secrets.get("PIX_NOME", "")
 PIX_CIDADE = st.secrets.get("PIX_CIDADE", "")
 notificacoes.configurar(GMAIL_REMETENTE, GMAIL_SENHA_APP, URL_BASE_SISTEMA, PIX_CHAVE, PIX_NOME)  # e-mails automáticos (modulos/notificacoes.py)
+
+def mostrar_chave_pix(valor):
+    """Mostra só a chave Pix (sem QR Code) com passo a passo simples."""
+    st.markdown(f"**Valor a pagar:** R$ {formatar_moeda(valor)}")
+    st.markdown("**Chave Pix** (toque no ícone à direita para copiar):")
+    st.code(PIX_CHAVE, language=None)
+    if PIX_NOME: st.caption(f"Titular: {PIX_NOME}")
+    st.caption("Abra o app do seu banco → Pix → Pagar com chave → cole a chave → confirme o valor.")
 
 @st.cache_resource
 def init_connection():
@@ -986,17 +994,10 @@ if not st.session_state['logado']:
         CHAVE_PIX = PIX_CHAVE
         NOME_PIX = PIX_NOME
         CIDADE_PIX = PIX_CIDADE
-        metodo_escolhido = st.radio("Como quer pagar?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto", "🤝 Pagar em mãos"])
-        if metodo_escolhido == "💠 Pix (QR Code)":
+        metodo_escolhido = st.radio("Como quer pagar?", ["💠 Pix", "💳 Cartão/Boleto", "🤝 Pagar em mãos"])
+        if metodo_escolhido == "💠 Pix":
             try:
-                payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, valor_cobrado, "Luz e Letra")
-                qr_buffer = gerar_qrcode_pix(payload_pix)
-                col_qr1, col_qr2 = st.columns([1,1])
-                with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
-                with col_qr2:
-                    st.markdown("**Como pagar:**\n1. Abra o app do seu banco\n2. Vá em **Pix → Pagar → QR Code**\n3. Escaneie o código ao lado\n4. Confirme o valor\n---\n**Ou copie a chave Pix:**")
-                    st.code(CHAVE_PIX)
-                    st.caption(f"Titular: {NOME_PIX}")
+                mostrar_chave_pix(valor_cobrado)
                 st.markdown("---")
                 comprovante_pix = st.text_area("Após pagar, cole aqui o comprovante ou número da transação")
                 if st.button("📤 Enviar Comprovante Pix"):
@@ -1481,17 +1482,10 @@ else:
                 nome_plano_renovar = plano_atual_usuario
                 st.markdown(f"#### 🔄 Renovar plano {plano_atual_usuario.upper()} — R$ {formatar_moeda(valor_renovar)}/mês")
                 st.caption("**Passo 1:** escolha como pagar  →  **Passo 2:** pague  →  **Passo 3:** envie o comprovante")
-                metodo_renovacao = st.radio("1️⃣ Como quer pagar?", ["💠 Pix (QR Code)", "🤝 Pagar em mãos"], key="metodo_renovacao", horizontal=True)
-                if metodo_renovacao == "💠 Pix (QR Code)":
+                metodo_renovacao = st.radio("1️⃣ Como quer pagar?", ["💠 Pix", "🤝 Pagar em mãos"], key="metodo_renovacao", horizontal=True)
+                if metodo_renovacao == "💠 Pix":
                     try:
-                        payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, valor_renovar, "Renovacao")
-                        qr_buffer = gerar_qrcode_pix(payload_pix)
-                        col_qr1, col_qr2 = st.columns([1,1])
-                        with col_qr1: st.image(qr_buffer, caption="2️⃣ Escaneie com o app do seu banco", width=250)
-                        with col_qr2:
-                            st.markdown(f"**Chave PIX:** `{CHAVE_PIX}`")
-                            st.markdown(f"**Titular:** {NOME_PIX}")
-                            st.markdown(f"**Valor:** R$ {formatar_moeda(valor_renovar)}")
+                        mostrar_chave_pix(valor_renovar)
                         comp_renovacao = st.text_area("3️⃣ Cole o comprovante aqui após pagar", key="comp_renovacao_pix")
                         if st.button("📤 Enviar Comprovante", key="btn_comp_renovacao"):
                             if not comp_renovacao.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
@@ -1510,17 +1504,10 @@ else:
                 if plano_atual_usuario == 'pro': st.success("Você já está no melhor plano do sistema!")
                 else:
                     st.warning("Ao confirmar o pagamento, as abas PRO serão liberadas automaticamente.")
-                    metodo_upgrade = st.radio("Como quer pagar o upgrade?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], key="metodo_upgrade", horizontal=True)
-                    if metodo_upgrade == "💠 Pix (QR Code)":
+                    metodo_upgrade = st.radio("Como quer pagar o upgrade?", ["💠 Pix", "💳 Cartão/Boleto"], key="metodo_upgrade", horizontal=True)
+                    if metodo_upgrade == "💠 Pix":
                         try:
-                            payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, 89.90, "Upgrade PRO")
-                            qr_buffer = gerar_qrcode_pix(payload_pix)
-                            col_qr1, col_qr2 = st.columns([1,1])
-                            with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
-                            with col_qr2:
-                                st.markdown("**Como pagar:**\n1. Abra o app do seu banco\n2. Vá em **Pix → Pagar → QR Code**\n3. Escaneie o código ao lado\n4. Confirme o valor **R$ 89,90**\n---\n**Ou copie a chave Pix:**")
-                                st.code(CHAVE_PIX)
-                                st.caption(f"Titular: {NOME_PIX}")
+                            mostrar_chave_pix(89.90)
                             st.markdown("---")
                             comp_upgrade_pix = st.text_area("Cole aqui o comprovante do pagamento", key="comp_upgrade_pix")
                             if st.button("📤 Enviar Comprovante Pix", key="btn_comp_upgrade_pix"):
@@ -1551,17 +1538,10 @@ else:
                 if plano_atual_usuario == 'basico': st.success("Seu plano já é o básico.")
                 else:
                     st.warning("Atenção: O downgrade bloqueará seu acesso ao Faturamento, Compras e PDF imediatamente.")
-                    metodo_downgrade = st.radio("Como quer pagar o downgrade?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], key="metodo_downgrade", horizontal=True)
-                    if metodo_downgrade == "💠 Pix (QR Code)":
+                    metodo_downgrade = st.radio("Como quer pagar o downgrade?", ["💠 Pix", "💳 Cartão/Boleto"], key="metodo_downgrade", horizontal=True)
+                    if metodo_downgrade == "💠 Pix":
                         try:
-                            payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, 79.90, "Plano Basico")
-                            qr_buffer = gerar_qrcode_pix(payload_pix)
-                            col_qr1, col_qr2 = st.columns([1,1])
-                            with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
-                            with col_qr2:
-                                st.markdown("**Como pagar:**\n1. Abra o app do seu banco\n2. Vá em **Pix → Pagar → QR Code**\n3. Confirme o valor **R$ 79,90**\n---\n**Ou copie a chave Pix:**")
-                                st.code(CHAVE_PIX)
-                                st.caption(f"Titular: {NOME_PIX}")
+                            mostrar_chave_pix(79.90)
                             comp_down_pix = st.text_area("Cole aqui o comprovante do pagamento", key="comp_down_pix")
                             if st.button("📤 Enviar Comprovante Pix", key="btn_comp_down_pix"):
                                 if not comp_down_pix.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
