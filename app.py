@@ -344,13 +344,36 @@ PIX_NOME = st.secrets.get("PIX_NOME", "")
 PIX_CIDADE = st.secrets.get("PIX_CIDADE", "")
 notificacoes.configurar(GMAIL_REMETENTE, GMAIL_SENHA_APP, URL_BASE_SISTEMA, PIX_CHAVE, PIX_NOME)  # e-mails automáticos (modulos/notificacoes.py)
 
-def mostrar_chave_pix(valor):
-    """Mostra só a chave Pix (sem QR Code) com passo a passo simples."""
-    st.markdown(f"**Valor a pagar:** R$ {formatar_moeda(valor)}")
-    st.markdown("**Chave Pix** (toque no ícone à direita para copiar):")
+WHATSAPP_NUMERO = "".join(c for c in str(st.secrets.get("WHATSAPP_NUMERO", "")) if c.isdigit())  # ex.: 5511999998888
+
+def mostrar_chave_pix(valor, chave_ui, descricao="assinatura"):
+    """Cartão de pagamento Pix (sem QR Code). Comprovante vai por WhatsApp.
+    Retorna True quando o cliente clica em 'Já paguei e enviei o comprovante'."""
+    st.markdown(f"""
+<div style="margin:6px 0 10px;padding:20px 22px;border-radius:18px;border:1px solid rgba(255,193,7,.45);
+  background:linear-gradient(135deg,rgba(255,193,7,.16),rgba(255,193,7,.04) 55%,rgba(255,255,255,.02));box-shadow:0 8px 30px rgba(0,0,0,.35);">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+    <div style="font-weight:800;font-size:1.05rem;color:#FFD54F;">💠 Pagamento via Pix</div>
+    <div style="font-size:.78rem;font-weight:700;color:#7CD67F;background:rgba(46,125,50,.2);border:1px solid rgba(46,125,50,.55);padding:3px 11px;border-radius:999px;">⚡ Cai na hora</div>
+  </div>
+  <div style="font-size:.82rem;color:#9A9A9A;margin-top:14px;">Valor a pagar</div>
+  <div style="font-size:2.1rem;font-weight:800;color:#F5F5F5;line-height:1.1;">R$ {formatar_moeda(valor)}</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:16px;">
+    <div style="background:rgba(0,0,0,.28);border-radius:12px;padding:10px 12px;"><b style="color:#FFC107">1</b> <span style="color:#E6E6E6;font-size:.88rem">Copie a chave Pix abaixo</span></div>
+    <div style="background:rgba(0,0,0,.28);border-radius:12px;padding:10px 12px;"><b style="color:#FFC107">2</b> <span style="color:#E6E6E6;font-size:.88rem">Pague no app do seu banco</span></div>
+    <div style="background:rgba(0,0,0,.28);border-radius:12px;padding:10px 12px;"><b style="color:#FFC107">3</b> <span style="color:#E6E6E6;font-size:.88rem">Envie o comprovante no WhatsApp</span></div>
+  </div>
+</div>""", unsafe_allow_html=True)
+    st.caption("🔑 Chave Pix (toque no ícone à direita para copiar)" + (f" · Titular: {PIX_NOME}" if PIX_NOME else ""))
     st.code(PIX_CHAVE, language=None)
-    if PIX_NOME: st.caption(f"Titular: {PIX_NOME}")
-    st.caption("Abra o app do seu banco → Pix → Pagar com chave → cole a chave → confirme o valor.")
+    nome_cli = st.session_state.get('nome_usuario') or ""
+    if WHATSAPP_NUMERO:
+        from urllib.parse import quote
+        msg_wa = f"Olá! Segue o comprovante do pagamento ({descricao}) de R$ {formatar_moeda(valor)}. Nome: {nome_cli}"
+        st.link_button("💬 Enviar comprovante no WhatsApp", f"https://wa.me/{WHATSAPP_NUMERO}?text={quote(msg_wa)}", use_container_width=True)
+    else:
+        st.info("💬 Depois de pagar, envie o comprovante para o WhatsApp do suporte.")
+    return st.button("✅ Já paguei e enviei o comprovante", key=f"pix_ok_{chave_ui}", type="primary", use_container_width=True)
 
 @st.cache_resource
 def init_connection():
@@ -997,16 +1020,11 @@ if not st.session_state['logado']:
         metodo_escolhido = st.radio("Como quer pagar?", ["💠 Pix", "💳 Cartão/Boleto", "🤝 Pagar em mãos"])
         if metodo_escolhido == "💠 Pix":
             try:
-                mostrar_chave_pix(valor_cobrado)
-                st.markdown("---")
-                comprovante_pix = st.text_area("Após pagar, cole aqui o comprovante ou número da transação")
-                if st.button("📤 Enviar Comprovante Pix"):
-                    if not comprovante_pix.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
-                    else:
-                        try: supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comprovante_pix, "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
-                        except Exception: registrar_erro("app.py:858"); supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
-                        mostrar_popup("Comprovante enviado! Ativaremos sua conta em breve.")
-                        del st.session_state['conta_criada_id']
+                if mostrar_chave_pix(valor_cobrado, "cadastro", f"plano {nome_plano_bd.upper()}"):
+                    try: supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": "Comprovante enviado via WhatsApp", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
+                    except Exception: registrar_erro("app.py:858"); supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "plano": nome_plano_bd}).eq("id", st.session_state['conta_criada_id']).execute()
+                    mostrar_popup("Obrigado! Assim que confirmarmos o comprovante, ativaremos sua conta.")
+                    del st.session_state['conta_criada_id']
             except Exception as e: registrar_erro("app.py:861"); st.warning("💠 O pagamento por Pix está indisponível no momento. Escolha **Pagar em mãos** ou entre em contato com o suporte.")
         elif metodo_escolhido == "💳 Cartão/Boleto":
             if st.button("Gerar Link"):
@@ -1485,13 +1503,9 @@ else:
                 metodo_renovacao = st.radio("1️⃣ Como quer pagar?", ["💠 Pix", "🤝 Pagar em mãos"], key="metodo_renovacao", horizontal=True)
                 if metodo_renovacao == "💠 Pix":
                     try:
-                        mostrar_chave_pix(valor_renovar)
-                        comp_renovacao = st.text_area("3️⃣ Cole o comprovante aqui após pagar", key="comp_renovacao_pix")
-                        if st.button("📤 Enviar Comprovante", key="btn_comp_renovacao"):
-                            if not comp_renovacao.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
-                            else:
-                                supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_renovacao, "plano": nome_plano_renovar}).eq("id", st.session_state['usuario_id']).execute()
-                                mostrar_popup("Comprovante enviado! Renovaremos seu plano em breve.")
+                        if mostrar_chave_pix(valor_renovar, "renovar", f"renovação plano {plano_atual_usuario.upper()}"):
+                            supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": "Comprovante enviado via WhatsApp", "plano": nome_plano_renovar}).eq("id", st.session_state['usuario_id']).execute()
+                            mostrar_popup("Obrigado! Assim que confirmarmos o comprovante, renovaremos seu plano.")
                     except Exception as e: registrar_erro("app.py:1113"); st.warning("💠 O pagamento por Pix está indisponível no momento. Escolha **Pagar em mãos** ou entre em contato com o suporte.")
                 else:
                     comp_maos_ren = st.text_area("Descreva o comprovante / acordo", key="comp_maos_renovacao")
@@ -1507,14 +1521,9 @@ else:
                     metodo_upgrade = st.radio("Como quer pagar o upgrade?", ["💠 Pix", "💳 Cartão/Boleto"], key="metodo_upgrade", horizontal=True)
                     if metodo_upgrade == "💠 Pix":
                         try:
-                            mostrar_chave_pix(89.90)
-                            st.markdown("---")
-                            comp_upgrade_pix = st.text_area("Cole aqui o comprovante do pagamento", key="comp_upgrade_pix")
-                            if st.button("📤 Enviar Comprovante Pix", key="btn_comp_upgrade_pix"):
-                                if not comp_upgrade_pix.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
-                                else:
-                                    supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_upgrade_pix}).eq("id", st.session_state['usuario_id']).execute()
-                                    mostrar_popup("Comprovante enviado! Ativaremos o PRO em breve.")
+                            if mostrar_chave_pix(89.90, "upgrade", "upgrade para PRO"):
+                                supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": "Comprovante enviado via WhatsApp"}).eq("id", st.session_state['usuario_id']).execute()
+                                mostrar_popup("Obrigado! Assim que confirmarmos o comprovante, ativaremos o PRO.")
                         except Exception as e: registrar_erro("app.py:1143"); st.warning("💠 O pagamento por Pix está indisponível no momento. Escolha **Pagar em mãos** ou entre em contato com o suporte.")
                     else:
                         if st.button("Gerar Link de Pagamento (R$ 89,90)", key="btn_upgrade_mp"):
@@ -1541,13 +1550,9 @@ else:
                     metodo_downgrade = st.radio("Como quer pagar o downgrade?", ["💠 Pix", "💳 Cartão/Boleto"], key="metodo_downgrade", horizontal=True)
                     if metodo_downgrade == "💠 Pix":
                         try:
-                            mostrar_chave_pix(79.90)
-                            comp_down_pix = st.text_area("Cole aqui o comprovante do pagamento", key="comp_down_pix")
-                            if st.button("📤 Enviar Comprovante Pix", key="btn_comp_down_pix"):
-                                if not comp_down_pix.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
-                                else:
-                                    supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": comp_down_pix, "plano": "basico"}).eq("id", st.session_state['usuario_id']).execute()
-                                    mostrar_popup("Comprovante enviado! Faremos o downgrade em breve.")
+                            if mostrar_chave_pix(79.90, "downgrade", "plano Básico"):
+                                supabase.table("usuarios").update({"metodo_pagamento": "pix_manual", "comprovante_pagamento": "Comprovante enviado via WhatsApp", "plano": "basico"}).eq("id", st.session_state['usuario_id']).execute()
+                                mostrar_popup("Obrigado! Assim que confirmarmos o comprovante, faremos o downgrade.")
                         except Exception as e: registrar_erro("app.py:1182"); st.warning("💠 O pagamento por Pix está indisponível no momento. Escolha **Pagar em mãos** ou entre em contato com o suporte.")
                     else:
                         if st.button("Gerar Link de Pagamento (R$ 79,90)", key="btn_down_mp"):
