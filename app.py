@@ -1439,32 +1439,60 @@ else:
             if st.session_state.get('perfil') == 'admin_geral':
                 st.info("👑 Administrador: você tem acesso total ao sistema, sem plano ou cobrança.")
             perfil_ui.cartoes_planos(plano_atual_usuario, _venc_txt, _venc_cls)
-            st.markdown("<div class='pf-sec-t'>O que você quer fazer?</div>", unsafe_allow_html=True)
-            _opcoes_ass = ["Manter meu plano atual", "🔄 Renovar meu plano atual"]
-            _opcoes_ass.append("Fazer Downgrade para Básico (R$ 79,90)" if plano_atual_usuario == 'pro' else "Fazer Upgrade para PRO (R$ 89,90)")
-            _opcoes_ass.append("Cancelar Assinatura")
-            acao_assinatura = st.radio("Gerenciar assinatura", _opcoes_ass, horizontal=True, label_visibility="collapsed")
+            # ---- Faixa de status da assinatura (clara e colorida)
+            _cores_st = {"verm": ("#B3261E", "rgba(179,38,30,.16)"), "amar": ("#FFC107", "rgba(255,193,7,.13)"), "verde": ("#4CAF50", "rgba(46,125,50,.16)")}
+            _cor_b, _cor_f = _cores_st.get(_venc_cls, ("#555", "rgba(255,255,255,.05)"))
+            if _venc_txt:
+                _dica_st = {"verm": "Renove agora para regularizar sua assinatura.", "amar": "Está perto de vencer — renove com antecedência.", "verde": "Tudo certo! Você pode renovar quando quiser."}.get(_venc_cls, "")
+                st.markdown(f"<div style='margin:14px 0 6px;padding:14px 18px;border-radius:14px;border:1px solid {_cor_b};background:{_cor_f};'>"
+                            f"<div style='font-weight:800;font-size:1.05rem;color:#F5F5F5'>{_venc_txt}</div>"
+                            f"<div style='color:#B5B5BA;font-size:.88rem;margin-top:2px'>{_dica_st}</div></div>", unsafe_allow_html=True)
+
+            # ---- Cartões de ação (toque para abrir; toque de novo para fechar)
+            st.markdown("<div class='pf-sec-t' style='margin-top:14px'>O que você quer fazer?</div>"
+                        "<div class='pf-sec-s'>Toque em uma opção para abrir.</div>", unsafe_allow_html=True)
+            if plano_atual_usuario == 'pro':
+                _opc_mudar = ("downgrade", "⬇️", "Mudar para Básico", "R$ 79,90/mês")
+            else:
+                _opc_mudar = ("upgrade", "🚀", "Virar PRO", "R$ 89,90/mês")
+            _acoes = [("renovar", "🔄", "Renovar plano", "Pague e continue sem pendências"), _opc_mudar,
+                      ("cancelar", "🚫", "Cancelar assinatura", "Encerrar minha conta")]
+            if 'acao_ass_sel' not in st.session_state:
+                st.session_state['acao_ass_sel'] = "renovar" if _venc_cls in ("verm", "amar") else None
+            _cols_ac = st.columns(len(_acoes))
+            for _col, (_k, _ic, _tit, _sub) in zip(_cols_ac, _acoes):
+                with _col:
+                    _sel = st.session_state['acao_ass_sel'] == _k
+                    if st.button(f"{_ic}  {_tit}", key=f"btn_acao_{_k}", type="primary" if _sel else "secondary", use_container_width=True):
+                        st.session_state['acao_ass_sel'] = None if _sel else _k
+                        st.rerun()
+                    st.caption(_sub)
+            _mapa_acao = {"renovar": "🔄 Renovar meu plano atual", "downgrade": "Fazer Downgrade para Básico (R$ 79,90)",
+                          "upgrade": "Fazer Upgrade para PRO (R$ 89,90)", "cancelar": "Cancelar Assinatura"}
+            acao_assinatura = _mapa_acao.get(st.session_state['acao_ass_sel'], "Manter meu plano atual")
+            st.markdown("<hr style='opacity:.12;margin:8px 0 14px'>", unsafe_allow_html=True)
             CHAVE_PIX = PIX_CHAVE
             NOME_PIX = PIX_NOME
             CIDADE_PIX = PIX_CIDADE
             if acao_assinatura == "Manter meu plano atual":
-                st.info("Seu plano está mantido. Nenhuma alteração realizada.")
+                st.markdown("<div style='color:#9A9A9A;font-size:.92rem'>👆 Escolha uma opção acima quando quiser renovar ou mudar de plano. Seu plano atual continua o mesmo.</div>", unsafe_allow_html=True)
             elif acao_assinatura == "🔄 Renovar meu plano atual":
                 valor_renovar = 89.90 if plano_atual_usuario == 'pro' else 79.90
                 nome_plano_renovar = plano_atual_usuario
-                st.info(f"Renovação do plano **{plano_atual_usuario.upper()}** — R$ {formatar_moeda(valor_renovar)}/mês")
-                metodo_renovacao = st.radio("Como quer pagar?", ["💠 Pix (QR Code)", "🤝 Pagar em mãos"], key="metodo_renovacao")
+                st.markdown(f"#### 🔄 Renovar plano {plano_atual_usuario.upper()} — R$ {formatar_moeda(valor_renovar)}/mês")
+                st.caption("**Passo 1:** escolha como pagar  →  **Passo 2:** pague  →  **Passo 3:** envie o comprovante")
+                metodo_renovacao = st.radio("1️⃣ Como quer pagar?", ["💠 Pix (QR Code)", "🤝 Pagar em mãos"], key="metodo_renovacao", horizontal=True)
                 if metodo_renovacao == "💠 Pix (QR Code)":
                     try:
                         payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, valor_renovar, "Renovacao")
                         qr_buffer = gerar_qrcode_pix(payload_pix)
                         col_qr1, col_qr2 = st.columns([1,1])
-                        with col_qr1: st.image(qr_buffer, caption="📱 Escaneie com seu banco", width=250)
+                        with col_qr1: st.image(qr_buffer, caption="2️⃣ Escaneie com o app do seu banco", width=250)
                         with col_qr2:
                             st.markdown(f"**Chave PIX:** `{CHAVE_PIX}`")
                             st.markdown(f"**Titular:** {NOME_PIX}")
                             st.markdown(f"**Valor:** R$ {formatar_moeda(valor_renovar)}")
-                        comp_renovacao = st.text_area("Cole o comprovante aqui após pagar", key="comp_renovacao_pix")
+                        comp_renovacao = st.text_area("3️⃣ Cole o comprovante aqui após pagar", key="comp_renovacao_pix")
                         if st.button("📤 Enviar Comprovante", key="btn_comp_renovacao"):
                             if not comp_renovacao.strip(): mostrar_popup("Cole o comprovante antes de enviar.", tipo="erro")
                             else:
@@ -1482,7 +1510,7 @@ else:
                 if plano_atual_usuario == 'pro': st.success("Você já está no melhor plano do sistema!")
                 else:
                     st.warning("Ao confirmar o pagamento, as abas PRO serão liberadas automaticamente.")
-                    metodo_upgrade = st.radio("Como quer pagar o upgrade?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], key="metodo_upgrade")
+                    metodo_upgrade = st.radio("Como quer pagar o upgrade?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], key="metodo_upgrade", horizontal=True)
                     if metodo_upgrade == "💠 Pix (QR Code)":
                         try:
                             payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, 89.90, "Upgrade PRO")
@@ -1523,7 +1551,7 @@ else:
                 if plano_atual_usuario == 'basico': st.success("Seu plano já é o básico.")
                 else:
                     st.warning("Atenção: O downgrade bloqueará seu acesso ao Faturamento, Compras e PDF imediatamente.")
-                    metodo_downgrade = st.radio("Como quer pagar o downgrade?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], key="metodo_downgrade")
+                    metodo_downgrade = st.radio("Como quer pagar o downgrade?", ["💠 Pix (QR Code)", "💳 Cartão/Boleto"], key="metodo_downgrade", horizontal=True)
                     if metodo_downgrade == "💠 Pix (QR Code)":
                         try:
                             payload_pix = gerar_payload_pix(CHAVE_PIX, NOME_PIX, CIDADE_PIX, 79.90, "Plano Basico")
@@ -1561,7 +1589,7 @@ else:
                                 else: mostrar_popup("Pagamento não identificado ainda.", tipo="erro")
             elif acao_assinatura == "Cancelar Assinatura":
                 st.error("⚠️ CUIDADO: Ao confirmar o cancelamento, seu acesso será bloqueado imediatamente.")
-                if st.button("🚨 Confirmar Cancelamento da Conta"):
+                if st.button("🚨 Confirmar Cancelamento da Conta", key="btn_confirma_cancel"):
                     supabase.table("usuarios").update({"ativo": False}).eq("id", st.session_state['usuario_id']).execute()
                     mostrar_popup("Conta cancelada. Desconectando do sistema...")
                     fazer_logout()
