@@ -81,7 +81,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
     st.markdown(_CSS, unsafe_allow_html=True)
     st.title("📊 Dashboard e Inteligência de Negócio")
     nome_exibicao = st.session_state.get('nome_usuario') or "Usuário"
-    st.markdown(f"#### 👋 Bem-vindo, {nome_exibicao}!")
+    st.caption(f"👋 Olá, {nome_exibicao}")
 
     # ------------------------------------------------------------------
     # helpers visuais
@@ -217,12 +217,11 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
 
         if secao != "alertas":
             with st.container(key="dash_filtro"):
-                st.selectbox("📅 Período", opcoes_periodo,
-                             index=opcoes_periodo.index(st.session_state['dash_periodo']),
-                             key="dash_periodo_w", on_change=_guardar_periodo)
-                st.markdown('<div class="dash-filtro-obs">Vale para os cards e gráficos de resultado. '
-                            'Alertas, Ocupação Hoje e Próximos Eventos mostram sempre o momento atual.</div>',
-                            unsafe_allow_html=True)
+                _c_per, _ = st.columns([1, 2])
+                _c_per.selectbox("📅 Período", opcoes_periodo,
+                                 index=opcoes_periodo.index(st.session_state['dash_periodo']),
+                                 key="dash_periodo_w", on_change=_guardar_periodo,
+                                 help="Vale para os cards e gráficos de resultado. Alertas, Ocupação Hoje e Próximos Eventos mostram sempre o momento atual.")
         nome_periodo = st.session_state['dash_periodo']
         periodo = mes_do_rotulo.get(nome_periodo)  # None = todo o período
 
@@ -256,7 +255,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
             "eventos": _kpi("🎉 Eventos Ativos", n_ev),
         }
         cards_da_aba = {
-            "resumo": ["receita", "despesa", "lucro", "ticket", "eventos"],
+            "resumo": ["receita", "despesa", "lucro"],
             "eventos": ["eventos", "ticket"],
             "financeiro": ["receita", "despesa", "lucro"],
         }.get(secao, [])
@@ -326,14 +325,21 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
         # 🏠 RESUMO
         # ==============================================================
         if secao == "resumo":
-            chips = [
-                _chip(len(eventos_futuros), "eventos<br>programados", "#2E7D32", caps=True),
-                _chip(len(devolucoes_pend), "devoluções<br>pendentes", "#B3261E" if devolucoes_pend else "#333", caps=True),
-                _chip(len(manut_data), "itens em<br>manutenção", "#FFC107" if manut_data else "#333", caps=True),
-                _chip(len(zerados), "produtos com<br>estoque zerado", "#B3261E" if zerados else "#333", caps=True),
+            # Só mostra o que precisa de atenção (itens zerados somem); tudo em dia = uma linha verde
+            _pend = [
+                (len(devolucoes_pend), "devolução(ões) pendente(s)", "#FF8A80", "rgba(179,38,30,.18)"),
+                (len(manut_data), "item(ns) em manutenção", "#FFD54F", "rgba(255,193,7,.14)"),
+                (len(zerados), "produto(s) com estoque zerado", "#FF8A80", "rgba(179,38,30,.18)"),
+                (sem_baixa or 0, "evento(s) encerrado(s) sem baixa", "#FFD54F", "rgba(255,193,7,.14)"),
             ]
-            st.markdown(f'<div class="dash-chip-grid">{"".join(chips)}</div>', unsafe_allow_html=True)
-            _aviso_sem_baixa()
+            _pills = "".join(
+                f'<span style="display:inline-block;margin:0 8px 8px 0;padding:6px 13px;border-radius:999px;'
+                f'font-size:13px;font-weight:700;color:{cor};background:{bg};border:1px solid {cor}55;">'
+                f'{n} {txt}</span>' for n, txt, cor, bg in _pend if n)
+            if _pills:
+                st.markdown(f'<div style="margin:2px 0 10px;"><div style="font-size:12px;color:#9A9A9A;margin-bottom:6px;font-weight:600;">⚠️ PRECISA DE ATENÇÃO</div>{_pills}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div style="margin:2px 0 12px;padding:10px 14px;border-radius:12px;color:#7CD67F;background:rgba(46,125,50,.16);border:1px solid rgba(46,125,50,.5);font-weight:700;font-size:14px;">✅ Tudo em dia — nenhuma pendência.</div>', unsafe_allow_html=True)
             col_a, col_b = st.columns([1.4, 1])
             with col_a:
                 st.subheader("🗓️ Próximos Eventos")
@@ -342,11 +348,19 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
                     if len(eventos_futuros) > 3:
                         st.caption(f"+ {len(eventos_futuros) - 3} outro(s) na aba 🗓️ Eventos.")
                 else:
-                    st.info("Agenda livre! Nenhum evento futuro programado.")
+                    st.caption("Agenda livre — nenhum evento futuro programado.")
             with col_b:
                 st.subheader("🎯 Ocupação Hoje")
                 alocados, total_fisico, _ = _calcular_ocupacao()
-                _gauge_ocupacao(alocados, total_fisico, altura=220)
+                _taxa = min(100.0, (alocados / total_fisico) * 100)
+                _cor_taxa = "#4CAF50" if _taxa < 40 else ("#FFC107" if _taxa < 80 else "#EF5350")
+                st.markdown(
+                    f'<div style="background:#1B1B1D;border-radius:12px;padding:16px 18px;">'
+                    f'<div style="font-size:30px;font-weight:800;color:{_cor_taxa};line-height:1;">{_taxa:.0f}%</div>'
+                    f'<div style="font-size:13px;color:#9A9A9A;margin:4px 0 10px;">{alocados} de {total_fisico} itens na rua</div>'
+                    f'<div style="height:8px;border-radius:99px;background:#2a2a2e;overflow:hidden;">'
+                    f'<div style="width:{_taxa:.0f}%;height:100%;background:{_cor_taxa};border-radius:99px;"></div></div></div>',
+                    unsafe_allow_html=True)
 
         # ==============================================================
         # 🗓️ EVENTOS
