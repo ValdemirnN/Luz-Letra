@@ -234,6 +234,75 @@ def _fmt_data(venc):
 # ----------------------------------------------------------------------------------
 # Um assinante (cabeçalho com etiquetas + detalhes/ações dentro do expander)
 # ----------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------
+# Exclusão definitiva de um assinante (conta + TODOS os dados da empresa)
+# ----------------------------------------------------------------------------------
+def _em_lotes(lista, tam=200):
+    for i in range(0, len(lista), tam):
+        yield lista[i:i + tam]
+
+
+def excluir_assinante_completo(supabase, uid, empresa_id):
+    """Apaga o usuário e tudo que a empresa dele gerou. Retorna (ok, lista_de_erros).
+    Ordem: dados dependentes primeiro, depois assinatura, usuários e a empresa."""
+    erros = []
+
+    def _apagar(tabela, coluna, valores):
+        valores = [v for v in valores if v is not None]
+        if not valores:
+            return
+        try:
+            for lote in _em_lotes(valores):
+                supabase.table(tabela).delete().in_(coluna, lote).execute()
+        except Exception as e:
+            registrar_erro(f"gestao_assinantes.py:excluir:{tabela}")
+            erros.append(f"{tabela}: {e}")
+
+    ids_usuarios = [uid]
+    if empresa_id:
+        try:
+            r = supabase.table("usuarios").select("id").eq("empresa_id", empresa_id).execute()
+            ids_usuarios = list({u["id"] for u in (r.data or [])} | {uid})
+        except Exception as e:
+            registrar_erro("gestao_assinantes.py:excluir:listar_usuarios")
+            erros.append(f"usuarios (listar): {e}")
+
+        ids_eventos = []
+        try:
+            r = supabase.table("eventos").select("id").eq("empresa_id", empresa_id).execute()
+            ids_eventos = [x["id"] for x in (r.data or [])]
+        except Exception as e:
+            registrar_erro("gestao_assinantes.py:excluir:listar_eventos")
+            erros.append(f"eventos (listar): {e}")
+
+        # 1) dependentes dos eventos
+        _apagar("itens_evento", "evento_id", ids_eventos)
+        _apagar("historico_eventos", "evento_id", ids_eventos)
+        # 2) dados da empresa (filhos antes dos pais)
+        for tabela in ("historico_eventos", "itens_quebrados", "manutencao", "compras", "faturamento",
+                       "despesas_viagem", "orcamentos", "clientes_eventos", "eventos", "produtos",
+                       "historico_pagamentos"):
+            _apagar(tabela, "empresa_id", [empresa_id])
+        _apagar("assinaturas", "empresa_id", [empresa_id])
+
+    # 3) dados ligados aos usuários
+    _apagar("sessoes_ativas", "usuario_id", ids_usuarios)
+    _apagar("notificacoes_enviadas", "usuario_id", ids_usuarios)
+    _apagar("historico_pagamentos", "usuario_id", ids_usuarios)
+    # 4) usuários e empresa
+    _apagar("usuarios", "id", ids_usuarios)
+    if empresa_id:
+        _apagar("empresas", "id", [empresa_id])
+
+    try: st.cache_data.clear()
+    except Exception: pass
+    try:
+        from modulos.cache_db import limpar_cache
+        limpar_cache()
+    except Exception: pass
+    return (not erros), erros
+
+
 def _desenhar_assinante(a, hoje, supabase, formatar_moeda, mostrar_popup, hash_senha,
                         enviar_email_expiracao, ativar_conta_apos_pagamento, registrar_pagamento_historico):
     uid = a["id"]
@@ -358,6 +427,36 @@ def _desenhar_assinante(a, hoje, supabase, formatar_moeda, mostrar_popup, hash_s
                         supabase.table("usuarios").update({"senha_hash": hash_senha(nova_senha)}).eq("id", uid).execute()
                         st.session_state[f"ga_pwdn_{uid}"] = n_pwd + 1
                         mostrar_popup("Senha alterada!")
+                        st.rerun()
+
+                # ---------- EXCLUIR DEFINITIVAMENTE ----------
+                st.divider()
+                st.markdown("**🗑️ Excluir assinante**")
+                st.caption("Apaga a conta e **tudo** que ela gerou (eventos, estoque, compras, faturamento, orçamentos, "
+                           "clientes, histórico de pagamentos, assinatura e a empresa). Não dá para desfazer.")
+                flag_del = f"ga_del_{uid}"
+                if not st.session_state.get(flag_del):
+                    if st.button("🗑️ Excluir este assinante", key=f"ga_del_btn_{uid}"):
+                        st.session_state[flag_del] = True
+                        st.rerun()
+                else:
+                    st.error(f"⚠️ Você vai apagar **{a['empresa']}** ({a['nome']}) e TODOS os dados dela, de forma definitiva. "
+                             "Se houver outros usuários nessa mesma empresa, eles também serão apagados.")
+                    conf = st.text_input("Para confirmar, digite EXCLUIR", key=f"ga_del_txt_{uid}")
+                    c1, c2 = st.columns(2)
+                    if c1.button("🗑️ Apagar tudo agora", key=f"ga_del_sim_{uid}", type="primary",
+                                 disabled=(conf or "").strip().upper() != "EXCLUIR"):
+                        with st.spinner("Apagando..."):
+                            ok, erros = excluir_assinante_completo(supabase, uid, a["empresa_id"])
+                        st.session_state.pop(flag_del, None)
+                        if ok:
+                            mostrar_popup("Assinante e todos os dados foram apagados.")
+                            st.rerun()
+                        else:
+                            st.error("Não foi possível apagar tudo. Detalhes:")
+                            for e in erros: st.code(e)
+                    if c2.button("Cancelar", key=f"ga_del_nao_{uid}"):
+                        st.session_state.pop(flag_del, None)
                         st.rerun()
 
             # ---------- COMUNICAÇÃO ----------
