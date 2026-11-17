@@ -12,7 +12,8 @@ no mesmo modelo do contrato em papel da empresa:
 
 Onde ficam os dados:
   eventos.contrato_dados  -> JSON com CPF/CNPJ do cliente, forma de pagamento e entrada (coluna nova, veja SQL_MIGRACAO)
-                             + "versao" / "atualizado_em" / "ultima_alteracao" (controle de versões do contrato)
+                             + "versoes": lista com TODOS os contratos do evento (original + cada alteração de materiais),
+                               cada um com data, resumo da mudança e a "foto" dos materiais naquele momento
 
 Evento SEM materiais: o contrato sai com uma tabela em branco (Material + Quantidade) para preencher à mão.
 Quando materiais são adicionados/alterados depois, o contrato ganha uma NOVA VERSÃO (registrar_nova_versao).
@@ -37,7 +38,7 @@ FORMAS_PAGAMENTO = {
 _ORDEM_FORMAS = list(FORMAS_PAGAMENTO.keys())
 
 LINHAS_EM_BRANCO = 10  # linhas da tabela de materiais em branco (contrato sem itens)
-_CHAVES_VERSAO = ("versao", "atualizado_em", "ultima_alteracao")
+_CHAVES_VERSAO = ("versao", "atualizado_em", "ultima_alteracao", "versoes")
 
 _MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
           "agosto", "setembro", "outubro", "novembro", "dezembro"]
@@ -201,19 +202,77 @@ def versao_contrato(ev):
         return 1
 
 
-def registrar_nova_versao(supabase, evento_id, resumo=""):
-    """Chamar sempre que os materiais do evento mudarem: o contrato passa a ser uma nova versão.
+def _montar_snapshot(supabase, itens):
+    """Foto dos materiais (produto, nome, quantidade, detalhe) para reabrir o contrato antigo depois."""
+    itens = itens or []
+    nomes = {}
+    ids = list({i.get("produto_id") for i in itens if i.get("produto_id")})
+    if ids:
+        try:
+            for p in (supabase.table("produtos").select("id, nome").in_("id", ids).execute().data or []):
+                nomes[p["id"]] = p.get("nome")
+        except Exception:
+            pass
+    return [{"produto_id": i.get("produto_id"), "nome": nomes.get(i.get("produto_id")) or f"Produto #{i.get('produto_id')}",
+             "quantidade": i.get("quantidade"), "observacao": i.get("observacao") or ""} for i in itens]
+
+
+def _itens_do_banco(supabase, evento_id):
+    r = supabase.table("itens_evento").select("produto_id, quantidade, observacao").eq("evento_id", evento_id).execute()
+    return r.data or []
+
+
+def _valor_evento(supabase, evento_id):
+    try:
+        r = supabase.table("eventos").select("valor_total").eq("id", evento_id).execute()
+        return float((r.data or [{}])[0].get("valor_total") or 0)
+    except Exception:
+        return None
+
+
+def registrar_versao_inicial(supabase, evento_id, resumo="Contrato original"):
+    """Chamar logo depois de criar o evento (e seus itens): guarda o contrato 1."""
+    try:
+        dados = _ler_dados_banco(supabase, evento_id)
+        dados["versoes"] = [{"versao": 1, "em": _agora().strftime("%d/%m/%Y às %H:%M"), "resumo": resumo,
+                             "itens": _montar_snapshot(supabase, _itens_do_banco(supabase, evento_id)),
+                             "valor_total": _valor_evento(supabase, evento_id)}]
+        dados["versao"] = 1
+        supabase.table("eventos").update({"contrato_dados": json.dumps(dados, ensure_ascii=False)}).eq("id", evento_id).execute()
+        return True
+    except Exception:
+        return False
+
+
+def registrar_nova_versao(supabase, evento_id, resumo="", itens_antes=None):
+    """Chamar DEPOIS de alterar os materiais do evento: guarda um novo contrato na lista.
+    itens_antes = materiais como estavam ANTES da alteração (usado só se o evento ainda não tinha o contrato 1 guardado).
     Devolve (ok, numero_da_versao)."""
     try:
         dados = _ler_dados_banco(supabase, evento_id)
-        nova = max(1, int(dados.get("versao") or 1)) + 1
+        versoes = dados.get("versoes") if isinstance(dados.get("versoes"), list) else []
+        valor = _valor_evento(supabase, evento_id)
+        if not versoes:  # evento antigo: o estado de antes da alteração vira o contrato 1 (original)
+            versoes = [{"versao": 1, "em": None, "resumo": "Contrato original",
+                        "itens": _montar_snapshot(supabase, itens_antes), "valor_total": valor}]
+        nova = len(versoes) + 1
+        agora = _agora().strftime("%d/%m/%Y às %H:%M")
+        versoes.append({"versao": nova, "em": agora, "resumo": str(resumo or "Alteração de materiais")[:300],
+                        "itens": _montar_snapshot(supabase, _itens_do_banco(supabase, evento_id)), "valor_total": valor})
+        dados["versoes"] = versoes
         dados["versao"] = nova
-        dados["atualizado_em"] = _agora().strftime("%d/%m/%Y às %H:%M")
+        dados["atualizado_em"] = agora
         dados["ultima_alteracao"] = str(resumo or "")[:300]
         supabase.table("eventos").update({"contrato_dados": json.dumps(dados, ensure_ascii=False)}).eq("id", evento_id).execute()
         return True, nova
     except Exception:
         return False, 0
+
+
+def listar_versoes(ev):
+    """Contratos guardados do evento, do original (1) ao mais recente. [] se nunca houve alteração de materiais."""
+    v = dados_do_evento(ev).get("versoes")
+    return v if isinstance(v, list) else []
 
 
 def texto_versao(ev):
@@ -267,7 +326,7 @@ def ui_completar_evento(supabase, ev, chave, mostrar_popup):
 
 
 # ------------------------------------------------------------------ PDF
-def gerar_contrato_pdf(evento, itens_lista, dict_produtos, nome_cliente, locador, safe_json_load, formatar_moeda):
+def gerar_contrato_pdf(evento, itens_lista, dict_produtos, nome_cliente, locador, safe_json_load, formatar_moeda, versao=None, emitido_em=None):
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
     from reportlab.lib.pagesizes import A4
@@ -284,7 +343,7 @@ def gerar_contrato_pdf(evento, itens_lista, dict_produtos, nome_cliente, locador
     COR_PRETO = colors.HexColor("#0E0E0E")
     logo = next((p for p in ("logo_sem_fundo.png", "logo.jpg") if os.path.exists(p)), None)
     empresa_nome = (locador.get("razao_social") or "Luz & Letra").upper()
-    versao = versao_contrato(evento)
+    versao = int(versao) if versao else versao_contrato(evento)
 
     def _pagina(c, doc):
         c.saveState()
@@ -305,7 +364,7 @@ def gerar_contrato_pdf(evento, itens_lista, dict_produtos, nome_cliente, locador
         c.drawString(6.2 * cm, h - 2.0 * cm, empresa_nome)
         c.setFillColor(colors.grey)
         c.setFont("Helvetica", 8)
-        c.drawString(2 * cm, 1.1 * cm, f"{locador.get('razao_social') or 'Luz & Letra'} — Emitido em {_agora().strftime('%d/%m/%Y às %H:%M')}" + (f" — Versão {versao} (atualizada)" if versao > 1 else ""))
+        c.drawString(2 * cm, 1.1 * cm, f"{locador.get('razao_social') or 'Luz & Letra'} — Emitido em {emitido_em or _agora().strftime('%d/%m/%Y às %H:%M')}" + (f" — Contrato {versao} (atualizado)" if versao > 1 else ""))
         c.drawRightString(w - 2 * cm, 1.1 * cm, f"Página {doc.page}")
         c.restoreState()
 

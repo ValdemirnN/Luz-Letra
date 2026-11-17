@@ -68,6 +68,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
             elif not motivo_alteracao.strip(): mostrar_popup("Informe o motivo da alteração.", tipo="erro")
             else:
                 try:
+                    itens_antes = supabase.table("itens_evento").select("produto_id, quantidade, observacao").eq("evento_id", ev['id']).execute().data or []
                     agrupado = {}
                     for key, qtd in adicoes_selecionadas.items():
                         p_id_str, sub = key.split("_", 1)
@@ -95,10 +96,10 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                         else:
                             supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": ev['id'], "produto_id": p_id, "quantidade": qtd_total, "observacao": obs_json_add, "valor_cobrado": valor_sugerido_add}).execute()
                         resumo_itens.append(f"{qtd_total}x {_nome_prod(p_id)}")
-                    _ok_v, _nv = contrato.registrar_nova_versao(supabase, ev['id'], "Adicionou " + ", ".join(resumo_itens))
-                    _txt_v = f" Contrato atualizado (versão {_nv})." if _ok_v else ""
+                    _ok_v, _nv = contrato.registrar_nova_versao(supabase, ev['id'], "Adicionou " + ", ".join(resumo_itens) + f". Motivo: {motivo_alteracao}", itens_antes)
+                    _txt_v = f" Novo contrato gerado (contrato {_nv})." if _ok_v else ""
                     supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": f"✏️ ALTERAÇÃO: Adicionou {', '.join(resumo_itens)}. Motivo: {motivo_alteracao}.{_txt_v}", "data_registro": data_hora_alt}).execute()
-                    mostrar_popup(f"MATERIAIS ADICIONADOS! CONTRATO ATUALIZADO (VERSÃO {_nv}) — BAIXE A NOVA VERSÃO." if _ok_v else "ADIÇÃO CONCLUÍDA COM SUCESSO!")
+                    mostrar_popup(f"MATERIAIS ADICIONADOS! NOVO CONTRATO GERADO (Nº {_nv}) — veja na aba Contratos." if _ok_v else "ADIÇÃO CONCLUÍDA COM SUCESSO!")
                     st.rerun()
                 except Exception as e: registrar_erro("agendamento.py:283"); mostrar_popup(f"Erro: {e}", tipo="erro")
 
@@ -153,11 +154,43 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                     if nova_qtd_item_rem <= 0: supabase.table("itens_evento").delete().eq("id", item_id).execute()
                     else: supabase.table("itens_evento").update({"quantidade": nova_qtd_item_rem, "observacao": nova_obs_item_rem, "valor_cobrado": novo_valor_item_rem}).eq("id", item_id).execute()
                     resumo_remocao.append(f"{qtd_remover}x {_nome_prod(info_rem['produto_id'])}")
-                _ok_v, _nv = contrato.registrar_nova_versao(supabase, ev['id'], "Removeu " + ", ".join(resumo_remocao))
-                _txt_v = f" Contrato atualizado (versão {_nv})." if _ok_v else ""
+                _ok_v, _nv = contrato.registrar_nova_versao(supabase, ev['id'], "Removeu " + ", ".join(resumo_remocao) + f". Motivo: {motivo_remocao}", itens)
+                _txt_v = f" Novo contrato gerado (contrato {_nv})." if _ok_v else ""
                 supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": f"🔻 REMOÇÃO: Retirou {', '.join(resumo_remocao)}. Motivo: {motivo_remocao}.{_txt_v}", "data_registro": data_hora_rem}).execute()
-                mostrar_popup(f"REMOÇÃO CONCLUÍDA! CONTRATO ATUALIZADO (VERSÃO {_nv}) — BAIXE A NOVA VERSÃO." if _ok_v else "REMOÇÃO CONCLUÍDA COM SUCESSO!")
+                mostrar_popup(f"REMOÇÃO CONCLUÍDA! NOVO CONTRATO GERADO (Nº {_nv}) — veja na aba Contratos." if _ok_v else "REMOÇÃO CONCLUÍDA COM SUCESSO!")
                 st.rerun()
+
+    def _ui_contratos(ev, itens_atuais, nome_cli, pref):
+        """Aba Contratos: todos os contratos do evento, do original ao atual, com o que mudou em cada um."""
+        if not REPORTLAB_DISPONIVEL:
+            st.caption("Geração de PDF indisponível neste ambiente.")
+            return
+        versoes = contrato.listar_versoes(ev)
+        if not versoes:
+            versoes = [{"versao": 1, "em": None, "resumo": "Contrato original (nenhuma alteração de materiais até agora)", "itens": None, "valor_total": None}]
+        st.caption(f"{len(versoes)} contrato(s) deste evento, do original até o atual. Cada alteração de materiais gera um novo contrato; os anteriores ficam guardados aqui.")
+        for v in versoes:
+            n = int(v.get("versao") or 1)
+            eh_atual = (v is versoes[-1])
+            if eh_atual or v.get("itens") is None:  # o mais recente sempre reflete o estado atual do evento
+                itens_v, ev_v = itens_atuais, ev
+            else:
+                itens_v = v.get("itens") or []
+                ev_v = dict(ev)
+                if v.get("valor_total") is not None: ev_v["valor_total"] = v["valor_total"]
+            dict_p = {i["produto_id"]: {"nome": i.get("nome") or _nome_prod(i["produto_id"])} for i in itens_v if i.get("produto_id")}
+            buf = contrato.gerar_contrato_pdf(ev_v, itens_v, dict_p, nome_cli, locador_contrato, safe_json_load, formatar_moeda, versao=n, emitido_em=(None if eh_atual else v.get("em")))
+            resumo_mat = ", ".join(f"{i.get('quantidade')}x {dict_p.get(i.get('produto_id'), {}).get('nome', '?')}" for i in itens_v) or "sem materiais (tabela em branco para preencher à mão)"
+            with st.container(border=True):
+                col_c1, col_c2 = st.columns([3, 1.4])
+                with col_c1:
+                    titulo_c = "Contrato 1 — Original" if n == 1 else f"Contrato {n} — Alteração {n - 1}"
+                    st.markdown(f"**📜 {titulo_c}**" + ("  ·  🟢 atual" if eh_atual else ""))
+                    st.caption(f"Gerado em {v.get('em') or 'data não registrada'}")
+                    if n > 1: st.write(f"**O que mudou:** {v.get('resumo') or '-'}")
+                    st.caption(f"Materiais: {resumo_mat}")
+                with col_c2:
+                    st.download_button("📥 Baixar PDF", data=buf.getvalue(), file_name=f"contrato_evento_{ev['id']}_{n}.pdf", mime="application/pdf", key=f"{pref}_ctr_{ev['id']}_{n}")
 
     def _nome_arq_contrato(prefixo, ev):
         v = contrato.versao_contrato(ev)
@@ -309,6 +342,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                                 valor_sugerido = info['total'] * mapa_valor_ref.get(p_id, 0)
                                 supabase.table("itens_evento").insert({"empresa_id": emp_id,"evento_id": evento_id_gerado,"produto_id": p_id,"quantidade": info['total'],"observacao": obs_json_evento,"valor_cobrado": valor_sugerido}).execute()
                                 supabase.table("historico_eventos").insert({"empresa_id": emp_id,"evento_id": evento_id_gerado,"descricao": f"🟢 ALOCAÇÃO INICIAL: Adicionou {info['total']}x Produto {p_id}.","data_registro": data_hora}).execute()
+                            contrato.registrar_versao_inicial(supabase, evento_id_gerado)  # guarda o contrato 1 (original)
                             notificacoes.avisar_novo_agendamento(supabase, emp_id, evento_id_gerado)  # e-mail com o resumo
                             if alocacoes_agrupadas: mostrar_popup("AGENDAMENTO CONFIRMADO COM SUCESSO!")
                             else: mostrar_popup("AGENDAMENTO SALVO SEM MATERIAIS! Adicione-os depois em Histórico → Materiais.", tempo=3)
@@ -360,10 +394,9 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                         itens_h = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao, valor_cobrado").eq("evento_id", ev_h['id']).execute()
                     contato_h = cliente_h.get('contato') or '-'
 
-                    tab_det_h, tab_mat_h, tab_status_h, tab_pag_h, tab_edit_h, tab_log_h = st.tabs([
-                        "📋 Detalhes", "🧰 Materiais", "🔄 Alterar Status", "💳 Pagamento", "✏️ Editar Dados", "🕒 Log"
+                    tab_det_h, tab_mat_h, tab_ctr_h, tab_status_h, tab_pag_h, tab_edit_h, tab_log_h = st.tabs([
+                        "📋 Detalhes", "🧰 Materiais", "📜 Contratos", "🔄 Alterar Status", "💳 Pagamento", "✏️ Editar Dados", "🕒 Log"
                     ])
-                    buffer_ctr_h = None
 
                     # --- ABA DETALHES ---
                     with tab_det_h:
@@ -433,8 +466,6 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                             _cbh1, _cbh2, _cbh3 = st.columns([1, 1.5, 2.5])
                             with _cbh1: st.download_button("📄 Baixar Recibo (PDF)", data=buffer_pdf_h, file_name=f"recibo_historico_{ev_h['id']}.pdf", mime="application/pdf", key=f"pdf_hist_{ev_h['id']}")
                             with _cbh2: st.download_button("📜 Baixar Contrato de Locação (PDF)", data=buffer_ctr_h, file_name=_nome_arq_contrato("contrato_historico", ev_h), mime="application/pdf", key=f"contrato_hist_{ev_h['id']}")
-                            _vtxt_h = contrato.texto_versao(ev_h)
-                            if _vtxt_h: st.info(_vtxt_h)
                             _dc_h = contrato.dados_do_evento(ev_h)
                             if not _dc_h.get('doc_cliente') or not _dc_h.get('forma_pagamento'):
                                 st.caption("⚠️ Faltam dados do contrato (CPF/CNPJ do cliente e forma de pagamento). Complete na aba **✏️ Editar Dados**.")
@@ -450,14 +481,14 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                                 js_m = safe_json_load(it_m.get('observacao'))
                                 det_m = (" — " + ", ".join(f"{k}: {v}x" for k, v in js_m.items())) if js_m else ""
                                 st.write(f"  • {it_m['quantidade']}x {_nome_prod(it_m['produto_id'])}{det_m}")
-                        _vtxt_m = contrato.texto_versao(ev_h)
-                        if _vtxt_m: st.info(_vtxt_m)
-                        st.caption("Ao salvar uma alteração de materiais, o contrato é atualizado automaticamente para uma nova versão — baixe-a logo abaixo.")
+                        st.caption("Ao salvar uma alteração de materiais, um novo contrato é gerado automaticamente e fica guardado na aba **📜 Contratos** (junto com os anteriores).")
                         sub_add_h, sub_rem_h = st.tabs(["➕ Adicionar materiais", "➖ Remover materiais"])
                         with sub_add_h: _ui_adicionar_itens(ev_h, "hadd")
                         with sub_rem_h: _ui_remover_itens(ev_h, itens_h.data or [], "hrem")
-                        if buffer_ctr_h is not None:
-                            st.download_button(f"📜 Baixar Contrato atual (versão {contrato.versao_contrato(ev_h)})", data=buffer_ctr_h.getvalue(), file_name=_nome_arq_contrato("contrato_historico", ev_h), mime="application/pdf", key=f"contrato_mat_h_{ev_h['id']}")
+
+                    # --- ABA CONTRATOS (todos, do original ao atual) ---
+                    with tab_ctr_h:
+                        _ui_contratos(ev_h, itens_h.data or [], nome_cli_h, "hctr")
 
                     # --- ABA ALTERAR STATUS ---
                     with tab_status_h:
@@ -573,7 +604,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                                         supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": ev_h['id'], "produto_id": novo_prod_h, "quantidade": int(novo_prod_qtd_h), "observacao": "", "valor_cobrado": mapa_valor_ref.get(novo_prod_h, 0) * int(novo_prod_qtd_h)}).execute()
                                         _log_itens_h.append(f"adicionou {int(novo_prod_qtd_h)}x {opcoes_add_h[novo_prod_h]['nome']}")
                                     if _log_itens_h:
-                                        contrato.registrar_nova_versao(supabase, ev_h['id'], "; ".join(_log_itens_h))
+                                        contrato.registrar_nova_versao(supabase, ev_h['id'], "; ".join(_log_itens_h) + f". Justificativa: {njust_h}", itens_h.data or [])
                                         supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev_h['id'], "descricao": "🛒 ITENS (via Histórico): " + "; ".join(_log_itens_h), "data_registro": datetime.now().strftime("%d/%m/%Y às %H:%M:%S")}).execute()
                                     if ev_h.get('cliente_id'): supabase.table("clientes_eventos").update({"nome": nnome_cli_h, "contato": ncont_cli_h}).eq("id", ev_h['cliente_id']).execute()
                                     supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev_h['id'], "descricao": f"✏️ EDIÇÃO via Histórico. Justificativa: {njust_h}", "data_registro": datetime.now().strftime("%d/%m/%Y às %H:%M:%S")}).execute()
@@ -655,7 +686,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                 except Exception:
                     registrar_erro("agendamento.py:109")
                     itens_ev = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao, valor_cobrado").eq("evento_id", ev['id']).execute()
-                tab_detalhes, tab_add, tab_rem, tab_valores, tab_editar, tab_hist = st.tabs(["📋 Detalhes & Recibo","➕ Adicionar Itens","➖ Remover Itens","💲 Valores","✏️ Editar Evento","🕒 Histórico"])
+                tab_detalhes, tab_add, tab_rem, tab_ctr, tab_valores, tab_editar, tab_hist = st.tabs(["📋 Detalhes & Recibo","➕ Adicionar Itens","➖ Remover Itens","📜 Contratos","💲 Valores","✏️ Editar Evento","🕒 Histórico"])
 
                 with tab_detalhes:
                     col_a, col_b = st.columns(2)
@@ -732,8 +763,6 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                         _cb1, _cb2, _cb3 = st.columns([1.6, 1.5, 1.4])
                         with _cb1: st.download_button("📄 Baixar Recibo de Confirmação (PDF)", data=buffer_pdf, file_name=f"recibo_evento_{ev['id']}.pdf", mime="application/pdf", key=f"recibo_pdf_{ev['id']}")
                         with _cb2: st.download_button("📜 Baixar Contrato de Locação (PDF)", data=buffer_ctr, file_name=_nome_arq_contrato("contrato_evento", ev), mime="application/pdf", key=f"contrato_pdf_{ev['id']}")
-                        _vtxt_ev = contrato.texto_versao(ev)
-                        if _vtxt_ev: st.info(_vtxt_ev)
                         _dc_ev = contrato.dados_do_evento(ev)
                         if not _dc_ev.get('doc_cliente') or not _dc_ev.get('forma_pagamento'):
                             st.caption("⚠️ Faltam dados do contrato (CPF/CNPJ do cliente e forma de pagamento). Complete na aba **✏️ Editar Evento**.")
@@ -780,11 +809,14 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
 
 
                 with tab_add:
-                    st.caption("Ao salvar, o contrato do evento ganha uma nova versão — baixe em 📋 Detalhes & Recibo.")
+                    st.caption("Ao salvar, um novo contrato é gerado e fica guardado na aba 📜 Contratos.")
                     _ui_adicionar_itens(ev, "add")
 
                 with tab_rem:
                     _ui_remover_itens(ev, itens_ev.data or [], "rem")
+
+                with tab_ctr:
+                    _ui_contratos(ev, itens_ev.data or [], nome_cliente_ev, "lctr")
 
                 with tab_valores:
                     st.caption("Ajuste o valor final cobrado por item neste evento.")
