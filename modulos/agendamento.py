@@ -13,7 +13,7 @@ from modulos.tema import cartao_evento_html, estado_vazio_html
 from modulos import contrato, notificacoes
 
 
-def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, buscar_devolucoes_pendentes, calcular_disponibilidade_periodo, definir_categoria, formatar_telefone_br, gerar_recibo_evento_pdf, sincronizar_evento_google_agenda_silencioso, REPORTLAB_DISPONIVEL, eventos_sem_materiais=None):
+def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, buscar_devolucoes_pendentes, calcular_disponibilidade_periodo, definir_categoria, formatar_telefone_br, gerar_recibo_evento_pdf, sincronizar_evento_google_agenda_silencioso, REPORTLAB_DISPONIVEL, eventos_sem_materiais=None, excluir_evento_google_agenda_silencioso=None):
     st.title("📅 Gestão de Agendamentos")
     if st.session_state.get("_ctr_erro_migracao"):
         contrato.avisar_migracao(st.session_state.pop("_ctr_erro_migracao"))
@@ -191,6 +191,79 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                     st.caption(f"Materiais: {resumo_mat}")
                 with col_c2:
                     st.download_button("📥 Baixar PDF", data=buf.getvalue(), file_name=f"contrato_evento_{ev['id']}_{n}.pdf", mime="application/pdf", key=f"{pref}_ctr_{ev['id']}_{n}")
+
+    # ------------------------------------------------------------------
+    # EXCLUIR EVENTO POR COMPLETO (lixeira)
+    # ------------------------------------------------------------------
+    def _excluir_evento_completo(ev_id):
+        """Apaga o evento e TUDO ligado a ele. Devolve (ok, resumo, avisos).
+        Estoque: o sistema calcula a disponibilidade pelos itens alocados no evento (não abate o estoque),
+        então apagar os itens do evento já devolve tudo à disponibilidade. Contrato e recibo são gerados a partir
+        do evento (e a lista de contratos fica no próprio registro), então somem junto com ele."""
+        avisos = []
+        try:
+            r_ev = supabase.table("eventos").select("id, cliente_id, google_event_id").eq("id", ev_id).eq("empresa_id", emp_id).execute()
+            if not r_ev.data: return False, "Evento não encontrado.", avisos
+            ev_db = r_ev.data[0]
+            r_it = supabase.table("itens_evento").select("id, quantidade").eq("evento_id", ev_id).execute()
+            n_linhas = len(r_it.data or [])
+            n_pecas = sum(int(i.get('quantidade') or 0) for i in (r_it.data or []))
+            # 1) o que bloqueia a exclusão do evento (falhou aqui = para tudo)
+            supabase.table("itens_evento").delete().eq("evento_id", ev_id).execute()
+            supabase.table("historico_eventos").delete().eq("evento_id", ev_id).execute()
+            try:  # orçamento que virou este evento: solta o vínculo e volta para "Aprovado" (pode ser convertido de novo)
+                for o in (supabase.table("orcamentos").select("id, status").eq("evento_id", ev_id).execute().data or []):
+                    supabase.table("orcamentos").update({"evento_id": None, "status": "Aprovado" if o.get('status') == "Convertido" else o.get('status')}).eq("id", o['id']).execute()
+            except Exception: registrar_erro("agendamento.py:excluir_orcamento")
+            # 2) o evento em si (leva junto contrato, lista de contratos, pagamento confirmado e recibo)
+            supabase.table("eventos").delete().eq("id", ev_id).execute()
+            # 3) o que sobra ao redor (se falhar, só avisa)
+            try:
+                supabase.table("notificacoes_enviadas").delete().eq("tipo", "agendamento").eq("referencia", str(ev_id)).execute()
+                for tp in ("evento_pagamento", "evento_pendencia", "evento_sem_materiais"):
+                    supabase.table("notificacoes_enviadas").delete().eq("tipo", tp).like("referencia", f"{ev_id}:%").execute()
+            except Exception: registrar_erro("agendamento.py:excluir_notificacoes"); avisos.append("registros de e-mails enviados")
+            if ev_db.get('google_event_id'):
+                ok_g = bool(excluir_evento_google_agenda_silencioso and excluir_evento_google_agenda_silencioso(st.session_state.get('usuario_id'), ev_db['google_event_id']))
+                if not ok_g: avisos.append("Google Agenda (apague manualmente lá, se ainda aparecer)")
+            if ev_db.get('cliente_id'):  # cada agendamento cria o seu cliente: apaga se não sobrou outro evento usando
+                try:
+                    if not (supabase.table("eventos").select("id").eq("cliente_id", ev_db['cliente_id']).limit(1).execute().data or []):
+                        supabase.table("clientes_eventos").delete().eq("id", ev_db['cliente_id']).execute()
+                except Exception: registrar_erro("agendamento.py:excluir_cliente"); avisos.append("cadastro do cliente")
+            resumo = f"{n_pecas} peça(s) em {n_linhas} item(ns) voltaram ao estoque" if n_linhas else "evento sem materiais"
+            return True, resumo, avisos
+        except Exception as e:
+            registrar_erro("agendamento.py:excluir_completo")
+            return False, f"Erro ao excluir: {e}", avisos
+
+    @st.dialog("🗑️ Apagar evento e tudo ligado a ele")
+    def _dialogo_excluir_evento(ev_id, titulo, cliente):
+        try:
+            r_it = supabase.table("itens_evento").select("quantidade").eq("evento_id", ev_id).execute()
+            n_pecas = sum(int(i.get('quantidade') or 0) for i in (r_it.data or []))
+            n_linhas = len(r_it.data or [])
+        except Exception: registrar_erro("agendamento.py:dialogo_excluir"); n_pecas = n_linhas = 0
+        st.error(f"**{titulo}** — {cliente}")
+        st.markdown("Isto apaga **definitivamente** e não tem como desfazer:")
+        st.markdown(
+            f"- o evento, o histórico (log) e o pagamento registrado\n"
+            f"- **todos os contratos** (original e alterações) e o recibo\n"
+            f"- {'os materiais alocados (**' + str(n_pecas) + ' peça(s)** voltam ao estoque disponível)' if n_linhas else 'nenhum material estava alocado'}\n"
+            f"- o cadastro do cliente criado para este evento, o aviso na Google Agenda e os registros de e-mails deste evento\n"
+            f"- a receita deste evento deixa de contar no Faturamento e no Dashboard")
+        col_x1, col_x2 = st.columns(2)
+        with col_x1:
+            if st.button("🗑️ Sim, apagar tudo", type="primary", use_container_width=True, key=f"dlg_excluir_sim_{ev_id}"):
+                ok, resumo, avisos = _excluir_evento_completo(ev_id)
+                if ok:
+                    extra = (" Não consegui apagar: " + "; ".join(avisos) + ".") if avisos else ""
+                    mostrar_popup(f"EVENTO APAGADO POR COMPLETO — {resumo}.{extra}", tempo=4)
+                    st.rerun()
+                else:
+                    st.error(resumo)
+        with col_x2:
+            if st.button("Cancelar", use_container_width=True, key=f"dlg_excluir_nao_{ev_id}"): st.rerun()
 
     def _nome_arq_contrato(prefixo, ev):
         v = contrato.versao_contrato(ev)
@@ -386,7 +459,11 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                 data_fim_h = _fmt_h(ev_h.get('data_fim_alocacao') or '')
                 valor_h = float(ev_h.get('valor_total') or 0)
                 icone_h = "✅" if status_h == "Concluído" else ("❌" if status_h == "Cancelado" else "🟡")
-                with st.expander(f"{icone_h} {titulo_h} — {nome_cli_h} | {data_ini_h} → {data_fim_h} | R$ {formatar_moeda(valor_h)} | {status_h}"):
+                col_ev_h, col_lix_h = st.columns([14, 1])
+                with col_lix_h:
+                    if st.button("🗑️", key=f"lixeira_h_{ev_h['id']}", help="Apagar este evento e tudo que foi feito nele", use_container_width=True):
+                        _dialogo_excluir_evento(ev_h['id'], titulo_h, nome_cli_h)
+                with col_ev_h, st.expander(f"{icone_h} {titulo_h} — {nome_cli_h} | {data_ini_h} → {data_fim_h} | R$ {formatar_moeda(valor_h)} | {status_h}"):
                     try:
                         itens_h = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao, valor_cobrado, devolvido").eq("evento_id", ev_h['id']).execute()
                     except Exception:
@@ -612,13 +689,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                                     st.rerun()
                         with col_hbtn2:
                             if st.button("🗑️ Excluir Evento", key=f"hedit_del_{ev_h['id']}"):
-                                try:
-                                    supabase.table("itens_evento").delete().eq("evento_id", ev_h['id']).execute()
-                                    supabase.table("historico_eventos").delete().eq("evento_id", ev_h['id']).execute()
-                                    supabase.table("eventos").delete().eq("id", ev_h['id']).execute()
-                                    mostrar_popup("EVENTO EXCLUÍDO!")
-                                    st.rerun()
-                                except Exception as e: registrar_erro("agendamento.py:609"); mostrar_popup(f"Erro ao excluir: {e}", tipo="erro")
+                                _dialogo_excluir_evento(ev_h['id'], titulo_h, nome_cli_h)
 
                     # --- ABA LOG ---
                     with tab_log_h:
@@ -881,13 +952,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                                 st.rerun()
                     with col_btn_edit2:
                         if st.button("🗑️ Excluir Evento", key=f"btn_excluir_evento_{ev['id']}"):
-                            try:
-                                supabase.table("itens_evento").delete().eq("evento_id", ev['id']).execute()
-                                supabase.table("historico_eventos").delete().eq("evento_id", ev['id']).execute()
-                                supabase.table("eventos").delete().eq("id", ev['id']).execute()
-                                mostrar_popup("EVENTO EXCLUÍDO COM SUCESSO!")
-                                st.rerun()
-                            except Exception as e: registrar_erro("agendamento.py:405"); mostrar_popup(f"Erro ao excluir: {e}", tipo="erro")
+                            _dialogo_excluir_evento(ev['id'], titulo_ev, nome_cliente_ev)
 
                 with tab_hist:
                     historico_ev = supabase.table("historico_eventos").select("descricao, data_registro").eq("evento_id", ev['id']).order("data_registro", desc=True).execute()

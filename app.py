@@ -696,6 +696,17 @@ def sincronizar_evento_google_agenda_silencioso(usuario_id_dono, evento_dict, go
         return criar_ou_atualizar_evento_google_agenda(u.data[0]["google_refresh_token"], evento_dict, google_event_id_existente)
     except Exception: registrar_erro("app.py:557"); return None
 
+def excluir_evento_google_agenda_silencioso(usuario_id_dono, google_event_id):
+    """Apaga o evento da Google Agenda do usuário (se ele conectou a agenda). Devolve True se apagou/já não existia."""
+    try:
+        u = supabase.table("usuarios").select("google_refresh_token").eq("id", usuario_id_dono).execute()
+        if not u.data or not u.data[0].get("google_refresh_token") or not google_event_id: return False
+        token = obter_access_token_google(u.data[0]["google_refresh_token"])
+        resp = requests.delete(f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{google_event_id}",
+                               headers={"Authorization": f"Bearer {token}"}, timeout=15)
+        return resp.status_code in (200, 204, 404, 410)
+    except Exception: registrar_erro("app.py:excluir_google"); return False
+
 def calcular_distancia_google_maps(origem, destino):
     url = "https://maps.googleapis.com/maps/api/distancematrix/json"
     params = {"origins": origem, "destinations": destino, "key": GOOGLE_MAPS_API_KEY, "language": "pt-BR", "units": "metric"}
@@ -2121,6 +2132,7 @@ else:
             sincronizar_evento_google_agenda_silencioso=sincronizar_evento_google_agenda_silencioso,
             REPORTLAB_DISPONIVEL=REPORTLAB_DISPONIVEL,
             eventos_sem_materiais=_eventos_sem_materiais,
+            excluir_evento_google_agenda_silencioso=excluir_evento_google_agenda_silencioso,
         )
 
 
