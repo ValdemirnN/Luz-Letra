@@ -1981,6 +1981,35 @@ else:
             registrar_erro("app.py:1604")
             return pendentes
 
+    def buscar_eventos_sem_materiais():
+        """Eventos que já aconteceram (data fim < hoje), não cancelados e SEM nenhum item cadastrado."""
+        resultado = []
+        try:
+            hoje_sm = datetime.now().date()
+            evs_sm = supabase.table("eventos").select("id, descricao, titulo, data_inicio, data_fim_alocacao, status").eq("empresa_id", emp_id).neq("status", "Cancelado").execute()
+            passados = {}
+            for ev_sm in (evs_sm.data or []):
+                ref_sm = ev_sm.get('data_fim_alocacao') or ev_sm.get('data_inicio')
+                if not ref_sm: continue
+                try: d_sm = datetime.strptime(str(ref_sm).split("T")[0], "%Y-%m-%d").date()
+                except Exception: registrar_erro("app.py:sem_materiais_data"); continue
+                if d_sm < hoje_sm: passados[ev_sm['id']] = (ev_sm, d_sm)
+            if not passados: return resultado
+            ids_sm = list(passados.keys())
+            com_itens = set()
+            for i_sm in range(0, len(ids_sm), 80):
+                r_sm = supabase.table("itens_evento").select("evento_id").in_("evento_id", ids_sm[i_sm:i_sm + 80]).execute()
+                com_itens.update(x['evento_id'] for x in (r_sm.data or []))
+            for ev_id_sm, (ev_sm, d_sm) in passados.items():
+                if ev_id_sm in com_itens: continue
+                resultado.append({'evento_id': ev_id_sm, 'descricao': ev_sm.get('descricao') or ev_sm.get('titulo') or 'Evento',
+                                  'status': ev_sm.get('status'), 'dias_atraso': (hoje_sm - d_sm).days})
+            resultado.sort(key=lambda x: -x['dias_atraso'])
+            return resultado
+        except Exception:
+            registrar_erro("app.py:sem_materiais")
+            return []  # em caso de erro de consulta, não mostra alarme falso
+
     def _criar_modal_exclusao():
         def modal(produto_info, tipo, total_remover=0, qtds_json=None, motivo=""):
             if tipo == "parcial":
@@ -2015,6 +2044,12 @@ else:
         else: return modal
 
     popup_confirmacao_estoque = _criar_modal_exclusao()
+
+    # Aviso global: eventos que já aconteceram e continuam sem materiais cadastrados (consulta feita 1x por tela)
+    _eventos_sem_materiais = buscar_eventos_sem_materiais()
+    if _eventos_sem_materiais:
+        st.warning(f"📋 **{len(_eventos_sem_materiais)} evento(s) já realizado(s) sem materiais cadastrados.** "
+                   "Ajuste em **Agendamento → Histórico → 🧰 Materiais** (o contrato é atualizado com uma nova versão).")
 
 
     # ==========================================
@@ -2063,6 +2098,7 @@ else:
             emp_id=emp_id,
             formatar_moeda=formatar_moeda,
             buscar_devolucoes_pendentes=buscar_devolucoes_pendentes,
+            eventos_sem_materiais=_eventos_sem_materiais,
         )
 
 
@@ -2084,6 +2120,7 @@ else:
             gerar_recibo_evento_pdf=gerar_recibo_evento_pdf,
             sincronizar_evento_google_agenda_silencioso=sincronizar_evento_google_agenda_silencioso,
             REPORTLAB_DISPONIVEL=REPORTLAB_DISPONIVEL,
+            eventos_sem_materiais=_eventos_sem_materiais,
         )
 
 
