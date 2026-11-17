@@ -76,7 +76,7 @@ def _ym(data_str):
         return None
 
 
-def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
+def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes, eventos_sem_materiais=None):
     import plotly.graph_objects as go
     st.markdown(_CSS, unsafe_allow_html=True)
     st.title("📊 Dashboard e Inteligência de Negócio")
@@ -156,7 +156,8 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
         estoque_check = supabase.table("produtos").select("nome, quantidade_estoque").eq("empresa_id", emp_id).execute()
         zerados = [p['nome'] for p in (estoque_check.data or []) if (p.get('quantidade_estoque') or 0) <= 0]
     except Exception: registrar_erro("dashboard.py:145"); zerados = []
-    n_alertas = len(manut_data) + len(devolucoes_pend) + len(zerados)
+    sem_materiais = eventos_sem_materiais or []
+    n_alertas = len(manut_data) + len(devolucoes_pend) + len(zerados) + len(sem_materiais)
 
     # eventos futuros e eventos sem baixa
     eventos_futuros = []
@@ -329,6 +330,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
             _pend = [
                 (len(devolucoes_pend), "devolução(ões) pendente(s)", "#FF8A80", "rgba(179,38,30,.18)"),
                 (len(manut_data), "item(ns) em manutenção", "#FFD54F", "rgba(255,193,7,.14)"),
+                (len(sem_materiais), "evento(s) realizado(s) sem materiais", "#FF8A80", "rgba(179,38,30,.18)"),
                 (len(zerados), "produto(s) com estoque zerado", "#FF8A80", "rgba(179,38,30,.18)"),
                 (sem_baixa or 0, "evento(s) encerrado(s) sem baixa", "#FFD54F", "rgba(255,193,7,.14)"),
             ]
@@ -405,7 +407,7 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
         # ==============================================================
         elif secao == "alertas":
             if n_alertas == 0:
-                st.success("✅ Tudo em ordem: sem manutenção, devoluções pendentes ou estoque zerado.")
+                st.success("✅ Tudo em ordem: sem manutenção, devoluções pendentes, eventos sem materiais ou estoque zerado.")
             col_alerta1, col_alerta2 = st.columns(2)
             with col_alerta1:
                 if manut_data:
@@ -444,6 +446,14 @@ def render(supabase, emp_id, formatar_moeda, buscar_devolucoes_pendentes):
                     st.caption("Confirme a devolução na aba 📅 Agendamento, dentro do evento.")
                 else:
                     st.success("✅ Nenhum equipamento pendente de devolução.")
+            if sem_materiais:
+                st.markdown(_cabecalho_alerta("📋", "Eventos Realizados Sem Materiais", len(sem_materiais), "#B3261E", "#EDEDED"), unsafe_allow_html=True)
+                cards_sm = []
+                for sm in sem_materiais:
+                    sub = f'<span style="color:#FF6B6B;font-weight:600;">⚠ aconteceu há {sm["dias_atraso"]} dia(s) — nenhum material cadastrado</span>'
+                    cards_sm.append(_card_alerta(html.escape(str(sm['descricao'])), sub, "#B3261E"))
+                _lista_com_expander(cards_sm)
+                st.caption("Adicione os materiais em 📅 Agendamento → Histórico → 🧰 Materiais. O contrato será atualizado com uma nova versão.")
             if zerados:
                 st.error(f"⚠️ **Estoque zerado:** {', '.join(zerados)}")
 

@@ -13,7 +13,7 @@ from modulos.tema import cartao_evento_html, estado_vazio_html
 from modulos import contrato, notificacoes
 
 
-def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, buscar_devolucoes_pendentes, calcular_disponibilidade_periodo, definir_categoria, formatar_telefone_br, gerar_recibo_evento_pdf, sincronizar_evento_google_agenda_silencioso, REPORTLAB_DISPONIVEL):
+def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, buscar_devolucoes_pendentes, calcular_disponibilidade_periodo, definir_categoria, formatar_telefone_br, gerar_recibo_evento_pdf, sincronizar_evento_google_agenda_silencioso, REPORTLAB_DISPONIVEL, eventos_sem_materiais=None):
     st.title("📅 Gestão de Agendamentos")
     if st.session_state.get("_ctr_erro_migracao"):
         contrato.avisar_migracao(st.session_state.pop("_ctr_erro_migracao"))
@@ -27,6 +27,141 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
     except Exception: registrar_erro("agendamento.py:22"); clientes_resultado = supabase.table("clientes_eventos").select("id, nome").eq("empresa_id", emp_id).execute()
     mapa_clientes = {c['id']: c for c in clientes_resultado.data} if clientes_resultado.data else {}
     hoje_dt = datetime.now().date()
+
+    # ------------------------------------------------------------------
+    # Materiais do evento (usado na lista de eventos e no Histórico).
+    # Toda alteração de materiais gera uma NOVA VERSÃO do contrato.
+    # ------------------------------------------------------------------
+    def _nome_prod(pid):
+        return dict_produtos.get(pid, {}).get('nome', f"Produto #{pid}")
+
+    def _ui_adicionar_itens(ev, pref):
+        produtos_disp_edit = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao, valor_locacao").eq("empresa_id", emp_id).execute()
+        mapa_valor_ref_add = {p['id']: float(p.get('valor_locacao') or 0) for p in produtos_disp_edit.data} if produtos_disp_edit.data else {}
+        adicoes_selecionadas = {}
+        ev_data_inicio_add = datetime.strptime(ev['data_inicio'].split("T")[0], "%Y-%m-%d").date() if ev.get('data_inicio') else datetime.now().date()
+        ev_data_fim_add = datetime.strptime(ev['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date() if ev.get('data_fim_alocacao') else ev_data_inicio_add
+        qtd_alugada_add, detalhe_alugado_add = calcular_disponibilidade_periodo(ev_data_inicio_add, ev_data_fim_add, evento_id_excluir=ev['id'])
+        if produtos_disp_edit.data:
+            for p in produtos_disp_edit.data:
+                js_p = safe_json_load(p.get('observacao'))
+                if js_p:
+                    ja_alugado_kit = detalhe_alugado_add.get(p['id'], {})
+                    if any((max_v - ja_alugado_kit.get(k, 0)) > 0 for k, max_v in js_p.items()):
+                        st.markdown(f"🔠 *{p['nome']}:*")
+                        cols_add = st.columns(6)
+                        idxp = 0
+                        for k, max_v in js_p.items():
+                            disp_k = max(0, max_v - ja_alugado_kit.get(k, 0))
+                            if disp_k > 0:
+                                val_add = cols_add[idxp % 6].number_input(f"{k} (Disp:{disp_k})", min_value=0, max_value=disp_k, value=None, key=f"{pref}_{ev['id']}_{p['id']}_{k}")
+                                if (val_add or 0) > 0: adicoes_selecionadas[f"{p['id']}_{k}"] = val_add
+                                idxp += 1
+                else:
+                    disp_normal = max(0, p['quantidade_estoque'] - qtd_alugada_add.get(p['id'], 0))
+                    if disp_normal > 0:
+                        val_add = st.number_input(f"{p['nome']} (Disp: {disp_normal})", min_value=0, max_value=disp_normal, value=None, key=f"{pref}_{ev['id']}_{p['id']}_NORMAL")
+                        if (val_add or 0) > 0: adicoes_selecionadas[f"{p['id']}_NORMAL"] = val_add
+        motivo_alteracao = st.text_input("Motivo da Alteração", key=f"{pref}_motivo_{ev['id']}")
+        if st.button("💾 Registrar Alteração", key=f"{pref}_btn_{ev['id']}"):
+            if not adicoes_selecionadas: mostrar_popup("Selecione ao menos 1 item.", tipo="erro")
+            elif not motivo_alteracao.strip(): mostrar_popup("Informe o motivo da alteração.", tipo="erro")
+            else:
+                try:
+                    agrupado = {}
+                    for key, qtd in adicoes_selecionadas.items():
+                        p_id_str, sub = key.split("_", 1)
+                        if int(p_id_str) not in agrupado: agrupado[int(p_id_str)] = {'total': 0, 'detalhes': {}}
+                        agrupado[int(p_id_str)]['total'] += qtd
+                        if sub != "NORMAL": agrupado[int(p_id_str)]['detalhes'][sub] = qtd
+                    data_hora_alt = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+                    resumo_itens = []
+                    for p_id, info in agrupado.items():
+                        qtd_total = info['total']
+                        valor_sugerido_add = qtd_total * mapa_valor_ref_add.get(p_id, 0)
+                        obs_json_add = json.dumps(info['detalhes']) if info['detalhes'] else ""
+                        item_existente = supabase.table("itens_evento").select("id, quantidade, observacao, valor_cobrado").eq("evento_id", ev['id']).eq("produto_id", p_id).execute()
+                        if item_existente.data:
+                            item_atual = item_existente.data[0]
+                            nova_qtd_item = item_atual['quantidade'] + qtd_total
+                            novo_valor_item = float(item_atual.get('valor_cobrado') or 0) + valor_sugerido_add
+                            obs_atual_item = safe_json_load(item_atual.get('observacao'))
+                            if obs_atual_item and info['detalhes']:
+                                for k, v in info['detalhes'].items(): obs_atual_item[k] = obs_atual_item.get(k, 0) + v
+                                nova_obs_item = json.dumps(obs_atual_item)
+                            elif info['detalhes']: nova_obs_item = obs_json_add
+                            else: nova_obs_item = item_atual.get('observacao', '')
+                            supabase.table("itens_evento").update({"quantidade": nova_qtd_item, "observacao": nova_obs_item, "valor_cobrado": novo_valor_item}).eq("id", item_atual['id']).execute()
+                        else:
+                            supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": ev['id'], "produto_id": p_id, "quantidade": qtd_total, "observacao": obs_json_add, "valor_cobrado": valor_sugerido_add}).execute()
+                        resumo_itens.append(f"{qtd_total}x {_nome_prod(p_id)}")
+                    _ok_v, _nv = contrato.registrar_nova_versao(supabase, ev['id'], "Adicionou " + ", ".join(resumo_itens))
+                    _txt_v = f" Contrato atualizado (versão {_nv})." if _ok_v else ""
+                    supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": f"✏️ ALTERAÇÃO: Adicionou {', '.join(resumo_itens)}. Motivo: {motivo_alteracao}.{_txt_v}", "data_registro": data_hora_alt}).execute()
+                    mostrar_popup(f"MATERIAIS ADICIONADOS! CONTRATO ATUALIZADO (VERSÃO {_nv}) — BAIXE A NOVA VERSÃO." if _ok_v else "ADIÇÃO CONCLUÍDA COM SUCESSO!")
+                    st.rerun()
+                except Exception as e: registrar_erro("agendamento.py:283"); mostrar_popup(f"Erro: {e}", tipo="erro")
+
+    def _ui_remover_itens(ev, itens, pref):
+        if not itens:
+            st.caption("Nenhum item alocado.")
+            return
+        remocoes_selecionadas = {}
+        for it in itens:
+            nome_prod_it = _nome_prod(it['produto_id'])
+            js_item = safe_json_load(it.get('observacao'))
+            if js_item:
+                st.markdown(f"🔠 *{nome_prod_it} (alocado):*")
+                cols_rem = st.columns(6)
+                idxr = 0
+                for k, qtd_alocada in js_item.items():
+                    if qtd_alocada > 0:
+                        val_rem = cols_rem[idxr % 6].number_input(f"{k} (Aloc:{qtd_alocada})", min_value=0, max_value=qtd_alocada, value=None, key=f"{pref}_{ev['id']}_{it['id']}_{k}")
+                        if (val_rem or 0) > 0: remocoes_selecionadas[f"{it['id']}_{it['produto_id']}_{k}"] = val_rem
+                        idxr += 1
+            else:
+                val_rem = st.number_input(f"{nome_prod_it} (Aloc: {it['quantidade']})", min_value=0, max_value=it['quantidade'], value=None, key=f"{pref}_{ev['id']}_{it['id']}_NORMAL")
+                if (val_rem or 0) > 0: remocoes_selecionadas[f"{it['id']}_{it['produto_id']}_NORMAL"] = val_rem
+        motivo_remocao = st.text_input("Motivo da Remoção", key=f"{pref}_motivo_{ev['id']}")
+        if st.button("🗑️ Registrar Remoção", key=f"{pref}_btn_{ev['id']}"):
+            if not remocoes_selecionadas: mostrar_popup("Selecione algum item.", tipo="erro")
+            elif not motivo_remocao.strip(): mostrar_popup("Informe o motivo da remoção.", tipo="erro")
+            else:
+                data_hora_rem = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+                dict_itens_ev = {it['id']: it for it in itens}
+                resumo_remocao = []
+                agrupado_rem = {}
+                for key, qtd in remocoes_selecionadas.items():
+                    item_id_str, p_id_str, sub = key.split("_", 2)
+                    item_id = int(item_id_str)
+                    if item_id not in agrupado_rem: agrupado_rem[item_id] = {'produto_id': int(p_id_str), 'total': 0, 'detalhes': {}}
+                    agrupado_rem[item_id]['total'] += qtd
+                    if sub != "NORMAL": agrupado_rem[item_id]['detalhes'][sub] = qtd
+                for item_id, info_rem in agrupado_rem.items():
+                    item_atual_rem = dict_itens_ev[item_id]
+                    qtd_remover = info_rem['total']
+                    qtd_antiga_rem = item_atual_rem['quantidade']
+                    valor_antigo_rem = float(item_atual_rem.get('valor_cobrado') or 0)
+                    valor_unit_medio_rem = (valor_antigo_rem / qtd_antiga_rem) if qtd_antiga_rem > 0 else 0
+                    nova_qtd_item_rem = qtd_antiga_rem - qtd_remover
+                    novo_valor_item_rem = max(0, valor_antigo_rem - (valor_unit_medio_rem * qtd_remover))
+                    obs_item_atual = safe_json_load(item_atual_rem.get('observacao'))
+                    if obs_item_atual and info_rem['detalhes']:
+                        for k, v in info_rem['detalhes'].items(): obs_item_atual[k] = max(0, obs_item_atual.get(k, 0) - v)
+                        nova_obs_item_rem = json.dumps(obs_item_atual)
+                    else: nova_obs_item_rem = item_atual_rem.get('observacao', '')
+                    if nova_qtd_item_rem <= 0: supabase.table("itens_evento").delete().eq("id", item_id).execute()
+                    else: supabase.table("itens_evento").update({"quantidade": nova_qtd_item_rem, "observacao": nova_obs_item_rem, "valor_cobrado": novo_valor_item_rem}).eq("id", item_id).execute()
+                    resumo_remocao.append(f"{qtd_remover}x {_nome_prod(info_rem['produto_id'])}")
+                _ok_v, _nv = contrato.registrar_nova_versao(supabase, ev['id'], "Removeu " + ", ".join(resumo_remocao))
+                _txt_v = f" Contrato atualizado (versão {_nv})." if _ok_v else ""
+                supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev['id'], "descricao": f"🔻 REMOÇÃO: Retirou {', '.join(resumo_remocao)}. Motivo: {motivo_remocao}.{_txt_v}", "data_registro": data_hora_rem}).execute()
+                mostrar_popup(f"REMOÇÃO CONCLUÍDA! CONTRATO ATUALIZADO (VERSÃO {_nv}) — BAIXE A NOVA VERSÃO." if _ok_v else "REMOÇÃO CONCLUÍDA COM SUCESSO!")
+                st.rerun()
+
+    def _nome_arq_contrato(prefixo, ev):
+        v = contrato.versao_contrato(ev)
+        return f"{prefixo}_{ev['id']}" + (f"_v{v}" if v > 1 else "") + ".pdf"
 
     eventos_hoje = 0
     eventos_proximos_7_dias = 0
@@ -56,6 +191,16 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                         <div style="color:#FF6B6B;font-size:12px;font-weight:600;">⚠ encerrado há {dev_ag['dias_atraso']} dia(s) — {total_qtd_ag} peça(s) pendente(s)</div>
                     </div>""", unsafe_allow_html=True)
             st.caption("Abra o evento correspondente na lista abaixo ou no histórico para confirmar a devolução.")
+    _sem_mat = eventos_sem_materiais or []
+    if _sem_mat:
+        with st.expander(f"📋 {len(_sem_mat)} evento(s) já realizado(s) SEM materiais cadastrados", expanded=True):
+            for sm in _sem_mat:
+                st.markdown(f"""
+                    <div style="border-left:4px solid #B3261E;background:#1B1B1D;border-radius:8px;padding:10px 14px;margin-bottom:8px;">
+                        <div style="font-weight:700;color:#EDEDED;font-size:14px;">{sm['descricao']}</div>
+                        <div style="color:#FF6B6B;font-size:12px;font-weight:600;">⚠ aconteceu há {sm['dias_atraso']} dia(s) — nenhum material cadastrado</div>
+                    </div>""", unsafe_allow_html=True)
+            st.caption("Abra o evento em **🕒 Histórico de Todos os Eventos → 🧰 Materiais**, adicione o que foi usado e baixe o contrato atualizado (nova versão).")
     st.markdown("---")
     with st.expander("📝 Cadastrar Novo Evento", expanded=False):
         st.markdown("**🗓️ Primeiro, escolha as datas e horários do evento:**")
@@ -83,6 +228,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
             obs_evento_geral = st.text_area("Observações Gerais do Evento")
             st.markdown("---")
             st.subheader("🛒 Itens para o Evento")
+            st.caption("Opcional: você pode salvar o agendamento SEM itens e adicionar os materiais depois, em Histórico → 🧰 Materiais. Sem itens, o contrato sai com uma tabela em branco para preencher à mão.")
             quantidades_selecionadas = {}
             if produtos_disp.data:
                 df_p = pd.DataFrame(produtos_disp.data)
@@ -164,7 +310,8 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                                 supabase.table("itens_evento").insert({"empresa_id": emp_id,"evento_id": evento_id_gerado,"produto_id": p_id,"quantidade": info['total'],"observacao": obs_json_evento,"valor_cobrado": valor_sugerido}).execute()
                                 supabase.table("historico_eventos").insert({"empresa_id": emp_id,"evento_id": evento_id_gerado,"descricao": f"🟢 ALOCAÇÃO INICIAL: Adicionou {info['total']}x Produto {p_id}.","data_registro": data_hora}).execute()
                             notificacoes.avisar_novo_agendamento(supabase, emp_id, evento_id_gerado)  # e-mail com o resumo
-                            mostrar_popup("AGENDAMENTO CONFIRMADO COM SUCESSO!")
+                            if alocacoes_agrupadas: mostrar_popup("AGENDAMENTO CONFIRMADO COM SUCESSO!")
+                            else: mostrar_popup("AGENDAMENTO SALVO SEM MATERIAIS! Adicione-os depois em Histórico → Materiais.", tempo=3)
                             st.rerun()
                         except Exception as e: registrar_erro("agendamento.py:726"); mostrar_popup(f"Erro: {e}", tipo="erro")
 
@@ -213,9 +360,10 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                         itens_h = supabase.table("itens_evento").select("id, produto_id, quantidade, observacao, valor_cobrado").eq("evento_id", ev_h['id']).execute()
                     contato_h = cliente_h.get('contato') or '-'
 
-                    tab_det_h, tab_status_h, tab_pag_h, tab_edit_h, tab_log_h = st.tabs([
-                        "📋 Detalhes", "🔄 Alterar Status", "💳 Pagamento", "✏️ Editar Dados", "🕒 Log"
+                    tab_det_h, tab_mat_h, tab_status_h, tab_pag_h, tab_edit_h, tab_log_h = st.tabs([
+                        "📋 Detalhes", "🧰 Materiais", "🔄 Alterar Status", "💳 Pagamento", "✏️ Editar Dados", "🕒 Log"
                     ])
+                    buffer_ctr_h = None
 
                     # --- ABA DETALHES ---
                     with tab_det_h:
@@ -244,6 +392,8 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                                 if js_h: det_h = " — " + ", ".join([f"{k}: {v}x" for k,v in js_h.items()])
                                 devolvido_tag_h = " ✅ devolvido" if it_h.get('devolvido') else " ⏳ não devolvido"
                                 st.write(f"  • {it_h['quantidade']}x {nome_p_h}{det_h}{devolvido_tag_h}")
+                        else:
+                            st.warning("📋 Nenhum material cadastrado neste evento. Adicione na aba **🧰 Materiais** (o contrato baixado agora sai com espaço em branco).")
 
                         # --- DEVOLUÇÃO DE EQUIPAMENTOS (HISTÓRICO) ---
                         itens_h_pendentes = [it for it in (itens_h.data or []) if not it.get('devolvido')]
@@ -282,10 +432,32 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                             buffer_ctr_h = contrato.gerar_contrato_pdf(ev_h, itens_h.data or [], dict_produtos, nome_cli_h, locador_contrato, safe_json_load, formatar_moeda)
                             _cbh1, _cbh2, _cbh3 = st.columns([1, 1.5, 2.5])
                             with _cbh1: st.download_button("📄 Baixar Recibo (PDF)", data=buffer_pdf_h, file_name=f"recibo_historico_{ev_h['id']}.pdf", mime="application/pdf", key=f"pdf_hist_{ev_h['id']}")
-                            with _cbh2: st.download_button("📜 Baixar Contrato de Locação (PDF)", data=buffer_ctr_h, file_name=f"contrato_historico_{ev_h['id']}.pdf", mime="application/pdf", key=f"contrato_hist_{ev_h['id']}")
+                            with _cbh2: st.download_button("📜 Baixar Contrato de Locação (PDF)", data=buffer_ctr_h, file_name=_nome_arq_contrato("contrato_historico", ev_h), mime="application/pdf", key=f"contrato_hist_{ev_h['id']}")
+                            _vtxt_h = contrato.texto_versao(ev_h)
+                            if _vtxt_h: st.info(_vtxt_h)
                             _dc_h = contrato.dados_do_evento(ev_h)
                             if not _dc_h.get('doc_cliente') or not _dc_h.get('forma_pagamento'):
                                 st.caption("⚠️ Faltam dados do contrato (CPF/CNPJ do cliente e forma de pagamento). Complete na aba **✏️ Editar Dados**.")
+
+                    # --- ABA MATERIAIS (adicionar/remover depois; gera nova versão do contrato) ---
+                    with tab_mat_h:
+                        if not itens_h.data:
+                            st.warning("📋 Este evento ainda não tem materiais. O contrato sai com 10 linhas em branco (material + quantidade) para preencher à mão — "
+                                       "ou adicione os materiais abaixo para gerar o contrato completo.")
+                        else:
+                            st.markdown("**Materiais atuais:**")
+                            for it_m in itens_h.data:
+                                js_m = safe_json_load(it_m.get('observacao'))
+                                det_m = (" — " + ", ".join(f"{k}: {v}x" for k, v in js_m.items())) if js_m else ""
+                                st.write(f"  • {it_m['quantidade']}x {_nome_prod(it_m['produto_id'])}{det_m}")
+                        _vtxt_m = contrato.texto_versao(ev_h)
+                        if _vtxt_m: st.info(_vtxt_m)
+                        st.caption("Ao salvar uma alteração de materiais, o contrato é atualizado automaticamente para uma nova versão — baixe-a logo abaixo.")
+                        sub_add_h, sub_rem_h = st.tabs(["➕ Adicionar materiais", "➖ Remover materiais"])
+                        with sub_add_h: _ui_adicionar_itens(ev_h, "hadd")
+                        with sub_rem_h: _ui_remover_itens(ev_h, itens_h.data or [], "hrem")
+                        if buffer_ctr_h is not None:
+                            st.download_button(f"📜 Baixar Contrato atual (versão {contrato.versao_contrato(ev_h)})", data=buffer_ctr_h.getvalue(), file_name=_nome_arq_contrato("contrato_historico", ev_h), mime="application/pdf", key=f"contrato_mat_h_{ev_h['id']}")
 
                     # --- ABA ALTERAR STATUS ---
                     with tab_status_h:
@@ -401,6 +573,7 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                                         supabase.table("itens_evento").insert({"empresa_id": emp_id, "evento_id": ev_h['id'], "produto_id": novo_prod_h, "quantidade": int(novo_prod_qtd_h), "observacao": "", "valor_cobrado": mapa_valor_ref.get(novo_prod_h, 0) * int(novo_prod_qtd_h)}).execute()
                                         _log_itens_h.append(f"adicionou {int(novo_prod_qtd_h)}x {opcoes_add_h[novo_prod_h]['nome']}")
                                     if _log_itens_h:
+                                        contrato.registrar_nova_versao(supabase, ev_h['id'], "; ".join(_log_itens_h))
                                         supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev_h['id'], "descricao": "🛒 ITENS (via Histórico): " + "; ".join(_log_itens_h), "data_registro": datetime.now().strftime("%d/%m/%Y às %H:%M:%S")}).execute()
                                     if ev_h.get('cliente_id'): supabase.table("clientes_eventos").update({"nome": nnome_cli_h, "contato": ncont_cli_h}).eq("id", ev_h['cliente_id']).execute()
                                     supabase.table("historico_eventos").insert({"empresa_id": emp_id, "evento_id": ev_h['id'], "descricao": f"✏️ EDIÇÃO via Histórico. Justificativa: {njust_h}", "data_registro": datetime.now().strftime("%d/%m/%Y às %H:%M:%S")}).execute()
@@ -507,6 +680,13 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                             detalhe = f" ({it['observacao']})" if it.get('observacao') else ""
                             devolvido_tag = " ✅ devolvido" if it.get('devolvido') else " ⏳ não devolvido"
                             st.write(f"- {it['quantidade']}x {nome_prod}{detalhe}{devolvido_tag}")
+                    else:
+                        try: _fim_sm = datetime.strptime(data_fim_fmt, "%Y-%m-%d").date()
+                        except Exception: registrar_erro("agendamento.py:sem_itens"); _fim_sm = None
+                        if _fim_sm and _fim_sm < hoje_dt:
+                            st.error("📋 Este evento já aconteceu e NÃO tem materiais cadastrados. Adicione em **🕒 Histórico → 🧰 Materiais** (ou na aba ➕ Adicionar Itens).")
+                        else:
+                            st.info("📋 Evento sem materiais por enquanto — o contrato sai com espaço em branco. Adicione quando definir, na aba **➕ Adicionar Itens**.")
                     st.markdown("---")
 
                     # --- DEVOLUÇÃO DE EQUIPAMENTOS AO ESTOQUE ---
@@ -551,7 +731,9 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
                         buffer_ctr = contrato.gerar_contrato_pdf(ev, itens_ev.data or [], dict_produtos, nome_cliente_ev, locador_contrato, safe_json_load, formatar_moeda)
                         _cb1, _cb2, _cb3 = st.columns([1.6, 1.5, 1.4])
                         with _cb1: st.download_button("📄 Baixar Recibo de Confirmação (PDF)", data=buffer_pdf, file_name=f"recibo_evento_{ev['id']}.pdf", mime="application/pdf", key=f"recibo_pdf_{ev['id']}")
-                        with _cb2: st.download_button("📜 Baixar Contrato de Locação (PDF)", data=buffer_ctr, file_name=f"contrato_evento_{ev['id']}.pdf", mime="application/pdf", key=f"contrato_pdf_{ev['id']}")
+                        with _cb2: st.download_button("📜 Baixar Contrato de Locação (PDF)", data=buffer_ctr, file_name=_nome_arq_contrato("contrato_evento", ev), mime="application/pdf", key=f"contrato_pdf_{ev['id']}")
+                        _vtxt_ev = contrato.texto_versao(ev)
+                        if _vtxt_ev: st.info(_vtxt_ev)
                         _dc_ev = contrato.dados_do_evento(ev)
                         if not _dc_ev.get('doc_cliente') or not _dc_ev.get('forma_pagamento'):
                             st.caption("⚠️ Faltam dados do contrato (CPF/CNPJ do cliente e forma de pagamento). Complete na aba **✏️ Editar Evento**.")
@@ -598,124 +780,11 @@ def render(supabase, emp_id, formatar_moeda, mostrar_popup, safe_json_load, busc
 
 
                 with tab_add:
-                    produtos_disp_edit = supabase.table("produtos").select("id, nome, quantidade_estoque, observacao, valor_locacao").eq("empresa_id", emp_id).execute()
-                    mapa_valor_ref_add = {p['id']: float(p.get('valor_locacao') or 0) for p in produtos_disp_edit.data} if produtos_disp_edit.data else {}
-                    adicoes_selecionadas = {}
-                    ev_data_inicio_add = datetime.strptime(ev['data_inicio'].split("T")[0], "%Y-%m-%d").date() if ev.get('data_inicio') else datetime.now().date()
-                    ev_data_fim_add = datetime.strptime(ev['data_fim_alocacao'].split("T")[0], "%Y-%m-%d").date() if ev.get('data_fim_alocacao') else ev_data_inicio_add
-                    qtd_alugada_add, detalhe_alugado_add = calcular_disponibilidade_periodo(ev_data_inicio_add, ev_data_fim_add, evento_id_excluir=ev['id'])
-                    if produtos_disp_edit.data:
-                        for p in produtos_disp_edit.data:
-                            js_p = safe_json_load(p.get('observacao'))
-                            if js_p:
-                                ja_alugado_kit = detalhe_alugado_add.get(p['id'], {})
-                                if any((max_v - ja_alugado_kit.get(k,0)) > 0 for k,max_v in js_p.items()):
-                                    st.markdown(f"🔠 *{p['nome']}:*")
-                                    cols_add = st.columns(6)
-                                    idxp = 0
-                                    for k, max_v in js_p.items():
-                                        disp_k = max(0, max_v - ja_alugado_kit.get(k,0))
-                                        if disp_k > 0:
-                                            val_add = cols_add[idxp%6].number_input(f"{k} (Disp:{disp_k})", min_value=0, max_value=disp_k, value=None, key=f"add_{ev['id']}_{p['id']}_{k}")
-                                            if (val_add or 0) > 0: adicoes_selecionadas[f"{p['id']}_{k}"] = val_add
-                                            idxp += 1
-                            else:
-                                disp_normal = max(0, p['quantidade_estoque'] - qtd_alugada_add.get(p['id'],0))
-                                if disp_normal > 0:
-                                    val_add = st.number_input(f"{p['nome']} (Disp: {disp_normal})", min_value=0, max_value=disp_normal, value=None, key=f"add_{ev['id']}_{p['id']}_NORMAL")
-                                    if (val_add or 0) > 0: adicoes_selecionadas[f"{p['id']}_NORMAL"] = val_add
-                    motivo_alteracao = st.text_input("Motivo da Alteração", key=f"motivo_{ev['id']}")
-                    if st.button("💾 Registrar Alteração", key=f"btn_add_{ev['id']}"):
-                        if not adicoes_selecionadas: mostrar_popup("Selecione ao menos 1 item.", tipo="erro")
-                        elif not motivo_alteracao.strip(): mostrar_popup("Informe o motivo da alteração.", tipo="erro")
-                        else:
-                            try:
-                                agrupado = {}
-                                for key, qtd in adicoes_selecionadas.items():
-                                    p_id_str, sub = key.split("_", 1)
-                                    if int(p_id_str) not in agrupado: agrupado[int(p_id_str)] = {'total':0,'detalhes':{}}
-                                    agrupado[int(p_id_str)]['total'] += qtd
-                                    if sub != "NORMAL": agrupado[int(p_id_str)]['detalhes'][sub] = qtd
-                                data_hora_alt = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
-                                resumo_itens = []
-                                for p_id, info in agrupado.items():
-                                    qtd_total = info['total']
-                                    valor_sugerido_add = qtd_total * mapa_valor_ref_add.get(p_id, 0)
-                                    obs_json_add = json.dumps(info['detalhes']) if info['detalhes'] else ""
-                                    item_existente = supabase.table("itens_evento").select("id, quantidade, observacao, valor_cobrado").eq("evento_id", ev['id']).eq("produto_id", p_id).execute()
-                                    if item_existente.data:
-                                        item_atual = item_existente.data[0]
-                                        nova_qtd_item = item_atual['quantidade'] + qtd_total
-                                        novo_valor_item = float(item_atual.get('valor_cobrado') or 0) + valor_sugerido_add
-                                        obs_atual_item = safe_json_load(item_atual.get('observacao'))
-                                        if obs_atual_item and info['detalhes']:
-                                            for k, v in info['detalhes'].items(): obs_atual_item[k] = obs_atual_item.get(k,0) + v
-                                            nova_obs_item = json.dumps(obs_atual_item)
-                                        elif info['detalhes']: nova_obs_item = obs_json_add
-                                        else: nova_obs_item = item_atual.get('observacao','')
-                                        supabase.table("itens_evento").update({"quantidade": nova_qtd_item,"observacao": nova_obs_item,"valor_cobrado": novo_valor_item}).eq("id", item_atual['id']).execute()
-                                    else:
-                                        supabase.table("itens_evento").insert({"empresa_id": emp_id,"evento_id": ev['id'],"produto_id": p_id,"quantidade": qtd_total,"observacao": obs_json_add,"valor_cobrado": valor_sugerido_add}).execute()
-                                    resumo_itens.append(f"{qtd_total}x Produto {p_id}")
-                                supabase.table("historico_eventos").insert({"empresa_id": emp_id,"evento_id": ev['id'],"descricao": f"✏️ ALTERAÇÃO: Adicionou {', '.join(resumo_itens)}. Motivo: {motivo_alteracao}","data_registro": data_hora_alt}).execute()
-                                mostrar_popup("ADIÇÃO CONCLUÍDA COM SUCESSO!")
-                                st.rerun()
-                            except Exception as e: registrar_erro("agendamento.py:283"); mostrar_popup(f"Erro: {e}", tipo="erro")
+                    st.caption("Ao salvar, o contrato do evento ganha uma nova versão — baixe em 📋 Detalhes & Recibo.")
+                    _ui_adicionar_itens(ev, "add")
 
                 with tab_rem:
-                    if itens_ev.data:
-                        remocoes_selecionadas = {}
-                        for it in itens_ev.data:
-                            prod_info_it = dict_produtos.get(it['produto_id'], {})
-                            nome_prod_it = prod_info_it.get('nome', f"Produto #{it['produto_id']}")
-                            js_item = safe_json_load(it.get('observacao'))
-                            if js_item:
-                                st.markdown(f"🔠 *{nome_prod_it} (alocado):*")
-                                cols_rem = st.columns(6)
-                                idxr = 0
-                                for k, qtd_alocada in js_item.items():
-                                    if qtd_alocada > 0:
-                                        val_rem = cols_rem[idxr%6].number_input(f"{k} (Aloc:{qtd_alocada})", min_value=0, max_value=qtd_alocada, value=None, key=f"rem_{ev['id']}_{it['id']}_{k}")
-                                        if (val_rem or 0) > 0: remocoes_selecionadas[f"{it['id']}_{it['produto_id']}_{k}"] = val_rem
-                                        idxr += 1
-                            else:
-                                val_rem = st.number_input(f"{nome_prod_it} (Aloc: {it['quantidade']})", min_value=0, max_value=it['quantidade'], value=None, key=f"rem_{ev['id']}_{it['id']}_NORMAL")
-                                if (val_rem or 0) > 0: remocoes_selecionadas[f"{it['id']}_{it['produto_id']}_NORMAL"] = val_rem
-                        motivo_remocao = st.text_input("Motivo da Remoção", key=f"motivo_rem_{ev['id']}")
-                        if st.button("🗑️ Registrar Remoção", key=f"btn_rem_{ev['id']}"):
-                            if not remocoes_selecionadas: mostrar_popup("Selecione algum item.", tipo="erro")
-                            elif not motivo_remocao.strip(): mostrar_popup("Informe o motivo da remoção.", tipo="erro")
-                            else:
-                                data_hora_rem = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
-                                dict_itens_ev = {it['id']: it for it in itens_ev.data}
-                                resumo_remocao = []
-                                agrupado_rem = {}
-                                for key, qtd in remocoes_selecionadas.items():
-                                    item_id_str, p_id_str, sub = key.split("_", 2)
-                                    item_id = int(item_id_str)
-                                    if item_id not in agrupado_rem: agrupado_rem[item_id] = {'produto_id': int(p_id_str),'total':0,'detalhes':{}}
-                                    agrupado_rem[item_id]['total'] += qtd
-                                    if sub != "NORMAL": agrupado_rem[item_id]['detalhes'][sub] = qtd
-                                for item_id, info_rem in agrupado_rem.items():
-                                    item_atual_rem = dict_itens_ev[item_id]
-                                    qtd_remover = info_rem['total']
-                                    qtd_antiga_rem = item_atual_rem['quantidade']
-                                    valor_antigo_rem = float(item_atual_rem.get('valor_cobrado') or 0)
-                                    valor_unit_medio_rem = (valor_antigo_rem / qtd_antiga_rem) if qtd_antiga_rem > 0 else 0
-                                    nova_qtd_item_rem = qtd_antiga_rem - qtd_remover
-                                    novo_valor_item_rem = max(0, valor_antigo_rem - (valor_unit_medio_rem * qtd_remover))
-                                    obs_item_atual = safe_json_load(item_atual_rem.get('observacao'))
-                                    if obs_item_atual and info_rem['detalhes']:
-                                        for k, v in info_rem['detalhes'].items(): obs_item_atual[k] = max(0, obs_item_atual.get(k,0) - v)
-                                        nova_obs_item_rem = json.dumps(obs_item_atual)
-                                    else: nova_obs_item_rem = item_atual_rem.get('observacao','')
-                                    if nova_qtd_item_rem <= 0: supabase.table("itens_evento").delete().eq("id", item_id).execute()
-                                    else: supabase.table("itens_evento").update({"quantidade": nova_qtd_item_rem,"observacao": nova_obs_item_rem,"valor_cobrado": novo_valor_item_rem}).eq("id", item_id).execute()
-                                    resumo_remocao.append(f"{qtd_remover}x Removidos")
-                                supabase.table("historico_eventos").insert({"empresa_id": emp_id,"evento_id": ev['id'],"descricao": f"🔻 REMOÇÃO: Retirou {', '.join(resumo_remocao)}. Motivo: {motivo_remocao}","data_registro": data_hora_rem}).execute()
-                                mostrar_popup("REMOÇÃO CONCLUÍDA COM SUCESSO!")
-                                st.rerun()
-                    else: st.caption("Nenhum item alocado.")
+                    _ui_remover_itens(ev, itens_ev.data or [], "rem")
 
                 with tab_valores:
                     st.caption("Ajuste o valor final cobrado por item neste evento.")

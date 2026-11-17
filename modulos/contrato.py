@@ -12,6 +12,10 @@ no mesmo modelo do contrato em papel da empresa:
 
 Onde ficam os dados:
   eventos.contrato_dados  -> JSON com CPF/CNPJ do cliente, forma de pagamento e entrada (coluna nova, veja SQL_MIGRACAO)
+                             + "versao" / "atualizado_em" / "ultima_alteracao" (controle de versões do contrato)
+
+Evento SEM materiais: o contrato sai com uma tabela em branco (Material + Quantidade) para preencher à mão.
+Quando materiais são adicionados/alterados depois, o contrato ganha uma NOVA VERSÃO (registrar_nova_versao).
   usuarios.perfil_extra   -> dados da empresa e do DONO (Meu Perfil > Empresa), usados como LOCADOR
 """
 import io
@@ -31,6 +35,9 @@ FORMAS_PAGAMENTO = {
     "entrada_valor": "Entrada de valor específico na assinatura + restante no dia do evento",
 }
 _ORDEM_FORMAS = list(FORMAS_PAGAMENTO.keys())
+
+LINHAS_EM_BRANCO = 10  # linhas da tabela de materiais em branco (contrato sem itens)
+_CHAVES_VERSAO = ("versao", "atualizado_em", "ultima_alteracao")
 
 _MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
           "agosto", "setembro", "outubro", "novembro", "dezembro"]
@@ -164,14 +171,58 @@ def faltando_locador(locador):
     return [v for k, v in nomes.items() if not (locador or {}).get(k)]
 
 
+def _ler_dados_banco(supabase, evento_id):
+    try:
+        r = supabase.table("eventos").select("contrato_dados").eq("id", evento_id).execute()
+        return _json((r.data or [{}])[0].get("contrato_dados"))
+    except Exception:
+        return {}
+
+
 def salvar_dados_evento(supabase, evento_id, dados):
     dados = dict(dados or {})
     dados["doc_cliente"] = fmt_doc(dados.get("doc_cliente"))
     try:
+        existente = _ler_dados_banco(supabase, evento_id)
+        for k in _CHAVES_VERSAO:  # editar CPF/pagamento não pode apagar o controle de versão
+            if k in existente and k not in dados:
+                dados[k] = existente[k]
         supabase.table("eventos").update({"contrato_dados": json.dumps(dados, ensure_ascii=False)}).eq("id", evento_id).execute()
         return True, ""
     except Exception as e:
         return False, str(e)
+
+
+def versao_contrato(ev):
+    """Número da versão do contrato do evento (1 = original)."""
+    try:
+        return max(1, int(dados_do_evento(ev).get("versao") or 1))
+    except Exception:
+        return 1
+
+
+def registrar_nova_versao(supabase, evento_id, resumo=""):
+    """Chamar sempre que os materiais do evento mudarem: o contrato passa a ser uma nova versão.
+    Devolve (ok, numero_da_versao)."""
+    try:
+        dados = _ler_dados_banco(supabase, evento_id)
+        nova = max(1, int(dados.get("versao") or 1)) + 1
+        dados["versao"] = nova
+        dados["atualizado_em"] = _agora().strftime("%d/%m/%Y às %H:%M")
+        dados["ultima_alteracao"] = str(resumo or "")[:300]
+        supabase.table("eventos").update({"contrato_dados": json.dumps(dados, ensure_ascii=False)}).eq("id", evento_id).execute()
+        return True, nova
+    except Exception:
+        return False, 0
+
+
+def texto_versao(ev):
+    """Linha de status para mostrar na tela ('' se o contrato ainda é o original)."""
+    d = dados_do_evento(ev)
+    v = versao_contrato(ev)
+    if v <= 1:
+        return ""
+    return f"📜 Contrato versão {v} — atualizado em {d.get('atualizado_em') or '-'}. Baixe e use esta versão (as anteriores ficam desatualizadas)."
 
 
 def avisar_migracao(erro):
@@ -233,6 +284,7 @@ def gerar_contrato_pdf(evento, itens_lista, dict_produtos, nome_cliente, locador
     COR_PRETO = colors.HexColor("#0E0E0E")
     logo = next((p for p in ("logo_sem_fundo.png", "logo.jpg") if os.path.exists(p)), None)
     empresa_nome = (locador.get("razao_social") or "Luz & Letra").upper()
+    versao = versao_contrato(evento)
 
     def _pagina(c, doc):
         c.saveState()
@@ -253,7 +305,7 @@ def gerar_contrato_pdf(evento, itens_lista, dict_produtos, nome_cliente, locador
         c.drawString(6.2 * cm, h - 2.0 * cm, empresa_nome)
         c.setFillColor(colors.grey)
         c.setFont("Helvetica", 8)
-        c.drawString(2 * cm, 1.1 * cm, f"{locador.get('razao_social') or 'Luz & Letra'} — Emitido em {_agora().strftime('%d/%m/%Y às %H:%M')}")
+        c.drawString(2 * cm, 1.1 * cm, f"{locador.get('razao_social') or 'Luz & Letra'} — Emitido em {_agora().strftime('%d/%m/%Y às %H:%M')}" + (f" — Versão {versao} (atualizada)" if versao > 1 else ""))
         c.drawRightString(w - 2 * cm, 1.1 * cm, f"Página {doc.page}")
         c.restoreState()
 
@@ -298,10 +350,33 @@ def gerar_contrato_pdf(evento, itens_lista, dict_produtos, nome_cliente, locador
         if js:
             det = " (" + ", ".join(f"{k}: {v}x" for k, v in js.items()) + ")"
         partes.append(f"{it.get('quantidade')}x {nome}{det}")
-    lista_itens = "; ".join(partes) if partes else "nenhum equipamento alocado"
-    story.append(Paragraph(
-        f"<b><u>CLÁUSULA 1ª:</u></b> O presente contrato tem como objeto o serviço de ({campo(lista_itens)}) em bom estado de "
-        f"conservação e correto funcionamento, de propriedade do <b><u>LOCADOR</u></b>, que serão locados ao <b><u>LOCATARIO</u></b>.", corpo))
+    if partes:
+        lista_itens = "; ".join(partes)
+        story.append(Paragraph(
+            f"<b><u>CLÁUSULA 1ª:</u></b> O presente contrato tem como objeto o serviço de ({campo(lista_itens)}) em bom estado de "
+            f"conservação e correto funcionamento, de propriedade do <b><u>LOCADOR</u></b>, que serão locados ao <b><u>LOCATARIO</u></b>.", corpo))
+    else:
+        # Sem materiais cadastrados: deixa a relação em branco para preencher à mão (e depois gerar nova versão no sistema)
+        story.append(Paragraph(
+            "<b><u>CLÁUSULA 1ª:</u></b> O presente contrato tem como objeto o serviço de locação dos equipamentos relacionados na tabela abaixo, "
+            "em bom estado de conservação e correto funcionamento, de propriedade do <b><u>LOCADOR</u></b>, que serão locados ao <b><u>LOCATARIO</u></b>.", corpo))
+        cel = ParagraphStyle("cel", parent=base, fontName="Times-Bold", fontSize=10, leading=12, alignment=TA_CENTER)
+        linhas_tab = [[Paragraph("Nº", cel), Paragraph("Material / Equipamento", cel), Paragraph("Qtd.", cel)]]
+        linhas_tab += [[str(i), "", ""] for i in range(1, LINHAS_EM_BRANCO + 1)]
+        tab_mat = Table(linhas_tab, colWidths=[1.3 * cm, 12.2 * cm, 3.0 * cm], rowHeights=[0.75 * cm] + [0.85 * cm] * LINHAS_EM_BRANCO)
+        tab_mat.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#555555")),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEEEEE")),
+            ("ALIGN", (0, 0), (0, -1), "CENTER"), ("ALIGN", (2, 0), (2, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("FONTNAME", (0, 1), (0, -1), "Times-Roman"), ("FONTSIZE", (0, 1), (0, -1), 9),
+            ("TEXTCOLOR", (0, 1), (0, -1), colors.HexColor("#777777")),
+        ]))
+        story.append(tab_mat)
+        story.append(Spacer(1, 4))
+        story.append(Paragraph("<i>Relação de materiais a ser preenchida à mão pelas partes, caso necessário.</i>",
+                               ParagraphStyle("obs", parent=cab, fontSize=8.5, alignment=TA_CENTER)))
+        story.append(Spacer(1, 8))
 
     # Cláusula 2 — duração
     n = _dias_locacao(evento)

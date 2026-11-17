@@ -11,6 +11,8 @@ O que ele envia
   5. Pagamento de evento: no dia do evento e TODO dia depois, até o pagamento ser confirmado.
   6. Pendências após o evento: TODO dia depois que o evento passou, enquanto houver equipamento não devolvido
      ou o status continuar "Agendado"/"Em Andamento" (independe de o evento já estar pago).
+  7. Evento já realizado SEM materiais cadastrados: TODO dia depois que o evento passou, até alguém adicionar
+     os materiais em Agendamento → Histórico → Materiais (o contrato então ganha uma nova versão).
 
 Para quem vai: SÓ o e-mail de login dos usuários ativos da empresa. Se a empresa tiver "E-mail comercial"
 preenchido (aba Empresa do Perfil), ele é usado apenas como "responder para"; o nome do remetente é o nome fantasia.
@@ -555,6 +557,61 @@ def _rotina_pendencias_evento(sb, hoje, por_empresa, cache, dry_run, desde):
 
 
 # ----------------------------------------------------------------------------------
+# 7) Evento já realizado SEM materiais cadastrados (todo dia, até adicionar os materiais)
+# ----------------------------------------------------------------------------------
+def _rotina_sem_materiais(sb, hoje, por_empresa, cache, dry_run, desde):
+    r = sb.table("eventos").select("*").neq("status", "Cancelado").lte("data_inicio", str(hoje)).execute()
+    encerrados = []
+    for e in (r.data or []):
+        fim = _fim_evento(e)
+        if fim and fim < hoje and not (desde and fim < desde):  # mesma regra do app: já aconteceu = data final passou
+            encerrados.append((e, fim))
+    if not encerrados:
+        return 0
+
+    com_itens = set()
+    try:
+        for lote in _em_lotes([e["id"] for e, _ in encerrados]):
+            for it in (sb.table("itens_evento").select("evento_id").in_("evento_id", lote).execute().data or []):
+                com_itens.add(it["evento_id"])
+    except Exception:
+        # Sem conseguir consultar os itens, NÃO avisa (evita alarme falso de "sem materiais" para todos os eventos)
+        registrar_erro("notificacoes.py:itens_sem_materiais")
+        return 0
+
+    sem_itens = [(e, fim) for e, fim in encerrados if e["id"] not in com_itens]
+    if not sem_itens:
+        return 0
+    clientes = {}
+    try:
+        for lote in _em_lotes(list({e["cliente_id"] for e, _ in sem_itens if e.get("cliente_id")})):
+            for c in (sb.table("clientes_eventos").select("id, nome").in_("id", lote).execute().data or []):
+                clientes[c["id"]] = c.get("nome")
+    except Exception:
+        registrar_erro("notificacoes.py:clientes_sem_materiais")
+
+    por_emp = {}
+    for e, fim in sem_itens:
+        dias = (hoje - fim).days
+        linha = (f"{e.get('titulo') or e.get('descricao') or 'Evento'} — cliente {clientes.get(e.get('cliente_id')) or '-'} — "
+                 f"aconteceu em {_br(fim)} (há {_dias_txt(dias)}) — valor {_moeda(e.get('valor_total'))}")
+        por_emp.setdefault(e["empresa_id"], []).append({"tipo": "evento_sem_materiais", "ref": f"{e['id']}:{hoje}",
+                                                        "bloco": "Eventos sem materiais cadastrados", "linha": linha})
+
+    def assunto(novos):
+        return f"📋 Luz & Letra — {_plural(len(novos), 'evento sem materiais cadastrados', 'eventos sem materiais cadastrados')}"
+
+    total = 0
+    for empresa_id, itens in por_emp.items():
+        total += _enviar_digest(sb, por_empresa.get(empresa_id, []), itens, assunto, "Eventos realizados sem materiais",
+                                "Estes eventos já aconteceram, mas não têm nenhum material/equipamento cadastrado. "
+                                "Abra Agendamento → Histórico → Materiais e informe o que foi usado; o contrato será atualizado "
+                                "com uma nova versão. Você será avisado todo dia até resolver.",
+                                [("Eventos sem materiais cadastrados", "verm")], cache, dry_run)
+    return total
+
+
+# ----------------------------------------------------------------------------------
 # Rotina diária (chamada pelo notificador.py)
 # ----------------------------------------------------------------------------------
 def rodar_rotina_diaria(sb, hoje=None, dry_run=False, desde=None, forcar=False):
@@ -571,7 +628,8 @@ def rodar_rotina_diaria(sb, hoje=None, dry_run=False, desde=None, forcar=False):
                      ("compras", lambda: _rotina_compras(sb, hoje, por_empresa, cache, dry_run, desde)),
                      ("manutencao", lambda: _rotina_manutencao(sb, hoje, por_empresa, cache, dry_run, desde)),
                      ("pagamento_eventos", lambda: _rotina_pagamento_eventos(sb, hoje, por_empresa, cache, dry_run, desde)),
-                     ("pendencias_evento", lambda: _rotina_pendencias_evento(sb, hoje, por_empresa, cache, dry_run, desde))):
+                     ("pendencias_evento", lambda: _rotina_pendencias_evento(sb, hoje, por_empresa, cache, dry_run, desde)),
+                     ("sem_materiais", lambda: _rotina_sem_materiais(sb, hoje, por_empresa, cache, dry_run, desde))):
         try:
             resumo[nome] = fn()
         except Exception:
@@ -613,6 +671,9 @@ def avisar_novo_agendamento(sb, empresa_id, evento_id, em_segundo_plano=True):
         blocos = [("Resumo do agendamento", "verde", resumo)]
         if lista:
             blocos.append(("Itens reservados", "azul", lista))
+        else:
+            blocos.append(("Materiais", "amar", ["Nenhum material cadastrado ainda — adicione em Agendamento → Histórico → Materiais "
+                                                 "(o contrato sai com espaço em branco até lá)."]))
         texto, html = _montar("Novo agendamento cadastrado", "Um novo evento foi agendado no sistema.", blocos)
         assunto = f"📅 Novo agendamento: {ev.get('titulo') or 'evento'} — {periodo}"
         usuarios = _usuarios_ativos(sb).get(empresa_id, [])
